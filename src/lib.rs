@@ -1,151 +1,188 @@
-pub mod multi_crypto;
+/// The underlying structure is irrelvent. Here's what we have:
+///
+/// Database:
+/// - I have a database
+/// - This database stores tables & entries
+/// - Tables contain maps to other tables or contain maps to entries
+/// - Tables always have a name and HashMap<String,String>. Find them by hashing name&Hashmap
+/// - Entries always have a name, HashMap<String,String>, and data as HashMap<u64,Vec<u8>>. Find 
+///     them by hashing name,HashMap, and data
+/// - Data is stored unencrypted unless it couldn't be decrypted
+/// - Encryption info is next to each table or entry
+/// - It *is* a connection handler in its own right
+///
+/// Queries:
+/// - I can query the database & network
+/// - My query selects Tables & entries that meet my name & hashmap format
+/// - My query also has a network scope to it
+/// - My query can optionally store all data to the database
+///
+/// Permissions:
+/// - Others can query my database
+/// - Permissions are set for each table & entry.
+/// -   "Who's asking? Where are they asking from?"
+/// -   Whitelist of acceptable people, and acceptable network scopes
+///
+/// Apps:
+/// - Can create queries, set permissions, and get health info from the manager
+///
+/// Connection Handler:
+/// - Accepts queries for the network scope it supports, and then queries its network in some 
+///     fashion.
+/// - Rate limiting, line encryption, network maintainence, friend finding...this is all handled by 
+///     the connection handler itself.
+/// - Can ask the manager to sign or encrypt an arbitrary piece of data, but should have no keys 
+///     itself
+///
+/// Manager:
+/// - Talks to apps
+/// - Talks to connection handlers
+/// - Forwards queries as appropriate
+/// - Holds onto keys and does encryption/decryption
+///
+/// Database management:
+/// - By default, throw away the oldest entries based on fetch time
+/// - Applications can mark data as "keep" and the database will keep it indefinitely
+/// - The "keep" attribute must have an associated name
+///
+extern crate rmp;
+use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-enum TriState {
-    Yes,
-    No,
-    Unknown,
-}
 
-/// The encapsulation format for a Table
-enum TableFormat {
-    /// No cryptography
-    Plain,
-    /// Table header is encrypted
-    Encrypted,
-    /// Table header is signed
-    Signed,
-    /// Table header is signed, encryption was applied after
-    SignedThenEncrypted,
-    /// Table header is encrypted, then encrypted result was signed
-    EncryptedThenSigned,
-}
-
-enum EntryFormat {
-    /// Only the 64-bit ID prefixes the entry
-    Id,
-    /// Contents encrypted & prefixed with ID
-    EncryptedThenId,
-    /// ID & contents encrypted 
-    IdThenEncrypted,
-    /// ID & contents signed
-    IdSigned,
-    /// ID & contents signed then encrypted
-    IdSignedThenEncrypted,
-    /// contents signed & encrypted, then prefixed with ID
-    SignedThenEncryptedThenId,
-    /// contents encrypted, prefixed with ID, and signed
-    EncryptedThenIdSigned,
-};
-
-enum EntryType {
-    /// File: fixed # of entries, ordered unique entry IDs
-    File,
-    /// List: variable # of entries, multiple entries per ID allowed
-    List
-    /// UniqueList: variable # of entries, only one entry per ID
-    UniqueList,
-    /// ParsedList: parsable variable # of entries, multiple entries per ID allowed
-    ParsedList,
-    /// ParsedUniqueList: parsable variable # of entries, only one entry per ID
-    ParsedUniqueList,
-}
-    
-enum HashOrder {
-    List,
-    BinaryTree,
-}
-
+/// Immutable parts of tables & entries
+/// - A table's name & header never change. Thus, their encryption parameters and hashes never 
+/// change
+/// - The entries in a table can change
+///
+/// - An entry is completely immutable. Header, name, and data will never change.
 
 /// Table
-/// =====
-/// A Table consists of a descriptive header and a series of entries. A header describes the type 
-/// and format of the entries, the content hashes (for files), and has optional fields for a name,
-/// tags, and application-specific data. A header can always be located by its cryptographic hash. 
-///
-/// In addition to the contents, the table header can be signed and encrypted in any order. A 
-/// header is never stored if the contents cannot be decrypted. Individual entries may be 
-/// unreadable by the local database, but the table header must always be readable.
-///
-/// All table entries are numbered by a 64-bit ID. The entries may be in one of the following 
-/// formats:
-/// - File: Unique IDs starting from 0, Fixed in content and quantity
-/// - List: Non-Unique IDs, variable quantity
-/// - UniqueList: Unique IDs, variable quantity
-/// - ParsedList: Non-Unique IDs, variable quantity, entries can be parsed into simple data structures
-/// - ParsedUniqueList: Unique IDs, variable quantity, eentries can be parsed into simple data structures
-///
-/// Entries can be found using their ID or the hash of the entry. For ParsedList and 
-/// ParsedUniqueList, they can also be located by selecting them based on the contents of their 
-/// data structures.
-struct Table {
-    /// Raw contents of the db_header, before parsing
-    raw: Vec<u8>,
-    // Metadata
-    /// Scope of access
-    is_public: bool,
-    is_friends: bool,
-    is_nearby: bool,
-    stored_by: MultiKey,
-    is_pinned: bool,
-    /// Hashes of header
-    meta_hash: Vec<MultiHash>,
-    /// Format in which header is encoded
-    meta_format: TableFormat,
-    /// Encryption status
-    meta_is_encrypted: bool,
-    meta_can_decrypt: bool,
-    meta_encryption_type: MultiEncrypt,
-    meta_encryption_key: MultiKey,
-    /// Signature status
-    meta_is_signed: bool,
-    meta_signature: MultiSignature,
-    // Contents
-    /// Name for this Table. Does not have to be unique. Empty string is different from no string!
-    name: Option<String>,
-    /// UTF-8 tags describing this Table. Can be used when searching.
-    tags: Vec<String>,
-    /// Data related to proper usage of this Table
-    app_data: Vec<u8>,
-    /// Maximum entry size, in bytes
-    max_entry_size: u64,
-    /// Describes the type of data this Table will reference
-    entry_type: Option<EntryType>,
-    /// Format in which entries shall be encoded
-    entry_format: Option<EntryFormat>,
-    /// Key to unlock entries, if required
-    entry_key: Option<MultiKey>,
-    /// Ordering format of content hashes in entry_hashes. Used only by File EntryType.
-    hash_ordering: Option<HashOrder>,
-    /// Optional content hashes. Ordering determiend by hash_ordering. Used only by File EntryType.
-    entry_hashes: Vec<MultiHash>,
+/// Tables hold references to Items
+/// - Tables contain maps to other tables or contain maps to entries
+/// - Tables always have a name and HashMap<String,String>. Find them by hashing name&Hashmap
+/// - Data is stored unencrypted unless it couldn't be decrypted
+/// - Encryption info is stored in the header with a special name
+pub struct Table {
+    name: String,
+    header: HashMap<String,String>,
+    entries: HashMap<u64,Vec<u8>>
+}
+impl Table {
+    pub fn new(name: &str, header: HashMap<String,String>) -> Table {
+        Table {
+            name: String::from(name),
+            header: header,
+            entries: HashMap::new(),
+        }
+    }
+    pub fn get_name(&self) -> &String {
+        &self.name
+    }
+    pub fn get_header(self) -> HashMap<String,String> {
+        self.header
+    }
+    pub fn get_header_value(&self,key:&String) -> Option<&String> {
+        self.header.get(key)
+    }
+    pub fn get_entry(self,num:&u64) -> Option<Vec<u8>> {
+        match self.entries.get(num) {
+            Some(hash) => Some(hash.clone()),
+            None => None
+        }
+    }
 }
 
 /// Entry
-/// =====
-/// An entry in a table. Contains data, optionally encrypted and/or signed. Always has an 
-/// associated ID that may or may not be unique.
-struct Entry {
-    // Data
-    id: u64,
-    /// Raw data in entry
-    raw: Vec<u8>,
-    /// Pointer to where entry content begins
-    data_ptr: usize,
-    // Metadata
-    /// Scope of access
-    is_public: bool,
-    is_friends: bool,
-    is_nearby: bool,
-    stored_by: MultiKey,
-    is_pinned: bool,
-    /// Hashes of entry
-    meta_hash: Vec<MultiHash>,
-    /// Encryption status
-    meta_is_encrypted: bool,
-    meta_can_decrypt: bool,
-    meta_encryption_type: MultiEncrypt,
-    meta_encryption_key: MultiKey,
-    /// Signature status
-    meta_is_signed: bool,
-    meta_signature: MultiSignature,
+/// - Entries always have a name, HashMap<String,String>, and data as HashMap<u64,Vec<u8>>. Find 
+///     them by hashing name,HashMap, and data
+/// - Data is stored unencrypted unless it couldn't be decrypted
+/// - Encryption info is stored in the header with a special name
+pub struct Entry {
+    name: String,
+    header: HashMap<String,String>,
+    data: BTreeMap<u64,Vec<u8>>,
+}
+impl Entry {
+    pub fn new(name: String, header: HashMap<String,String>, data: BTreeMap<u64,Vec<u8>>) -> Entry {
+        Entry {
+            name: name,
+            header: header,
+            data: data,
+        }
+    }
+    pub fn get_name(self) -> String {
+        self.name
+    }
+    pub fn get_header(self) -> HashMap<String,String> {
+        self.header
+    }
+    pub fn get_datum(self, num:&u64) -> Option<Vec<u8>> {
+        match self.data.get(num) {
+            Some(data) => Some(data.clone()),
+            None => None
+        }
+    }
+}
+
+pub struct Database {
+    tables: HashMap<Vec<u8>,Table>,
+    entries: HashMap<Vec<u8>,Entry>,
+}
+impl Database {
+    pub fn new() -> Database {
+        Database {
+            tables: HashMap::new(),
+            entries: HashMap::new(),
+        }
+    }
+    pub fn add_table(&mut self, hash:Vec<u8>, table: Table) -> Option<Table> {
+        self.tables.insert(hash, table)
+    }
+    pub fn drop_table(&mut self, hash:&Vec<u8>) -> Option<Table> {
+        self.tables.remove(hash)
+    }
+    pub fn add_entry(&mut self, hash:Vec<u8>, entry: Entry) -> Option<Entry> {
+        self.entries.insert(hash, entry)
+    }
+    pub fn drop_entry(&mut self, hash:&Vec<u8>) -> Option<Entry> {
+        self.entries.remove(hash)
+    }
+    pub fn get_entry<'a>(&'a self, hash:&Vec<u8>) -> Option<&Entry> {
+        self.entries.get(hash)
+    }
+    pub fn get_table<'a>(&'a self, hash:&Vec<u8>) -> Option<&Table> {
+        self.tables.get(hash)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn setup_simple_database() -> Database {
+        // Construct the simple database
+        let mut db = Database::new();
+        let mut header = HashMap::new();
+        header.insert(String::from("a"),String::from("A"));
+        header.insert(String::from("b"),String::from("B"));
+        header.insert(String::from("c"),String::from("C"));
+        let table = Table::new("test table",header);
+        let hash = vec![0,1];
+        db.add_table(hash,table);
+        db
+    }
+
+    #[test]
+    fn test_database_table_contents() {
+        let db = setup_simple_database();
+        // Test for Table & table name
+        let table = db.get_table(&vec![0,1]);
+        assert_ne!(None, table);
+        assert_eq!(String::from("test table"), *(table.unwrap().get_name()));
+        // Test for header
+        let header_item = db.get_table(&vec![0,1]).unwrap().get_header_value(&String::from("a"));
+        assert_eq!("A",header_item.unwrap());
+        // Test for table entries
+    }
 }

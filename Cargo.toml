@@ -1,6 +1,8 @@
 [package]
 name = "condense_db"
 version = "0.1.0"
-authors = ["Scott Teal <scott@teals.org>"]
+authors = ["Scott Teal"]
 
 [dependencies]
+rmp = "^0.8"
+rmpv = "^0.4"

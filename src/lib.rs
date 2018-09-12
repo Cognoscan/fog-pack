@@ -1,224 +1,113 @@
-/// The underlying structure is irrelvent. Here's what we have:
-///
-/// Database:
-/// - I have a database
-/// - This database stores tables & entries
-/// - Tables contain maps to other tables or contain maps to entries
-/// - Tables always have a and HashMap<String,rmpv::Value>. Find them by hashing Hashmap
-/// - Entries always have a HashMap<String,rmpv::Value>, and data as HashMap<u64,Vec<u8>>. Find 
-///     them by hashing HashMap, and data
-/// - Data is stored unencrypted unless it couldn't be decrypted
-/// - Encryption info is next to each table or entry
-/// - It *is* a connection handler in its own right
-///
-/// Queries:
-/// - I can query the database & network
-/// - My query selects Tables & entries that meet my hashmap format
-/// - My query also has a network scope to it
-/// - My query can optionally store all data to the database
-///
-/// Permissions:
-/// - Others can query my database
-/// - Permissions are set for each table & entry.
-/// -   "Who's asking? Where are they asking from?"
-/// -   Whitelist of acceptable people, and acceptable network scopes
-///
-/// Apps:
-/// - Can create queries, set permissions, and get health info from the manager
-///
-/// Connection Handler:
-/// - Accepts queries for the network scope it supports, and then queries its network in some 
-///     fashion.
-/// - Rate limiting, line encryption, network maintainence, friend finding...this is all handled by 
-///     the connection handler itself.
-/// - Can ask the manager to sign or encrypt an arbitrary piece of data, but should have no keys 
-///     itself
-///
-/// Manager:
-/// - Talks to apps
-/// - Talks to connection handlers
-/// - Forwards queries as appropriate
-/// - Holds onto keys and does encryption/decryption
-///
-/// Database management:
-/// - By default, throw away the oldest entries based on fetch time
-/// - Applications can mark data as "keep" and the database will keep it indefinitely
-/// - The "keep" attribute must have an associated name - i.e. each application must claim 
-///   ownership of data it cares about.
-///
 extern crate rmp;
 extern crate rmpv;
 use std::collections::HashMap;
 use std::collections::BTreeMap;
+use rmpv::Value;
 
-pub enum Comparison {
-    ExactEq           =  0, // Is valid msgPack and encoded data match exactly
-    NotExactEq        =  1, // Is valid msgPack and encoded data do not match
-    Equal             =  2, // Meet PartialEq and match
-    NotEqual          =  3, // Meet PartialEq and do not match
-    GreaterThan       =  4, // Meet PartialOrd and provided value is greater
-    LessEqual         =  5, // Meet PartialOrd and provided value is less or equal
-    LessThan          =  6, // Meet PartialOrd and provided value is less
-    GreaterEqual      =  7, // Meet PartialOrd and provided value is greater or equal
-    Contains          =  8, // Is string and contains provided string, case-insensitive
-    ContainsNot       =  9, // Is string and does not contain provided string, case-insensitive
-    ContainsCase      = 10, // Is string and contains provided string, case-sensitive
-    ContainsCaseNot   = 11, // Is string and does not contain provided string, case-sensitive
-    StartsWith        = 12, // Is string and starts with provided string, case-insensitive
-    StartsWithNot     = 13, // Is string and does not start with provided string, case-insensitive
-    StartsWithCase    = 14, // Is string and starts with provided string, case-sensitive
-    StartsWithCaseNot = 15, // Is string and does not start with provided string, case-sensitive
-    EndsWith          = 16, // Is string and ends with provided string, case-insensitive
-    EndsWithNot       = 17, // Is string and does not end with provided string, case-insensitive
-    EndsWithCase      = 18, // Is string and ends with provided string, case-sensitive
-    EndsWithCaseNot   = 19, // Is string and does not end with provided string, case-sensitive
+
+// Internal searchable keys:
+// - All keys starting with _ are reserved for us
+// - _hash stores a list of hashes of the data
+// - _publicKey stores the public key that was used to encrypt the data
+// - _signedBy stores a list of public keys that signed the data
+// - _mutable indicates if the collection's entries can change
+// You can sign unencrypted data, then encrypt it and pass it around
+
+// An Item contains a document and a list. The document is a key-value store where the keys are 
+// strings and the values are arbitrary msgpack objects. The list is a key-value store where the 
+// keys are 128-bit unsigned integers and the values are hashes pointing to other Items.
+//
+// 
+// Two formats: mutable and immutable:
+// - Immutable
+//      - Hash is from encrypting the entire item, hashing it, attaching signatures, and 
+//        hashing the concatenation of the original hash and the attached signatures.
+// - Mutable
+//      - Hash is from encrypting the document, hashing it, attaching signatures, and hashing 
+//        the concatenation of the original hash and the attached signatures.
+//      - List entries are provided separately. They consist of the Item hash, the key number, and 
+//        the hash value it stores. The Item hash is encrypted, then the entire entry is hashed, 
+//        and signatures are attached. 
+type Hash = Vec<u8>;
+type PublicKey = Vec<u8>;
+type Signature = Vec<u8>;
+
+pub struct Query {
 }
 
-/// Immutable parts of tables & entries
-/// - A table's header never change. Thus, their encryption parameters and hashes never 
-/// change
-/// - The entries in a table can change
-///
-/// - An entry is completely immutable. Header, and data will never change.
-
-/// Table
-/// Tables hold references to Items
-/// - Tables contain maps to other tables or contain maps to entries
-/// - Data is stored unencrypted unless it couldn't be decrypted
-/// - Encryption info is stored in the header with a special key name
-pub struct Table {
-    header: HashMap<String,rmpv::Value>,
-    entries: HashMap<u64,Vec<u8>>
-}
-impl Table {
-    pub fn new(header: HashMap<String,rmpv::Value>) -> Table {
-        Table {
-            header: header,
-            entries: HashMap::new(),
-        }
-    }
-    pub fn get_header(self) -> HashMap<String,rmpv::Value> {
-        self.header
-    }
-    pub fn get_header_value(&self,key:&String) -> Option<&rmpv::Value> {
-        self.header.get(key)
-    }
-    pub fn add_entry(&mut self, num:u64, hash:Vec<u8>) -> Option<Vec<u8>> {
-        self.entries.insert(num, hash)
-    }
-    pub fn drop_entry(&mut self, num:&u64) -> Option<Vec<u8>> {
-        self.entries.remove(num)
-    }
-    pub fn get_entry(self,num:&u64) -> Option<Vec<u8>> {
-        match self.entries.get(num) {
-            Some(hash) => Some(hash.clone()),
-            None => None
-        }
-    }
-}
-
-/// Entry
-/// - Entries always have a HashMap<String,rmpv::Value>, and data as HashMap<u64,Vec<u8>>. Find 
-///     them by hashing HashMap, and data
-/// - Data is stored unencrypted unless it couldn't be decrypted
-/// - Encryption info is stored in the header with a special key name
+#[derive(Clone)]
 pub struct Entry {
-    header: HashMap<String,rmpv::Value>,
-    data: BTreeMap<u64,Vec<u8>>,
+    hash: Hash,
+    key: PublicKey,
+    signed: Vec<Signature>,
 }
-impl Entry {
-    pub fn new(header: HashMap<String,rmpv::Value>, data: BTreeMap<u64,Vec<u8>>) -> Entry {
-        Entry {
-            header: header,
-            data: data,
+
+#[derive(Clone)]
+pub struct Item {
+    document: HashMap<String, Value>,
+    list: BTreeMap<(u64, u64), Entry>,
+}
+impl Item {
+    pub fn new() -> Item {
+        Item {
+            document: HashMap::new(), 
+            list: BTreeMap::new()
         }
     }
-    pub fn get_header(self) -> HashMap<String,rmpv::Value> {
-        self.header
-    }
-    pub fn get_header_value(&self,key:&String) -> Option<&rmpv::Value> {
-        self.header.get(key)
-    }
-    pub fn get_datum(self, num:&u64) -> Option<Vec<u8>> {
-        match self.data.get(num) {
-            Some(data) => Some(data.clone()),
-            None => None
-        }
+    pub fn add_entry(&mut self, key: (u64,u64), entry: Entry) -> Option<Entry> {
+        self.list.insert(key, entry)
     }
 }
 
+// There is only one database, which holds every Item we know about
 pub struct Database {
-    tables: HashMap<Vec<u8>,Table>,
-    entries: HashMap<Vec<u8>,Entry>,
+    items: HashMap<Hash, Item>,
 }
 impl Database {
-    pub fn new() -> Database {
-        Database {
-            tables: HashMap::new(),
-            entries: HashMap::new(),
+    /// True on successful add, false if the item is already present
+    pub fn add_item(&mut self, hash: Hash, item: Item) -> bool {
+        if self.items.contains_key(&hash) {
+            false
+        } else {
+            self.items.insert(hash, item);
+            true
         }
     }
-    pub fn add_table(&mut self, hash:Vec<u8>, table: Table) -> Option<Table> {
-        self.tables.insert(hash, table)
+
+    pub fn del_item(&mut self, hash: &Hash) -> bool {
+        if self.items.contains_key(hash) {
+            self.items.remove(hash);
+            true
+        } else {
+            false
+        }
     }
-    pub fn drop_table(&mut self, hash:&Vec<u8>) -> Option<Table> {
-        self.tables.remove(hash)
+
+    pub fn get_item(&self, hash: &Hash) -> Option<Item> {
+        match self.items.get(hash) {
+            Some(item) => Some(item.clone()),
+            None => None
+        }
     }
-    pub fn add_entry(&mut self, hash:Vec<u8>, entry: Entry) -> Option<Entry> {
-        self.entries.insert(hash, entry)
+    
+    pub fn add_entry(&mut self, item_hash: &Hash, key: (u64, u64), entry: Entry) -> Option<Entry> {
+        match self.items.get_mut(item_hash) {
+            Some(item) => item.add_entry(key, entry),
+            None => None
+        }
     }
-    pub fn drop_entry(&mut self, hash:&Vec<u8>) -> Option<Entry> {
-        self.entries.remove(hash)
-    }
-    pub fn get_entry<'a>(&'a self, hash:&Vec<u8>) -> Option<&Entry> {
-        self.entries.get(hash)
-    }
-    pub fn get_table<'a>(&'a self, hash:&Vec<u8>) -> Option<&Table> {
-        self.tables.get(hash)
+
+    pub fn run_item_query(self, _query: Query) -> Vec<Item> {
+        vec![]
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn setup_simple_database() -> Database {
-        // Construct the simple database
-        let mut db = Database::new();
-        let mut header = HashMap::new();
-        header.insert(String::from("a"),rmpv::Value::from("A"));
-        header.insert(String::from("b"),rmpv::Value::from("B"));
-        header.insert(String::from("c"),rmpv::Value::from("C"));
-        let table = Table::new(header);
-        let hash = vec![0,1];
-        db.add_table(hash,table);
-        db
-    }
 
     #[test]
-    fn test_entry() {
-        let mut header = HashMap::new();
-        header.insert(String::from("name"), rmpv::Value::from("TestHeader"));
-        let mut data = BTreeMap::new();
-        data.insert(0, vec![1,2,3]);
-        data.insert(1, vec![4,5,6]);
-        let entry = Entry::new(header, data);
-        
-        let header_item = entry.get_header_value(&String::from("name")).unwrap();
-        assert_eq!(header_item,  &rmpv::Value::from("TestHeader"));
-        let data_item = entry.get_datum(&0).unwrap();
-        assert_eq!(data_item, vec![1,2,3]);
-    }
-
-    #[test]
-    fn test_database_table_contents() {
-        let db = setup_simple_database();
-        // Test for Table & table name
-        let table = db.get_table(&vec![0,1]);
-        assert!(!table.is_none());
-        // Test for header
-        let header_item = db.get_table(&vec![0,1]).unwrap().get_header_value(&String::from("a"));
-        assert_eq!(&rmpv::Value::from("A"),header_item.unwrap());
-        // Test for table entries
+    fn test_item_new() {
+        let test = Item::new();
     }
 }

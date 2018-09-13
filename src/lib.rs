@@ -3,6 +3,7 @@ extern crate rmpv;
 use std::collections::HashMap;
 use std::collections::BTreeMap;
 use rmpv::Value;
+use std::io::Write;
 
 
 // Internal searchable keys:
@@ -28,9 +29,52 @@ use rmpv::Value;
 //      - List entries are provided separately. They consist of the Item hash, the key number, and 
 //        the hash value it stores. The Item hash is encrypted, then the entire entry is hashed, 
 //        and signatures are attached. 
-type Hash = Vec<u8>;
-type PublicKey = Vec<u8>;
-type Signature = Vec<u8>;
+
+//type Hash = Vec<u8>;
+//type PublicKey = Vec<u8>;
+//type Signature = Vec<u8>;
+
+enum ExtType {
+    uuid,
+    hash,
+    pub_key,
+    signature,
+}
+impl ExtType {
+    fn to_i8(&self) -> i8 {
+        match *self {
+            ExtType::uuid => 1,
+            ExtType::hash => 2,
+            ExtType::pub_key => 3,
+            ExtType::signature => 4,
+        }
+    }
+}
+
+#[derive(Clone,PartialEq,Eq,Hash)]
+pub struct Hash (Vec<u8>);
+#[derive(Clone,PartialEq,Eq,Hash)]
+pub struct PublicKey (Vec<u8>);
+#[derive(Clone,PartialEq,Eq,Hash)]
+pub struct Signature (Vec<u8>);
+
+impl Hash {
+    pub fn new(data: Vec<u8>) -> Hash { Hash { 0:data } }
+    pub fn encode(self) -> Vec<u8> {
+        let mut enc = Vec::new();
+        rmp::encode::write_ext_meta(&mut enc, self.0.len() as u32, ExtType::hash.to_i8());
+        enc.write_all(&self.0);
+        enc
+    }
+    pub fn decode(enc: Vec<u8>) -> Result<Hash, rmp::decode::ValueReadError> {
+        let meta = rmp::decode::read_ext_meta(&mut &enc[..])?;
+        if (meta.typeid == ExtType::hash.to_i8()) && (meta.size == (enc.len() as u32)) {
+            Ok(Hash{0:enc})
+        } else {
+            Err(rmp::decode::ValueReadError::InvalidDataRead)
+        }
+    }
+}
 
 pub struct Query {
 }
@@ -39,8 +83,23 @@ pub struct Query {
 pub struct Entry {
     hash: Hash,
     key: PublicKey,
-    signed: Vec<Signature>,
+    signatures: Vec<Signature>,
 }
+impl Entry {
+    pub fn encode(self, key: (u64, u64)) -> Vec<u8> {
+        let mut enc = Vec::<u8>::new();
+        // Format: fixarray [keypair, publickey, hash, fixarray [signatues]]
+        rmp::encode::write_array_len(&mut enc, 3);
+        enc.write_all(&self.key);
+        enc.write_all(&self.hash.encode());
+        rmp::encode::write_array_len(&mut enc, self.signatures.len() as u32);
+        for sign in self.signatures {
+            enc.write_all(&sign);
+        }
+        enc
+    }
+}
+
 
 #[derive(Clone)]
 pub struct Item {

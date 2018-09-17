@@ -145,7 +145,7 @@ using messagepack. We use the `ext` format to encode some of these:
 | 4          | Signature               |
 | 5          | Lock                    |
 | 6          | Key                     |
-
+| 7          | LockBox                 |
 
 Cryptography in condense_db
 ---------------------------
@@ -169,7 +169,7 @@ module: condense_crypto.
   others create locks for the key, and to let others know if the key was used to 
   make a particular signature.
 - A signature is data that can be appended to a data stream to indicate the 
-- key's owner has seen and approved it. It shall be impossible to create a 
+  key's owner has seen and approved it. It shall be impossible to create a 
   signature without the hash of the data stream and a particular key. A 
   signature shall indicate what key was used to make it.
 
@@ -178,3 +178,17 @@ module: condense_crypto.
 When a document or entry is created, its hashing scheme is determined. The 
 document/entry then always uses that hashing scheme. If a different hashing 
 scheme is used with the same underlying data, the result will be different.
+
+
+
+
+
+## Meta-fields
+
+- `_hash` - The hash of an Item/Entry
+- `_crypto_version` - Version number of the crypto scheme used
+- `_crypto_signed` - Array of Signatures that signed an Item/Entry
+- `_crypto_locked` - Indicates if the Item/Entry was encrypted
+- `_crypto_lock_signed` - Indicates if the Item/Entry has a signature inside 
+  the locked section (only one internal signature allowed)
+- `_crypto_

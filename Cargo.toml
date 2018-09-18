@@ -6,3 +6,4 @@ authors = ["Scott Teal"]
 [dependencies]
 rmp = "^0.8"
 rmpv = "^0.4"
+byteorder = "1"

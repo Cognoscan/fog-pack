@@ -191,4 +191,82 @@ scheme is used with the same underlying data, the result will be different.
 - `_crypto_locked` - Indicates if the Item/Entry was encrypted
 - `_crypto_lock_signed` - Indicates if the Item/Entry has a signature inside 
   the locked section (only one internal signature allowed)
-- `_crypto_
+
+
+Query Language
+--------------
+Queries are made against a database and return Item hashes and entries in a 
+structure conforming to the query. From the query result, a user can then go and 
+fetch each Item.
+
+Queries are a sequence of nested sub-queries:
+1. Check for a Item that matches the sub-query. Return hashes of all such items
+2. On that document, return all entries that match the selection list
+3. Follow those entries and run the next sub-query on all Items they lead to
+4. Etc.
+
+Internally, a query consists of:
+- The set of nested sub-queries
+- The permission list for what nodes are allowed to see this query
+- What identities should be used to sign this query
+- A priority for the query
+
+By default, the progression of querying looks like this:
+
+1. User creates a query
+2. Query is run against local database and sent out according to its permission 
+	 list
+3. A query will return arrays for each level of the query - Item hashes, then 
+entries, Item hashes, then entries, etc.
+4. The user's node fetches the matched Items as required and verifies they match
+5. The user's node then verifies the entries beneath
+6. And so on
+7. This process continues indefinitely as long as a query remains open. In the 
+process, both nodes keep track of what they have provided to avoid repeats. This 
+list may be stored long-term and re-opened between nodes, but that's not the 
+user's concern.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

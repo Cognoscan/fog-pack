@@ -1,18 +1,50 @@
 extern crate rmp;
 extern crate rmpv;
+extern crate byteorder;
 use std::collections::HashMap;
 use std::collections::BTreeMap;
+//use std::io::Write;
 use rmpv::Value;
-use std::io::Write;
+use byteorder::WriteBytesExt;
 
+use std::{fmt, io};
+use std::error::Error;
 
-// Internal searchable keys:
-// - All keys starting with _ are reserved for us
-// - _hash stores a list of hashes of the data
-// - _publicKey stores the public key that was used to encrypt the data
-// - _signedBy stores a list of public keys that signed the data
-// - _mutable indicates if the collection's entries can change
-// You can sign unencrypted data, then encrypt it and pass it around
+pub mod crypto;
+
+#[derive(Debug)]
+pub enum EncodeError {
+    ValueWriteError(rmp::encode::ValueWriteError),
+    Io(io::Error),
+}
+impl fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            EncodeError::ValueWriteError(ref err) => err.fmt(f),
+            EncodeError::Io(ref err) => err.fmt(f),
+        }
+    }
+}
+
+impl Error for EncodeError {
+    fn description(&self) -> &str {
+        match *self {
+            EncodeError::ValueWriteError(ref err) => err.description(),
+            EncodeError::Io(ref err) => err.description(),
+        }
+    }
+}
+
+impl From<rmp::encode::ValueWriteError> for EncodeError {
+    fn from(err: rmp::encode::ValueWriteError) -> EncodeError {
+        EncodeError::ValueWriteError(err)
+    }
+}
+impl From<io::Error> for EncodeError {
+    fn from(err: io::Error) -> EncodeError {
+        EncodeError::Io(err)
+    }
+}
 
 // An Item contains a document and a list. The document is a key-value store where the keys are 
 // strings and the values are arbitrary msgpack objects. The list is a key-value store where the 
@@ -30,23 +62,25 @@ use std::io::Write;
 //        the hash value it stores. The Item hash is encrypted, then the entire entry is hashed, 
 //        and signatures are attached. 
 
-//type Hash = Vec<u8>;
-//type PublicKey = Vec<u8>;
-//type Signature = Vec<u8>;
-
-enum ExtType {
-    uuid,
-    hash,
-    pub_key,
-    signature,
+pub enum ExtType {
+    Uuid,
+    Hash,
+    Identity,
+    Signature,
+    Lock,
+    Key,
+    LockBox
 }
 impl ExtType {
     fn to_i8(&self) -> i8 {
         match *self {
-            ExtType::uuid => 1,
-            ExtType::hash => 2,
-            ExtType::pub_key => 3,
-            ExtType::signature => 4,
+            ExtType::Uuid      => 1,
+            ExtType::Hash      => 2,
+            ExtType::Identity  => 3,
+            ExtType::Signature => 4,
+            ExtType::Lock      => 5,
+            ExtType::Key       => 6,
+            ExtType::LockBox   => 7,
         }
     }
 }
@@ -54,26 +88,20 @@ impl ExtType {
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Hash (Vec<u8>);
 #[derive(Clone,PartialEq,Eq,Hash)]
-pub struct PublicKey (Vec<u8>);
+pub struct Identity (Vec<u8>);
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Signature (Vec<u8>);
 
-impl Hash {
-    pub fn new(data: Vec<u8>) -> Hash { Hash { 0:data } }
-    pub fn encode(self) -> Vec<u8> {
-        let mut enc = Vec::new();
-        rmp::encode::write_ext_meta(&mut enc, self.0.len() as u32, ExtType::hash.to_i8());
-        enc.write_all(&self.0);
-        enc
-    }
-    pub fn decode(enc: Vec<u8>) -> Result<Hash, rmp::decode::ValueReadError> {
-        let meta = rmp::decode::read_ext_meta(&mut &enc[..])?;
-        if (meta.typeid == ExtType::hash.to_i8()) && (meta.size == (enc.len() as u32)) {
-            Ok(Hash{0:enc})
-        } else {
-            Err(rmp::decode::ValueReadError::InvalidDataRead)
-        }
-    }
+pub fn encode_uuid(uuid: (u64, u64)) -> Result<Vec<u8>,EncodeError> {
+    let mut enc = Vec::new();
+    rmp::encode::write_ext_meta(&mut enc, 16, ExtType::Uuid.to_i8());
+    enc.write_u64::<byteorder::BigEndian>(uuid.0)?;
+    Ok(enc)
+}
+pub fn encode_hash(hash: Hash) -> Vec<u8> {
+    let mut enc = Vec::new();
+    rmp::encode::write_ext_meta(&mut enc, 16, ExtType::Uuid.to_i8());
+    enc
 }
 
 pub struct Query {
@@ -82,20 +110,15 @@ pub struct Query {
 #[derive(Clone)]
 pub struct Entry {
     hash: Hash,
-    key: PublicKey,
+    key: Identity,
     signatures: Vec<Signature>,
 }
 impl Entry {
     pub fn encode(self, key: (u64, u64)) -> Vec<u8> {
         let mut enc = Vec::<u8>::new();
-        // Format: fixarray [keypair, publickey, hash, fixarray [signatues]]
+        // Format: fixarray [keypair, Identity, hash, fixarray [signatues]]
         rmp::encode::write_array_len(&mut enc, 3);
-        enc.write_all(&self.key);
-        enc.write_all(&self.hash.encode());
         rmp::encode::write_array_len(&mut enc, self.signatures.len() as u32);
-        for sign in self.signatures {
-            enc.write_all(&sign);
-        }
         enc
     }
 }

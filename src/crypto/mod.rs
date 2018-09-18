@@ -79,6 +79,7 @@ pub enum CryptoError {
     UnsupportedVersion,
     DecryptFailed,
     UnsupportedIdentity,
+    UnsupportedLock,
 }
 
 impl fmt::Display for CryptoError {
@@ -88,6 +89,7 @@ impl fmt::Display for CryptoError {
             CryptoError::UnsupportedVersion => write!(f, "Chosen crypto version not supported."),
             CryptoError::DecryptFailed => write!(f, "Could not decrypt with key"),
             CryptoError::UnsupportedIdentity => write!(f, "Version of Identity is not supported"),
+            CryptoError::UnsupportedLock => write!(f, "Version of Lock is not supported"),
         }
     }
 }
@@ -99,6 +101,7 @@ impl Error for CryptoError {
             CryptoError::UnsupportedVersion => "unsupported version",
             CryptoError::DecryptFailed => "decryption failed",
             CryptoError::UnsupportedIdentity => "identity version unsupported",
+            CryptoError::UnsupportedLock => "lock version unsupported",
         }
     }
 }
@@ -136,34 +139,49 @@ impl Crypto {
 
     // Recover the private key for an identity that was made with the provided password. Returns 
     // nothing if the key couldn't be recovered.
-    pub fn get_key_from_password(password: &String, identity: &Identity) -> Result<Key, CryptoError> {
-        if (identity.0[0] != 0) {
+    pub fn get_key_from_password(_password: &String, identity: &Identity) -> Result<Key, CryptoError> {
+        if identity.0[0] != 0 {
             Err(CryptoError::UnsupportedIdentity)
         }
-        else if *password.as_bytes() == identity.0[..] {
+        else {
             Ok(Key(vec![0]))
-        } else {
-            Err(CryptoError::DecryptFailed)
         }
     }
 
     // Generate a lock with the identity visible
-    pub fn new_lock(&mut self, id: Identity) -> (Lock, StreamKey) {
-
-        unimplemented!();
+    pub fn new_lock(&mut self, id: &Identity) -> Result<(Lock, StreamKey), CryptoError> {
+        self.rand += 1;
+        if id.0[0] != 0 {
+            Err(CryptoError::UnsupportedIdentity)
+        }
+        else {
+            Ok((Lock(vec![0]), StreamKey(vec![0])))
+        }
     }
 
     // Generate a lock with no visible identity
-    pub fn new_lock_no_id(id: Identity) -> (Lock, StreamKey) {
-        unimplemented!();
+    pub fn new_lock_no_id(&mut self, id: &Identity) -> Result<(Lock, StreamKey), CryptoError> {
+        self.rand += 1;
+        if id.0[0] != 0 {
+            Err(CryptoError::UnsupportedIdentity)
+        }
+        else {
+            Ok((Lock(vec![0]), StreamKey(vec![0])))
+        }
     }
 
-    pub fn lock(data: Vec<u8>, lock: Lock) -> LockBox {
-        unimplemented!();
+    pub fn lock(data: Vec<u8>, lock: &Lock) -> Result<LockBox, CryptoError> {
+        if lock.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
+        let mut bx = LockBox(lock.0.clone());
+        bx.0.append(&mut data);
+        Ok(bx)
     }
 
     pub fn lock_sign(data: Vec<u8>, lock: Lock, key: Key) -> LockBox {
-        unimplemented!();
+        if lock.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
+        let mut bx = LockBox(lock.0.clone());
+        bx.0.append(&mut data);
+        Ok(bx)
     }
     
     pub fn locked_for_who(data: LockBox) -> Option<Identity> {

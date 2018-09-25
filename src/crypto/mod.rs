@@ -79,17 +79,23 @@ pub enum CryptoError {
     UnsupportedVersion,
     DecryptFailed,
     UnsupportedIdentity,
+    UnsupportedHash,
     UnsupportedLock,
+    UnsupportedKey,
+    UnsupportedSignature
 }
 
 impl fmt::Display for CryptoError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            CryptoError::WrongVersion => write!(f, "Incompatible versions for crypto primitives."),
-            CryptoError::UnsupportedVersion => write!(f, "Chosen crypto version not supported."),
-            CryptoError::DecryptFailed => write!(f, "Could not decrypt with key"),
-            CryptoError::UnsupportedIdentity => write!(f, "Version of Identity is not supported"),
-            CryptoError::UnsupportedLock => write!(f, "Version of Lock is not supported"),
+            CryptoError::WrongVersion         => write!(f, "Incompatible versions for crypto primitives."),
+            CryptoError::UnsupportedVersion   => write!(f, "Chosen crypto version not supported."),
+            CryptoError::DecryptFailed        => write!(f, "Could not decrypt with key"),
+            CryptoError::UnsupportedIdentity  => write!(f, "Version of Identity is not supported"),
+            CryptoError::UnsupportedHash      => write!(f, "Version of Hash is not supported"),
+            CryptoError::UnsupportedLock      => write!(f, "Version of Lock is not supported"),
+            CryptoError::UnsupportedKey       => write!(f, "Version of Key is not supported"),
+            CryptoError::UnsupportedSignature => write!(f, "Version of Signature is not supported"),
         }
     }
 }
@@ -97,11 +103,14 @@ impl fmt::Display for CryptoError {
 impl Error for CryptoError {
     fn description(&self) -> &str {
         match *self {
-            CryptoError::WrongVersion => "incompatible primitives",
-            CryptoError::UnsupportedVersion => "unsupported version",
-            CryptoError::DecryptFailed => "decryption failed",
-            CryptoError::UnsupportedIdentity => "identity version unsupported",
-            CryptoError::UnsupportedLock => "lock version unsupported",
+            CryptoError::WrongVersion         => "incompatible primitives",
+            CryptoError::UnsupportedVersion   => "unsupported version",
+            CryptoError::DecryptFailed        => "decryption failed",
+            CryptoError::UnsupportedIdentity  => "identity version unsupported",
+            CryptoError::UnsupportedHash      => "hash version unsupported",
+            CryptoError::UnsupportedLock      => "lock version unsupported",
+            CryptoError::UnsupportedKey       => "key version unsupported",
+            CryptoError::UnsupportedSignature => "signature version unsupported",
         }
     }
 }
@@ -140,34 +149,22 @@ impl Crypto {
     // Recover the private key for an identity that was made with the provided password. Returns 
     // nothing if the key couldn't be recovered.
     pub fn get_key_from_password(_password: &String, identity: &Identity) -> Result<Key, CryptoError> {
-        if identity.0[0] != 0 {
-            Err(CryptoError::UnsupportedIdentity)
-        }
-        else {
-            Ok(Key(vec![0]))
-        }
+        if identity.0[0] != 0 { return Err(CryptoError::UnsupportedIdentity); }
+        Ok(Key(vec![0]))
     }
 
     // Generate a lock with the identity visible
     pub fn new_lock(&mut self, id: &Identity) -> Result<(Lock, StreamKey), CryptoError> {
+        if id.0[0] != 0 { return Err(CryptoError::UnsupportedIdentity); }
         self.rand += 1;
-        if id.0[0] != 0 {
-            Err(CryptoError::UnsupportedIdentity)
-        }
-        else {
-            Ok((Lock(vec![0]), StreamKey(vec![0])))
-        }
+        Ok((Lock(vec![0]), StreamKey(vec![0])))
     }
 
     // Generate a lock with no visible identity
     pub fn new_lock_no_id(&mut self, id: &Identity) -> Result<(Lock, StreamKey), CryptoError> {
+        if id.0[0] != 0 { return Err(CryptoError::UnsupportedIdentity); }
         self.rand += 1;
-        if id.0[0] != 0 {
-            Err(CryptoError::UnsupportedIdentity)
-        }
-        else {
-            Ok((Lock(vec![0]), StreamKey(vec![0])))
-        }
+        Ok((Lock(vec![0]), StreamKey(vec![0])))
     }
 
     pub fn lock(data: Vec<u8>, lock: &Lock) -> Result<LockBox, CryptoError> {
@@ -177,34 +174,45 @@ impl Crypto {
         Ok(bx)
     }
 
-    pub fn lock_sign(data: Vec<u8>, lock: Lock, key: Key) -> LockBox {
+    pub fn lock_sign(data: Vec<u8>, lock: &Lock, key: &Key) -> Result<LockBox, CryptoError> {
         if lock.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
         let mut bx = LockBox(lock.0.clone());
         bx.0.append(&mut data);
         Ok(bx)
     }
     
-    pub fn locked_for_who(data: LockBox) -> Option<Identity> {
-        None
+    pub fn locked_for_who(data: &LockBox) -> Result<Option<Identity>, CryptoError> {
+        if data.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
+        Ok(None)
     }
 
-    pub fn unlock(data: LockBox, key: Key) -> (Option<Vec<u8>>, Option<Signature>) {
-        (None, None)
+    pub fn unlock(data: LockBox, key: &Key) -> Result<(Vec<u8>, Option<Signature>), CryptoError> {
+        if data.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
+        if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        data.0.remove(0);
+        Ok((data.0, None))
     }
 
-    pub fn sign(hash: Hash, key: Key) -> Signature {
-        unimplemented!();
+    pub fn sign(hash: &Hash, key: &Key) -> Result<Signature, CryptoError> {
+        if hash.0[0] != 0 { return Err(CryptoError::UnsupportedHash); }
+        if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        Ok(Signature(vec![0]))
     }
 
-    pub fn signed_by_who(sign: Signature) -> Identity {
-        unimplemented!();
+    pub fn signed_by_who(sign: &Signature) -> Result<Identity, CryptoError> {
+        if sign.0[0] != 0 { return Err(CryptoError::UnsupportedSignature); }
+        Ok(Identity(vec![0]))
     }
 
-    pub fn verify_sign(hash: Hash, sign: Signature) -> (Identity, bool) {
-        unimplemented!();
+    pub fn verify_sign(hash: &Hash, sign: &Signature) -> Result<(Identity, bool), CryptoError> {
+        if hash.0[0] != 0 { return Err(CryptoError::UnsupportedHash); }
+        if sign.0[0] != 0 { return Err(CryptoError::UnsupportedSignature); }
+        Ok((Identity(vec![0]), true))
     }
 
-    pub fn new_stream(key: StreamKey, stream: (u64,u64)) -> Lock {
-        unimplemented!();
+    pub fn new_stream(key: &StreamKey, stream: (u64,u64)) -> Result<Lock, CryptoError> {
+        if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        Ok(Lock(vec![0]))
+
     }
 }

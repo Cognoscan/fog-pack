@@ -226,6 +226,38 @@ process, both nodes keep track of what they have provided to avoid repeats. This
 list may be stored long-term and re-opened between nodes, but that's not the 
 user's concern.
 
+Network Concept
+---------------
+The network system is largely abstracted from the perspective of the developer. 
+When making queries or adding to the database, they only need to know:
+
+- Who can I share this with?
+	- Specific identities, or ones that meet certain requirements on the identity 
+	  graph.
+- When can I share this?
+	- Share only during specific times
+- Where can I share this?
+	- Specific geo-location based on longitude/latitude/altitude
+	- Specific range:
+		- direct radio/wired contact
+		- P2P direct network
+		- Local network
+		- Global network
+
+Identity Management
+-------------------
+A node can hold multiple identities and their corresponding keys. You can choose 
+to sign an identity with a key and include a single key-value pair with it. This 
+signature will include the time of signing and an optional expiration point. 
+Multiple signatures can be made at the same time. All signatures you make should 
+be considered knowledge that can be spread to anyone who knows your identity.
+
+Put another way, you own certain public/private key pairs. You can sign the 
+public keys of others and include a bit of data with it. This collectively forms 
+a directed graph that you can use to specify who to share things with. It could 
+also be used to specify who can make queries.
+
+
 
 
 

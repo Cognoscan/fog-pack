@@ -16,12 +16,14 @@ pub mod crypto;
 pub enum EncodeError {
     ValueWriteError(rmp::encode::ValueWriteError),
     Io(io::Error),
+    Crypto(crypto::CryptoError),
 }
 impl fmt::Display for EncodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             EncodeError::ValueWriteError(ref err) => err.fmt(f),
             EncodeError::Io(ref err) => err.fmt(f),
+            EncodeError::Crypto(ref err) => err.fmt(f),
         }
     }
 }
@@ -31,6 +33,7 @@ impl Error for EncodeError {
         match *self {
             EncodeError::ValueWriteError(ref err) => err.description(),
             EncodeError::Io(ref err) => err.description(),
+            EncodeError::Crypto(ref err) => err.description(),
         }
     }
 }
@@ -43,6 +46,11 @@ impl From<rmp::encode::ValueWriteError> for EncodeError {
 impl From<io::Error> for EncodeError {
     fn from(err: io::Error) -> EncodeError {
         EncodeError::Io(err)
+    }
+}
+impl From<crypto::CryptoError> for EncodeError {
+    fn from(err: crypto::CryptoError) -> EncodeError {
+        EncodeError::Crypto(err)
     }
 }
 
@@ -85,13 +93,6 @@ impl ExtType {
     }
 }
 
-#[derive(Clone,PartialEq,Eq,Hash)]
-pub struct Hash (Vec<u8>);
-#[derive(Clone,PartialEq,Eq,Hash)]
-pub struct Identity (Vec<u8>);
-#[derive(Clone,PartialEq,Eq,Hash)]
-pub struct Signature (Vec<u8>);
-
 pub fn encode_uuid(uuid: (u64, u64)) -> Result<Vec<u8>,EncodeError> {
     let mut enc = Vec::new();
     rmp::encode::write_ext_meta(&mut enc, 16, ExtType::Uuid.to_i8());
@@ -115,14 +116,16 @@ pub struct Entry {
 }
 impl Entry {
     pub fn encode(self, key: (u64, u64)) -> Vec<u8> {
+        unimplemented!();
+        /*
         let mut enc = Vec::<u8>::new();
         // Format: fixarray [keypair, Identity, hash, fixarray [signatues]]
         rmp::encode::write_array_len(&mut enc, 3);
         rmp::encode::write_array_len(&mut enc, self.signatures.len() as u32);
         enc
+        */
     }
 }
-
 
 #[derive(Clone)]
 pub struct Item {
@@ -143,7 +146,7 @@ impl Item {
 
 // There is only one database, which holds every Item we know about
 pub struct Database {
-    items: HashMap<Hash, Item>,
+    items: HashMap<crypto::Hash, Item>,
 }
 impl Database {
     /// True on successful add, false if the item is already present

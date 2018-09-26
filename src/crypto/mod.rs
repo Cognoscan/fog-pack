@@ -1,22 +1,14 @@
 use std::fmt;
 use std::error::Error;
 
-/// How to Forward Secrecy
-/// ----------------------
+/// Database Crypto Submodule
+/// -------------------------
 ///
-/// Create a temporary identity to use for a session, then make a relationship called "temp" that 
-/// your main identity has signed and give it out to everyone. When your receive data you care 
-/// about that has been locked using the temporary identity, revoke the relationship. Hold onto 
-/// these temporary identities for a while in case anyone else uses it before seeing your 
-/// revocation, but ditch it eventually. Maintain a set of temporary identities
+/// This contains all cryptographic functions used by the database for the purposes of 
+/// creating/verifying documents and entries. Because documents and entries can be freely passed 
+/// around without communicating with a recipient, all cryptography used assumes one-way 
+/// communication.
 ///
-/// let (main_key, main_id) = crypto.new_identity();
-/// let (temp_key, temp_id) = crypto.new_identity();
-/// let relation = Relation(temp_id, "temp");
-/// let sign = crypto.sign(relation.encode(), main_key)
-/// Add_Relation(relation.encode(), sign)
-///
-
 /// Version 0 algorithms:
 /// - There are none! Version 0 means no crytographic primitive is present
 ///
@@ -27,32 +19,69 @@ use std::error::Error;
 /// - XChaCha20 for symmetric encryption
 /// - Argon2 for deriving a secret key from a password
 ///
-/// There is no "shared secret" negotiation. This is more like PGP - generate a random symmetric 
+/// There is no "shared secret" negotiation. This is like PGP - generate a random symmetric 
 /// key, encrypt it using Ed25519, and send that plus the ciphertext.
 ///
 /// This library provides 7 primitives:
 /// - Crypto: contains a cryptographically secure random-number generator, which is used as the 
 /// source for all other primitives.
-/// - Hash: a hash of a defined stream of data, constructed with BLAKE2s
-/// - 
+/// - Hash: cryptographically secure hash of provided data
+/// - Identity: public key, usable for encrypting and for verifying signatures
+/// - Signature: detached cryptographic signature that includes the Identity of the signer
+/// - Key: private key, usable for decrypting and making signatures
+/// - StreamKey: secret key, usable for encrypting/decrypting
+/// - LockBox: data that has been encrypted using either a StreamKey or a Identity
+/// - Lock: Data used to create a lockbox.
+///
+/// Notes:
+///
+/// - Hash uses BLAKE2s to produce 32 bytes of digest
+/// - Identity
+///     - Consists of a Ed25519 public key and the Curve25519 public key.
+///     - When encoded, it is just the Ed25519 public key
+/// - Key
+///     - Consists of a Ed25519 seed and private/public keypair, as well as the Curve25519 private key
+///     - When encoded, it is just the seed, from which the keypair and Curve25519 key can be 
+///     derived
+/// - Signature
+///     - Consists of a Ed25519 public key and Ed25519 signature
+///     - encoded version is exactly the same
+/// - StreamKey: A secret XChaCha20 key
+/// - Lock
+///     - Starts with a type identifier (one byte)
+///         - 0 is made with an Identity and LockBox will include the public key
+///         - 1 is made with an Ideneity and LockBox will not include public key
+///         - 2 is made with StreamKey and Lockbox will include Hash of StreamKey
+///         - 3 is made with StreamKey and Lockbox will not include StreamKey hash
+///     - When made with a Key, consists of a Curve25519 public key, XChaCha20 key, and random nonce
+///     - When made with a StreamKey, consists of the XChaCha20 key and chosen nonce.
+/// - LockBox
+///     - Starts with a type identifier (one byte)
+///     - Begins with necessary data to decrypt - nonce, public key or hash of StreamKey
+///     - Has a Poly1305 authentication tag appended to the end
 
 /// Crytographically secure hash of data. Can be signed by a Key. It is impractical to generate an 
 /// identical hash from different data.
+#[derive(Debug,PartialEq,Hash)]
 pub struct Hash (Vec<u8>);
 
 /// Public identity that can be shared with others. An identity can be used to create locks and 
 /// verify signatures
+#[derive(Debug,PartialEq,Hash)]
 pub struct Identity (Vec<u8>);
 
 /// Indicates the Key paired with an Identity was used to sign a hash. The signature indicates the 
 /// identity used.
+#[derive(Debug,PartialEq,Hash)]
 pub struct Signature (Vec<u8>);
 
 /// Locks are used to put data in a lockbox. They *may* include the identity needed to open the 
 /// lockbox.
+#[derive(Debug,PartialEq,Hash)]
 pub struct Lock (Vec<u8>);
 
 /// Keys are the secret data needed to act as a particular Identity.
+#[derive(Debug,PartialEq,Hash)]
 pub struct Key (Vec<u8>);
 
 /// Data that cannot be seen without the correct key. Signature is optionally embedded inside.
@@ -64,6 +93,7 @@ pub struct LockBox(Vec<u8>);
 ///
 /// Backend note: This uses the XChaCha20 stream cipher, where the 128-bit word used to make each
 /// lock is the nonce used (upper 64 bits of nonce are always 0)
+#[derive(Debug,PartialEq,Hash)]
 pub struct StreamKey(Vec<u8>);
 
 /// Provides interface for all cryptographic operations
@@ -113,7 +143,6 @@ impl Error for CryptoError {
         }
     }
 }
-
 
 impl Crypto {
     pub fn init(version: u32) -> Result<Crypto, CryptoError> {
@@ -187,9 +216,16 @@ impl Crypto {
         Ok(None)
     }
 
-    pub fn unlock(mut data: LockBox, key: &Key) -> Result<(Vec<u8>, Option<Signature>), CryptoError> {
+    pub fn unlock(mut data: LockBox, key: &Key) -> Result<(Vec<u8>, StreamKey, Option<Signature>), CryptoError> {
         if data.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
         if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        data.0.remove(0);
+        Ok((data.0, StreamKey(vec![0]), None))
+    }
+
+    pub fn unlock_stream(mut data: LockBox, stream_key: &StreamKey) -> Result<(Vec<u8>, Option<Signature>), CryptoError> {
+        if data.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
+        if stream_key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
         data.0.remove(0);
         Ok((data.0, None))
     }
@@ -214,6 +250,7 @@ impl Crypto {
 
     pub fn new_stream(&mut self, key: &StreamKey, _stream: (u64,u64)) -> Result<Lock, CryptoError> {
         if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        self.rand += 1;
         Ok(Lock(vec![0]))
 
     }

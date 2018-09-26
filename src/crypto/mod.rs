@@ -1,5 +1,4 @@
 use std::fmt;
-use std::io::Write;
 use std::error::Error;
 
 /// How to Forward Secrecy
@@ -125,7 +124,7 @@ impl Crypto {
     }
 
     // Hash the provided data. Version must be provided
-    pub fn hash(version: u32, data: &Vec<u8>) -> Result<Hash, CryptoError> {
+    pub fn hash(version: u32, _data: &Vec<u8>) -> Result<Hash, CryptoError> {
         match version {
             0 => Ok(Hash ( vec![0] )),
             _ => Err(CryptoError::UnsupportedVersion),
@@ -142,7 +141,6 @@ impl Crypto {
     // encrypting keys, and will also contain the salt and hashing parameters
     pub fn new_identity_from_password(&mut self, password: &String) -> (Key, Identity) {
         self.rand += password.as_bytes()[0] as u64;
-        let key = Key(vec![0]);
         (Key(vec![0]), Identity(vec![0]))
     }
 
@@ -167,15 +165,18 @@ impl Crypto {
         Ok((Lock(vec![0]), StreamKey(vec![0])))
     }
 
-    pub fn lock(data: Vec<u8>, lock: &Lock) -> Result<LockBox, CryptoError> {
+    pub fn lock(&mut self, mut data: Vec<u8>, lock: &Lock) -> Result<LockBox, CryptoError> {
         if lock.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
+        self.rand += 1;
         let mut bx = LockBox(lock.0.clone());
         bx.0.append(&mut data);
         Ok(bx)
     }
 
-    pub fn lock_sign(data: Vec<u8>, lock: &Lock, key: &Key) -> Result<LockBox, CryptoError> {
+    pub fn lock_sign(&mut self, mut data: Vec<u8>, lock: &Lock, key: &Key) -> Result<LockBox, CryptoError> {
         if lock.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
+        if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        self.rand += 1;
         let mut bx = LockBox(lock.0.clone());
         bx.0.append(&mut data);
         Ok(bx)
@@ -186,16 +187,17 @@ impl Crypto {
         Ok(None)
     }
 
-    pub fn unlock(data: LockBox, key: &Key) -> Result<(Vec<u8>, Option<Signature>), CryptoError> {
+    pub fn unlock(mut data: LockBox, key: &Key) -> Result<(Vec<u8>, Option<Signature>), CryptoError> {
         if data.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
         if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
         data.0.remove(0);
         Ok((data.0, None))
     }
 
-    pub fn sign(hash: &Hash, key: &Key) -> Result<Signature, CryptoError> {
+    pub fn sign(&mut self, hash: &Hash, key: &Key) -> Result<Signature, CryptoError> {
         if hash.0[0] != 0 { return Err(CryptoError::UnsupportedHash); }
         if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        self.rand += 1;
         Ok(Signature(vec![0]))
     }
 
@@ -210,7 +212,7 @@ impl Crypto {
         Ok((Identity(vec![0]), true))
     }
 
-    pub fn new_stream(key: &StreamKey, stream: (u64,u64)) -> Result<Lock, CryptoError> {
+    pub fn new_stream(&mut self, key: &StreamKey, _stream: (u64,u64)) -> Result<Lock, CryptoError> {
         if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
         Ok(Lock(vec![0]))
 

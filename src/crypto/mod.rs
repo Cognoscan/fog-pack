@@ -62,29 +62,48 @@ use std::error::Error;
 
 /// Crytographically secure hash of data. Can be signed by a Key. It is impractical to generate an 
 /// identical hash from different data.
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Hash (Vec<u8>);
 
 /// Public identity that can be shared with others. An identity can be used to create locks and 
 /// verify signatures
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Identity (Vec<u8>);
+
+impl Identity {
+    pub fn validate(&self) -> Result<(), CryptoError> {
+        if self.0.len() != 1 { return Err(CryptoError::InvalidFormat);}
+        if self.0[0] != 0 { return Err(CryptoError::UnsupportedIdentity); }
+        Ok(())
+    }
+
+    pub fn condense(&self) -> Result<Vec<u8>, CryptoError> {
+        self.validate()?;
+        Ok(vec![0])
+    }
+    pub fn expand(data: Vec<u8>) -> Result<Identity, CryptoError> {
+        if data.len() != 1 { return Err(CryptoError::InvalidFormat); }
+        if data[0] != 0 { return Err(CryptoError::UnsupportedIdentity); }
+        Ok(Identity(vec![0]))
+    }
+}
 
 /// Indicates the Key paired with an Identity was used to sign a hash. The signature indicates the 
 /// identity used.
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Signature (Vec<u8>);
 
 /// Locks are used to put data in a lockbox. They *may* include the identity needed to open the 
 /// lockbox.
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Lock (Vec<u8>);
 
 /// Keys are the secret data needed to act as a particular Identity.
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Key (Vec<u8>);
 
 /// Data that cannot be seen without the correct key. Signature is optionally embedded inside.
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct LockBox(Vec<u8>);
 
 /// Faster key for encrypting streams of data. The key is embedded in a normal lock, and can subsequently 
@@ -93,7 +112,7 @@ pub struct LockBox(Vec<u8>);
 ///
 /// Backend note: This uses the XChaCha20 stream cipher, where the 128-bit word used to make each
 /// lock is the nonce used (upper 64 bits of nonce are always 0)
-#[derive(Debug,PartialEq,Hash)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct StreamKey(Vec<u8>);
 
 /// Provides interface for all cryptographic operations
@@ -111,7 +130,8 @@ pub enum CryptoError {
     UnsupportedHash,
     UnsupportedLock,
     UnsupportedKey,
-    UnsupportedSignature
+    UnsupportedSignature,
+    InvalidFormat
 }
 
 impl fmt::Display for CryptoError {
@@ -125,6 +145,7 @@ impl fmt::Display for CryptoError {
             CryptoError::UnsupportedLock      => write!(f, "Version of Lock is not supported"),
             CryptoError::UnsupportedKey       => write!(f, "Version of Key is not supported"),
             CryptoError::UnsupportedSignature => write!(f, "Version of Signature is not supported"),
+            CryptoError::InvalidFormat        => write!(f, "Format of crypto object is invalid"),
         }
     }
 }
@@ -140,6 +161,7 @@ impl Error for CryptoError {
             CryptoError::UnsupportedLock      => "lock version unsupported",
             CryptoError::UnsupportedKey       => "key version unsupported",
             CryptoError::UnsupportedSignature => "signature version unsupported",
+            CryptoError::InvalidFormat        => "invalid object format",
         }
     }
 }

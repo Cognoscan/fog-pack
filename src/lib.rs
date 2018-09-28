@@ -10,6 +10,8 @@ use byteorder::WriteBytesExt;
 use std::{fmt, io};
 use std::error::Error;
 
+use crypto::{Hash,Signature};
+
 pub mod crypto;
 
 #[derive(Debug)]
@@ -95,14 +97,9 @@ impl ExtType {
 
 pub fn encode_uuid(uuid: (u64, u64)) -> Result<Vec<u8>,EncodeError> {
     let mut enc = Vec::new();
-    rmp::encode::write_ext_meta(&mut enc, 16, ExtType::Uuid.to_i8());
+    rmp::encode::write_ext_meta(&mut enc, 16, ExtType::Uuid.to_i8())?;
     enc.write_u64::<byteorder::BigEndian>(uuid.0)?;
     Ok(enc)
-}
-pub fn encode_hash(hash: Hash) -> Vec<u8> {
-    let mut enc = Vec::new();
-    rmp::encode::write_ext_meta(&mut enc, 16, ExtType::Uuid.to_i8());
-    enc
 }
 
 pub struct Query {
@@ -111,11 +108,10 @@ pub struct Query {
 #[derive(Clone)]
 pub struct Entry {
     hash: Hash,
-    key: Identity,
     signatures: Vec<Signature>,
 }
 impl Entry {
-    pub fn encode(self, key: (u64, u64)) -> Vec<u8> {
+    pub fn encode(self, _key: (u64, u64)) -> Vec<u8> {
         unimplemented!();
         /*
         let mut enc = Vec::<u8>::new();

@@ -1,3 +1,5 @@
+extern crate libc;
+extern crate libsodium_sys;
 extern crate rmp;
 extern crate rmpv;
 extern crate byteorder;

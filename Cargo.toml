@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Scott Teal"]
 
 [dependencies]
+libc = "0.2"
+libsodium-sys = "0.1.0"
 rmp = "^0.8"
 rmpv = "^0.4"
 byteorder = "1"

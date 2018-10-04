@@ -2,11 +2,13 @@ use std::{fmt, io};
 use std::error::Error;
 
 pub mod hash;
-pub mod identity;
+pub mod key;
+
+use libsodium_sys;
 
 
 pub use self::hash::Hash;
-pub use self::identity::Identity;
+pub use self::key::{Key,Identity};
 
 /// Database Crypto Submodule
 /// -------------------------
@@ -43,13 +45,6 @@ pub use self::identity::Identity;
 /// Notes:
 ///
 /// - Hash uses BLAKE2s to produce 32 bytes of digest
-/// - Identity
-///     - Consists of a Ed25519 public key and the Curve25519 public key.
-///     - When encoded, it is just the Ed25519 public key
-/// - Key
-///     - Consists of a Ed25519 seed and private/public keypair, as well as the Curve25519 private key
-///     - When encoded, it is just the seed, from which the keypair and Curve25519 key can be 
-///     derived
 /// - Signature
 ///     - Consists of a Ed25519 public key and Ed25519 signature
 ///     - encoded version is exactly the same
@@ -76,10 +71,6 @@ pub struct Signature (Vec<u8>);
 /// lockbox.
 #[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Lock (Vec<u8>);
-
-/// Keys are the secret data needed to act as a particular Identity.
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct Key (Vec<u8>);
 
 /// Data that cannot be seen without the correct key. Signature is optionally embedded inside.
 #[derive(Debug,Clone,PartialEq,Eq,Hash)]
@@ -111,6 +102,7 @@ pub enum CryptoError {
     UnsupportedKey,
     UnsupportedSignature,
     InvalidFormat,
+    BadKey,
     Io(io::Error),
 }
 
@@ -126,6 +118,7 @@ impl fmt::Display for CryptoError {
             CryptoError::UnsupportedKey       => write!(f, "Version of Key is not supported"),
             CryptoError::UnsupportedSignature => write!(f, "Version of Signature is not supported"),
             CryptoError::InvalidFormat        => write!(f, "Format of crypto object is invalid"),
+            CryptoError::BadKey               => write!(f, "Crypto key is weak or invalid"),
             CryptoError::Io(ref err)          => err.fmt(f),
         }
     }
@@ -143,6 +136,7 @@ impl Error for CryptoError {
             CryptoError::UnsupportedKey       => "key version unsupported",
             CryptoError::UnsupportedSignature => "signature version unsupported",
             CryptoError::InvalidFormat        => "invalid object format",
+            CryptoError::BadKey               => "weak or invalid key",
             CryptoError::Io(ref err)          => err.description(),
         }
     }
@@ -154,6 +148,15 @@ impl From<io::Error> for CryptoError {
     }
 }
 
+/// Initializes the underlying crypto library and makes all random number generation functions 
+/// thread-safe. *Must* be called successfully before using the rest of this library.
+pub fn init() -> Result<(), ()> {
+    if unsafe { libsodium_sys::sodium_init() } >= 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
 
 impl Crypto {
     pub fn init(version: u32) -> Result<Crypto, CryptoError> {
@@ -175,21 +178,21 @@ impl Crypto {
     // Make a new identity, i.e. a random public & private key pair valid for signing & encrypting
     pub fn new_identity(&mut self) -> (Key, Identity) {
         self.rand += self.version as u64;
-        (Key(vec![0]), Identity::blank())
+        (Key::new(0), Identity::new())
     }
 
     // Make a new identity from a provided password. Identity will contain the public signing & 
     // encrypting keys, and will also contain the salt and hashing parameters
     pub fn new_identity_from_password(&mut self, password: &String) -> (Key, Identity) {
         self.rand += password.as_bytes()[0] as u64;
-        (Key(vec![0]), Identity::blank())
+        (Key::new(0), Identity::new())
     }
 
     // Recover the private key for an identity that was made with the provided password. Returns 
     // nothing if the key couldn't be recovered.
     pub fn get_key_from_password(_password: &String, id: &Identity) -> Result<Key, CryptoError> {
         if !id.is_valid() { return Err(CryptoError::UnsupportedIdentity); }
-        Ok(Key(vec![0]))
+        Ok(Key::new(0))
     }
 
     // Generate a lock with the identity visible
@@ -216,7 +219,7 @@ impl Crypto {
 
     pub fn lock_sign(&mut self, mut data: Vec<u8>, lock: &Lock, key: &Key) -> Result<LockBox, CryptoError> {
         if lock.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
-        if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        if !key.is_valid() { return Err(CryptoError::UnsupportedKey); }
         self.rand += 1;
         let mut bx = LockBox(lock.0.clone());
         bx.0.append(&mut data);
@@ -230,7 +233,7 @@ impl Crypto {
 
     pub fn unlock(mut data: LockBox, key: &Key) -> Result<(Vec<u8>, StreamKey, Option<Signature>), CryptoError> {
         if data.0[0] != 0 { return Err(CryptoError::UnsupportedLock); }
-        if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        if !key.is_valid() { return Err(CryptoError::UnsupportedKey); }
         data.0.remove(0);
         Ok((data.0, StreamKey(vec![0]), None))
     }
@@ -244,20 +247,20 @@ impl Crypto {
 
     pub fn sign(&mut self, hash: &Hash, key: &Key) -> Result<Signature, CryptoError> {
         if !hash.is_valid() { return Err(CryptoError::UnsupportedHash); }
-        if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
+        if !key.is_valid() { return Err(CryptoError::UnsupportedKey); }
         self.rand += 1;
         Ok(Signature(vec![0]))
     }
 
     pub fn signed_by_who(sign: &Signature) -> Result<Identity, CryptoError> {
         if sign.0[0] != 0 { return Err(CryptoError::UnsupportedSignature); }
-        Ok(Identity::blank())
+        Ok(Identity::new())
     }
 
     pub fn verify_sign(hash: &Hash, sign: &Signature) -> Result<(Identity, bool), CryptoError> {
         if !hash.is_valid() { return Err(CryptoError::UnsupportedHash); }
         if sign.0[0] != 0 { return Err(CryptoError::UnsupportedSignature); }
-        Ok((Identity::blank(), true))
+        Ok((Identity::new(), true))
     }
 
     pub fn new_stream(&mut self, key: &StreamKey, _stream: (u64,u64)) -> Result<Lock, CryptoError> {

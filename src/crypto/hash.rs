@@ -1,5 +1,5 @@
 use constant_time_eq::constant_time_eq;
-use std::io::{self,Write,Read};
+use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
 use blake2_rfc::blake2s::blake2s;
 use super::CryptoError;
@@ -37,9 +37,9 @@ impl Hash {
         true
     }
 
-    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), io::Error> {
-        wr.write_u8(self.version)?;
-        wr.write_all(&self.digest)?;
+    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
+        wr.write_u8(self.version).map_err(CryptoError::Io)?;
+        wr.write_all(&self.digest).map_err(CryptoError::Io)?;
         Ok(())
     }
 

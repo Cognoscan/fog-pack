@@ -3,6 +3,8 @@ extern crate blake2_rfc;
 extern crate rmp;
 extern crate rmpv;
 extern crate byteorder;
+extern crate libsodium_sys;
+extern crate libc;
 use std::collections::HashMap;
 use std::collections::BTreeMap;
 //use std::io::Write;

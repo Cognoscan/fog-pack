@@ -1,5 +1,5 @@
-extern crate libc;
-extern crate libsodium_sys;
+extern crate constant_time_eq;
+extern crate blake2_rfc;
 extern crate rmp;
 extern crate rmpv;
 extern crate byteorder;
@@ -12,7 +12,8 @@ use byteorder::WriteBytesExt;
 use std::{fmt, io};
 use std::error::Error;
 
-use crypto::{Hash,Signature};
+use crypto::Signature;
+use crypto::hash::Hash;
 
 pub mod crypto;
 

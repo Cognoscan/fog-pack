@@ -1,10 +1,12 @@
-use std::fmt;
+use std::{fmt, io};
 use std::error::Error;
-use libsodium_sys::{
-    crypto_generichash_blake2b,
-    crypto_generichash_blake2b_BYTES,
-    };
-use libc::c_ulonglong;
+
+pub mod hash;
+pub mod identity;
+
+
+pub use self::hash::Hash;
+pub use self::identity::Identity;
 
 /// Database Crypto Submodule
 /// -------------------------
@@ -65,82 +67,6 @@ use libc::c_ulonglong;
 ///     - Begins with necessary data to decrypt - nonce, public key or hash of StreamKey
 ///     - Has a Poly1305 authentication tag appended to the end
 
-/// Crytographically secure hash of data. Can be signed by a Key. It is impractical to generate an 
-/// identical hash from different data.
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct Hash {
-    version: u8,
-    digest: Vec<u8>,
-}
-
-impl Hash {
-
-    pub fn blank() -> Hash {
-        Hash {
-            version: 0,
-            digest: vec![],
-        }
-    }
-
-    pub fn new(m: &[u8]) -> Result<Hash, CryptoError> {
-        unsafe {
-            let mut h = [0; crypto_generichash_blake2b_BYTES];
-            crypto_generichash_blake2b(h.as_mut_ptr(), 32, m.as_ptr(), m.len() as c_ulonglong, NULL, 0);
-            Digest(h)
-        }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        if self.version != 0 { return false; }
-        true
-    }
-
-    pub fn encode(&self) -> Result<Vec<u8>, CryptoError> {
-        if !self.is_valid() { return Err(CryptoError::UnsupportedVersion); }
-        Ok(vec![0])
-    }
-
-    pub fn decode(data: Vec<u8>) -> Result<Hash, CryptoError> {
-        if data.len() != 1 { return Err(CryptoError::InvalidFormat); }
-        if data[0] != 0 { return Err(CryptoError::UnsupportedIdentity); }
-        Ok(Hash::blank())
-    }
-}
-
-/// Public identity that can be shared with others. An identity can be used to create locks and 
-/// verify signatures
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct Identity {
-    version: u8,
-    id: Vec<u8>,
-}
-
-impl Identity {
-
-    pub fn blank() -> Identity {
-        Identity {
-            version: 0,
-            id: vec![],
-        }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        if self.version != 0 { return false; }
-        true
-    }
-
-    pub fn encode(&self) -> Result<Vec<u8>, CryptoError> {
-        if self.version != 0 { return Err(CryptoError::UnsupportedVersion); }
-        Ok(vec![0])
-    }
-
-    pub fn decode(data: Vec<u8>) -> Result<Identity, CryptoError> {
-        if data.len() != 1 { return Err(CryptoError::InvalidFormat); }
-        if data[0] != 0 { return Err(CryptoError::UnsupportedIdentity); }
-        Ok(Identity::blank())
-    }
-}
-
 /// Indicates the Key paired with an Identity was used to sign a hash. The signature indicates the 
 /// identity used.
 #[derive(Debug,Clone,PartialEq,Eq,Hash)]
@@ -184,7 +110,8 @@ pub enum CryptoError {
     UnsupportedLock,
     UnsupportedKey,
     UnsupportedSignature,
-    InvalidFormat
+    InvalidFormat,
+    Io(io::Error),
 }
 
 impl fmt::Display for CryptoError {
@@ -199,6 +126,7 @@ impl fmt::Display for CryptoError {
             CryptoError::UnsupportedKey       => write!(f, "Version of Key is not supported"),
             CryptoError::UnsupportedSignature => write!(f, "Version of Signature is not supported"),
             CryptoError::InvalidFormat        => write!(f, "Format of crypto object is invalid"),
+            CryptoError::Io(ref err)          => err.fmt(f),
         }
     }
 }
@@ -215,9 +143,17 @@ impl Error for CryptoError {
             CryptoError::UnsupportedKey       => "key version unsupported",
             CryptoError::UnsupportedSignature => "signature version unsupported",
             CryptoError::InvalidFormat        => "invalid object format",
+            CryptoError::Io(ref err)          => err.description(),
         }
     }
 }
+
+impl From<io::Error> for CryptoError {
+    fn from(err: io::Error) -> CryptoError {
+        CryptoError::Io(err)
+    }
+}
+
 
 impl Crypto {
     pub fn init(version: u32) -> Result<Crypto, CryptoError> {
@@ -228,9 +164,10 @@ impl Crypto {
     }
 
     // Hash the provided data. Version must be provided
-    pub fn hash(version: u32, _data: &Vec<u8>) -> Result<Hash, CryptoError> {
+    pub fn hash(version: u8, data: &Vec<u8>) -> Result<Hash, CryptoError> {
         match version {
-            0 => Ok(Hash::blank()),
+            0 => Err(CryptoError::UnsupportedVersion),
+            1 => Hash::new(version,data),
             _ => Err(CryptoError::UnsupportedVersion),
         }
     }
@@ -250,21 +187,21 @@ impl Crypto {
 
     // Recover the private key for an identity that was made with the provided password. Returns 
     // nothing if the key couldn't be recovered.
-    pub fn get_key_from_password(_password: &String, identity: &Identity) -> Result<Key, CryptoError> {
-        if identity.version != 0 { return Err(CryptoError::UnsupportedIdentity); }
+    pub fn get_key_from_password(_password: &String, id: &Identity) -> Result<Key, CryptoError> {
+        if !id.is_valid() { return Err(CryptoError::UnsupportedIdentity); }
         Ok(Key(vec![0]))
     }
 
     // Generate a lock with the identity visible
     pub fn new_lock(&mut self, id: &Identity) -> Result<(Lock, StreamKey), CryptoError> {
-        if id.version != 0 { return Err(CryptoError::UnsupportedIdentity); }
+        if !id.is_valid() { return Err(CryptoError::UnsupportedIdentity); }
         self.rand += 1;
         Ok((Lock(vec![0]), StreamKey(vec![0])))
     }
 
     // Generate a lock with no visible identity
     pub fn new_lock_no_id(&mut self, id: &Identity) -> Result<(Lock, StreamKey), CryptoError> {
-        if id.version != 0 { return Err(CryptoError::UnsupportedIdentity); }
+        if !id.is_valid() { return Err(CryptoError::UnsupportedIdentity); }
         self.rand += 1;
         Ok((Lock(vec![0]), StreamKey(vec![0])))
     }
@@ -306,7 +243,7 @@ impl Crypto {
     }
 
     pub fn sign(&mut self, hash: &Hash, key: &Key) -> Result<Signature, CryptoError> {
-        if hash.version != 0 { return Err(CryptoError::UnsupportedHash); }
+        if !hash.is_valid() { return Err(CryptoError::UnsupportedHash); }
         if key.0[0] != 0 { return Err(CryptoError::UnsupportedKey); }
         self.rand += 1;
         Ok(Signature(vec![0]))
@@ -318,7 +255,7 @@ impl Crypto {
     }
 
     pub fn verify_sign(hash: &Hash, sign: &Signature) -> Result<(Identity, bool), CryptoError> {
-        if hash.version != 0 { return Err(CryptoError::UnsupportedHash); }
+        if !hash.is_valid() { return Err(CryptoError::UnsupportedHash); }
         if sign.0[0] != 0 { return Err(CryptoError::UnsupportedSignature); }
         Ok((Identity::blank(), true))
     }

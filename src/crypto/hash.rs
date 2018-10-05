@@ -1,15 +1,17 @@
+use libsodium_sys;
 use constant_time_eq::constant_time_eq;
+use std::fmt;
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
-use blake2_rfc::blake2s::blake2s;
 use super::CryptoError;
+use std::hash;
 
 /// Crytographically secure hash of data. Can be signed by a Key. It is impractical to generate an 
 /// identical hash from different data.
-#[derive(Debug,Clone,Hash)]
+#[derive(Clone)]
 pub struct Hash {
     version: u8,
-    digest: [u8; 32],
+    digest: [u8; 64],
 }
 
 impl Eq for Hash { }
@@ -21,20 +23,27 @@ impl PartialEq for Hash {
     }
 }
 
+impl fmt::Debug for Hash {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ version: {:?}, digest: {:?} }}", stringify!(Hash), &self.version, &self.digest[..])
+    }
+}
+
+impl hash::Hash for Hash {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.version.hash(state);
+        self.digest.hash(state);
+    }
+}
+
 impl Hash {
 
-    pub fn new(version: u8, m: &[u8]) -> Result<Hash, CryptoError> {
+    pub fn new(version: u8, data: &[u8]) -> Result<Hash, CryptoError> {
         if version != 1 { return Err(CryptoError::UnsupportedVersion); }
-        let mut h = Hash {version, digest: [0;32]};
-        let blake = blake2s(32, &[], m);
-        h.digest.copy_from_slice(blake.as_bytes());
-        Ok(h)
-    }
-
-    pub fn is_valid(&self) -> bool {
-        if self.version != 1 { return false; }
-        if self.digest.len() != 32 { return false; }
-        true
+        if data.len() as u64 > ::std::u64::MAX { return Err(CryptoError::BadLength); }
+        let mut hash = Hash {version, digest: [0;64]};
+        blake2b(&mut hash.digest, data);
+        Ok(hash)
     }
 
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
@@ -46,8 +55,38 @@ impl Hash {
     pub fn read<R: Read>(rd: &mut R) -> Result<Hash, CryptoError> {
         let version = rd.read_u8().map_err(CryptoError::Io)?;
         if version != 1 { return Err(CryptoError::UnsupportedVersion); }
-        let mut h = Hash {version, digest:[0;32]};
-        rd.read_exact(&mut h.digest).map_err(CryptoError::Io)?;
-        Ok(h)
+        let mut hash = Hash {version, digest:[0;64]};
+        rd.read_exact(&mut hash.digest).map_err(CryptoError::Io)?;
+        Ok(hash)
+    }
+}
+
+fn blake2b( hash: &mut [u8; 64], data: &[u8] ) {
+    // The below will only fail if we set up this function wrong.
+    unsafe { 
+        libsodium_sys::crypto_generichash_blake2b(
+            hash.as_mut_ptr(), 64, 
+            data.as_ptr(), data.len() as u64,
+            ::std::ptr::null(), 0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn enc_dec(h: Hash) {
+        let mut v = Vec::new();
+        h.write(&mut v).unwrap();
+        let hd = Hash::read(&mut &v[..]).unwrap();
+        assert_eq!(h, hd);
+    }
+
+    #[test]
+    fn test_hashes() {
+        let h = Hash::new(1, &[]).unwrap();
+        enc_dec(h);
+        let h = Hash::new(1, &[0]).unwrap();
+        enc_dec(h);
     }
 }

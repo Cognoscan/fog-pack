@@ -96,6 +96,7 @@ pub enum CryptoError {
     UnsupportedKey,
     UnsupportedSignature,
     InvalidFormat,
+    BadLength,
     BadKey,
     Io(io::Error),
 }
@@ -113,6 +114,7 @@ impl fmt::Display for CryptoError {
             CryptoError::UnsupportedSignature => write!(f, "Version of Signature is not supported"),
             CryptoError::InvalidFormat        => write!(f, "Format of crypto object is invalid"),
             CryptoError::BadKey               => write!(f, "Crypto key is weak or invalid"),
+            CryptoError::BadLength            => write!(f, "Provided data length is invalid"),
             CryptoError::Io(ref err)          => err.fmt(f),
         }
     }
@@ -131,6 +133,7 @@ impl Error for CryptoError {
             CryptoError::UnsupportedSignature => "signature version unsupported",
             CryptoError::InvalidFormat        => "invalid object format",
             CryptoError::BadKey               => "weak or invalid key",
+            CryptoError::BadLength            => "invalid data length",
             CryptoError::Io(ref err)          => err.description(),
         }
     }
@@ -154,27 +157,6 @@ pub fn init() -> Result<(), ()> {
 
 /*
 impl Crypto {
-    pub fn init(version: u32) -> Result<Crypto, CryptoError> {
-        match version {
-            0 => Ok(Crypto { version: 0, rand: 0 }),
-            _ => Err(CryptoError::UnsupportedVersion),
-        }
-    }
-
-    // Hash the provided data. Version must be provided
-    pub fn hash(version: u8, data: &Vec<u8>) -> Result<Hash, CryptoError> {
-        match version {
-            0 => Err(CryptoError::UnsupportedVersion),
-            1 => Hash::new(version,data),
-            _ => Err(CryptoError::UnsupportedVersion),
-        }
-    }
-
-    // Make a new identity, i.e. a random public & private key pair valid for signing & encrypting
-    pub fn new_identity(&mut self) -> (Key, Identity) {
-        self.rand += self.version as u64;
-        (Key::new(0), Identity::new())
-    }
 
     // Make a new identity from a provided password. Identity will contain the public signing & 
     // encrypting keys, and will also contain the salt and hashing parameters

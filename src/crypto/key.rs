@@ -31,9 +31,7 @@ impl Drop for Seed {
     }
 }
 impl fmt::Debug for Seed {
-    fn fmt(&self,
-           formatter: &mut fmt::Formatter) -> fmt::Result {
-        // Hide secrets from debug output.
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{}(****)", stringify!(Seed))
     }
 }
@@ -44,9 +42,7 @@ impl Drop for SecretSignKey {
     }
 }
 impl fmt::Debug for SecretSignKey {
-    fn fmt(&self,
-           formatter: &mut fmt::Formatter) -> fmt::Result {
-        // Hide secrets from debug output.
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{}(****)", stringify!(SecretSignKey))
     }
 }
@@ -57,19 +53,15 @@ impl Drop for SecretCryptKey {
     }
 }
 impl fmt::Debug for SecretCryptKey {
-    fn fmt(&self,
-           formatter: &mut fmt::Formatter) -> fmt::Result {
-        // Hide secrets from debug output.
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{}(****)", stringify!(SecretCryptKey))
     }
 }
 
-/// - Key
-///     - Consists of a Ed25519 seed and private/public keypair, as well as the Curve25519 private key
-///     - When encoded, it is just the seed, from which the keypair and Curve25519 key can be 
-///     derived
-
 /// Keys are the secret data needed to act as a particular Identity.
+/// - Consists of a Ed25519 private/public keypair, as well as the Curve25519 private key
+/// - When encoded, it is just the "seed", from which the keypair and Curve25519 key can be derived
+/// - The seed is actually the Ed25519 private key
 #[derive(Clone)]
 pub struct Key {
     version: u8,

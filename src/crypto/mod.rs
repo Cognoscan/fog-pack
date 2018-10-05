@@ -85,12 +85,6 @@ pub struct LockBox(Vec<u8>);
 #[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct StreamKey(Vec<u8>);
 
-/// Provides interface for all cryptographic operations
-pub struct Crypto {
-    version: u32,
-    rand: u64
-}
-
 #[derive(Debug)]
 pub enum CryptoError {
     WrongVersion,
@@ -158,6 +152,7 @@ pub fn init() -> Result<(), ()> {
     }
 }
 
+/*
 impl Crypto {
     pub fn init(version: u32) -> Result<Crypto, CryptoError> {
         match version {
@@ -270,3 +265,4 @@ impl Crypto {
 
     }
 }
+*/

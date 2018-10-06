@@ -1,3 +1,8 @@
+#[cfg(test)]
+extern crate serde_json;
+#[cfg(test)]
+extern crate hex;
+
 extern crate constant_time_eq;
 extern crate blake2_rfc;
 extern crate rmp;
@@ -190,10 +195,10 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    //use super::*;
 
     #[test]
     fn test_item_new() {
-        let test = Item::new();
+        //let test = Item::new();
     }
 }

@@ -74,6 +74,9 @@ fn blake2b( hash: &mut [u8; 64], data: &[u8] ) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use serde_json::{self,Value};
+    use hex;
 
     fn enc_dec(h: Hash) {
         let mut v = Vec::new();
@@ -83,10 +86,17 @@ mod tests {
     }
 
     #[test]
-    fn test_hashes() {
-        let h = Hash::new(1, &[]).unwrap();
-        enc_dec(h);
-        let h = Hash::new(1, &[0]).unwrap();
-        enc_dec(h);
+    fn test_hash_vectors() {
+        let file_ref = fs::File::open("test-resources/blake2b-test-vectors.json").unwrap();
+        let json_ref : Value = serde_json::from_reader(file_ref).unwrap();
+
+        for vector in json_ref.as_array().unwrap().iter() {
+            let ref_hash = hex::decode(&vector["out"].as_str().unwrap()).unwrap();
+            let ref_input = hex::decode(&vector["input"].as_str().unwrap()).unwrap();
+            let h = Hash::new(1, &ref_input[..]).unwrap();
+            assert_eq!(h.version, 1u8);
+            assert_eq!(h.digest[..], ref_hash[..]);
+            enc_dec(h)
+        }
     }
 }

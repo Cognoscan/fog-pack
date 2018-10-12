@@ -48,15 +48,6 @@ pub use self::key::{Key,Identity};
 /// - Signature
 ///     - Consists of a Ed25519 public key and Ed25519 signature
 ///     - encoded version is exactly the same
-/// - StreamKey: A secret XChaCha20 key
-/// - Lock
-///     - Starts with a type identifier (one byte)
-///         - 0 is made with an Identity and LockBox will include the public key
-///         - 1 is made with an Ideneity and LockBox will not include public key
-///         - 2 is made with StreamKey and Lockbox will include Hash of StreamKey
-///         - 3 is made with StreamKey and Lockbox will not include StreamKey hash
-///     - When made with a Key, consists of a Curve25519 public key, XChaCha20 key, and random nonce
-///     - When made with a StreamKey, consists of the XChaCha20 key and chosen nonce.
 /// - LockBox
 ///     - Starts with a type identifier (one byte)
 ///     - Begins with necessary data to decrypt - nonce, public key or hash of StreamKey

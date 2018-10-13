@@ -3,6 +3,7 @@ use std::error::Error;
 
 pub mod hash;
 pub mod key;
+pub mod stream;
 
 use libsodium_sys;
 

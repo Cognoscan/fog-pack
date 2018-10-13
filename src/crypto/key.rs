@@ -156,8 +156,6 @@ impl Identity {
         ed25519_pk_to_curve25519_pk(&mut self.encrypting, &self.signing)
     }
 
-    pub fn encrypt
-
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
         wr.write_u8(self.version).map_err(CryptoError::Io)?;
         wr.write_all(&self.signing.0).map_err(CryptoError::Io)?;

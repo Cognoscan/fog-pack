@@ -4,12 +4,15 @@ use std::error::Error;
 pub mod hash;
 pub mod key;
 pub mod stream;
+pub mod lock;
+mod sodium;
 
 use libsodium_sys;
 
-
 pub use self::hash::Hash;
 pub use self::key::{Key,Identity};
+pub use self::stream::StreamKey;
+pub use self::lock::Lock;
 
 /// Database Crypto Submodule
 /// -------------------------
@@ -59,23 +62,9 @@ pub use self::key::{Key,Identity};
 #[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Signature (Vec<u8>);
 
-/// Locks are used to put data in a lockbox. They *may* include the identity needed to open the 
-/// lockbox.
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct Lock (Vec<u8>);
-
 /// Data that cannot be seen without the correct key. Signature is optionally embedded inside.
 #[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct LockBox(Vec<u8>);
-
-/// Faster key for encrypting streams of data. The key is embedded in a normal lock, and can subsequently 
-/// be used to generate additional locks. It is assumed when data locked by this key is received, 
-/// the receiver will already know to use the stream key. 
-///
-/// Backend note: This uses the XChaCha20 stream cipher, where the 128-bit word used to make each
-/// lock is the nonce used (upper 64 bits of nonce are always 0)
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct StreamKey(Vec<u8>);
 
 #[derive(Debug)]
 pub enum CryptoError {

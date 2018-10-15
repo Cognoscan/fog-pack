@@ -1,10 +1,10 @@
-use libsodium_sys;
 use constant_time_eq::constant_time_eq;
 use std::fmt;
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::CryptoError;
 use std::hash;
+use super::sodium::blake2b;
 
 /// Crytographically secure hash of data. Can be signed by a Key. It is impractical to generate an 
 /// identical hash from different data.
@@ -58,16 +58,6 @@ impl Hash {
         let mut hash = Hash {version, digest:[0;64]};
         rd.read_exact(&mut hash.digest).map_err(CryptoError::Io)?;
         Ok(hash)
-    }
-}
-
-fn blake2b( hash: &mut [u8; 64], data: &[u8] ) {
-    // The below will only fail if we set up this function wrong.
-    unsafe { 
-        libsodium_sys::crypto_generichash_blake2b(
-            hash.as_mut_ptr(), 64, 
-            data.as_ptr(), data.len() as u64,
-            ::std::ptr::null(), 0);
     }
 }
 

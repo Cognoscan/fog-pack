@@ -1,3 +1,10 @@
+//!
+//! This contains all the internal structures and unsafe calls to libsodium. None of these should 
+//! be used outside of the crypto module.
+//!
+//! Signing keys are all ed25519, encrypting keys are curve25519, secret keys are 32-byte shared 
+//! secrets used for XChaCha20.
+
 use super::CryptoError;
 use std::ops::Drop;
 use std::fmt;
@@ -28,11 +35,13 @@ pub struct SecretKey(pub [u8; SECRET_KEY_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
 pub struct PublicSignKey(pub [u8; PK_SIGN_KEY_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
-pub struct PublicCryptKey([u8; PK_CRYPT_KEY_BYTES]);
+pub struct PublicCryptKey(pub [u8; PK_CRYPT_KEY_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
 pub struct Nonce(pub [u8; NONCE_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
 pub struct Tag(pub [u8; TAG_BYTES]);
+#[derive(Clone,PartialEq,Eq,Hash,Default)]
+pub struct StreamId(pub [u8; 32]);
 
 impl Tag {
     pub fn len() -> usize {
@@ -121,10 +130,10 @@ pub fn aead_encrypt(message: &mut [u8], ad: &[u8], n: &Nonce, k: &SecretKey) -> 
 }
 
 // Shouldn't fail as long as the input parameters are valid
-pub fn derive_uuid(k: &SecretKey, uuid: &mut [u8; 32]) {
+pub fn derive_id(k: &SecretKey, id: &mut StreamId) {
     unsafe {
         let ctx = CString::from_vec_unchecked(b"condense".to_vec());
-        libsodium_sys::crypto_kdf_derive_from_key(uuid.as_mut_ptr(), 32, 1, ctx.as_ptr(), k.0.as_ptr());
+        libsodium_sys::crypto_kdf_derive_from_key(id.0.as_mut_ptr(), id.0.len(), 1, ctx.as_ptr(), k.0.as_ptr());
     };
 }
 
@@ -138,23 +147,41 @@ pub fn blake2b( hash: &mut [u8; 64], data: &[u8] ) {
     }
 }
 
-pub fn sign_keypair( pk: &mut PublicSignKey, sk: &mut SecretSignKey) {
+pub fn calc_secret(pk: &PublicCryptKey, sk: &SecretCryptKey) -> Result<SecretKey,CryptoError> {
+    // This can fail with a bad key, so it must be checked
+    let mut k: SecretKey = Default::default();
+    if unsafe { 
+        libsodium_sys::crypto_box_curve25519xchacha20poly1305_beforenm(
+            k.0.as_mut_ptr(), pk.0.as_ptr(), sk.0.as_ptr())
+    } >= 0 {
+        Ok(k)
+    }
+    else {
+        Err(CryptoError::BadKey)
+    }
+}
+
+pub fn crypt_keypair(pk: &mut PublicCryptKey, sk: &mut SecretCryptKey) {
+    unsafe { libsodium_sys::crypto_box_keypair(pk.0.as_mut_ptr(), sk.0.as_mut_ptr()) };
+}
+
+pub fn sign_keypair(pk: &mut PublicSignKey, sk: &mut SecretSignKey) {
     unsafe { libsodium_sys::crypto_sign_keypair(pk.0.as_mut_ptr(),sk.0.as_mut_ptr()) };
 }
 
-pub fn sign_seed_keypair( pk: &mut PublicSignKey, sk: &mut SecretSignKey, seed: &Seed) {
+pub fn sign_seed_keypair(pk: &mut PublicSignKey, sk: &mut SecretSignKey, seed: &Seed) {
     unsafe { libsodium_sys::crypto_sign_seed_keypair(pk.0.as_mut_ptr(),sk.0.as_mut_ptr(), seed.0.as_ptr()) };
 }
 
-pub fn ed25519_sk_to_pk( pk: &mut PublicSignKey, sk: &SecretSignKey) {
+pub fn ed25519_sk_to_pk(pk: &mut PublicSignKey, sk: &SecretSignKey) {
     unsafe { libsodium_sys::crypto_sign_ed25519_sk_to_pk(pk.0.as_mut_ptr(),sk.0.as_ptr()) };
 }
 
-pub fn ed25519_sk_to_seed( seed: &mut Seed, ed: &SecretSignKey) {
+pub fn ed25519_sk_to_seed(seed: &mut Seed, ed: &SecretSignKey) {
     unsafe { libsodium_sys::crypto_sign_ed25519_sk_to_seed(seed.0.as_mut_ptr(),ed.0.as_ptr()) };
 }
 
-pub fn ed25519_sk_to_curve25519( curve: &mut SecretCryptKey, ed: &SecretSignKey) {
+pub fn ed25519_sk_to_curve25519(curve: &mut SecretCryptKey, ed: &SecretSignKey) {
     unsafe { libsodium_sys::crypto_sign_ed25519_sk_to_curve25519(curve.0.as_mut_ptr(),ed.0.as_ptr()) };
 }
 
@@ -180,4 +207,15 @@ pub fn memzero(x: &mut [u8]) {
 
 pub fn randombytes(x: &mut [u8]) {
     unsafe { libsodium_sys::randombytes_buf(x.as_mut_ptr() as *mut _, x.len()); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const BEFORE_NM_BYTES: usize = libsodium_sys::crypto_box_curve25519xchacha20poly1305_BEFORENMBYTES as usize;
+
+    #[test]
+    fn test_libsodium_correct_sizes() {
+        assert_eq!(BEFORE_NM_BYTES, SECRET_KEY_BYTES);
+    }
 }

@@ -1,13 +1,13 @@
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::CryptoError;
-use super::sodium::{SecretKey, aead_keygen, derive_uuid};
+use super::sodium::{StreamId, SecretKey, aead_keygen, derive_id};
 
-/// StreamKey: A secret XChaCha20 key, identifiable by its UUID
+/// StreamKey: A secret XChaCha20 key, identifiable by its ID
 #[derive(Clone)]
 pub struct StreamKey {
     version: u8,
-    uuid: [u8; 32],
+    id: StreamId,
     key: SecretKey,
 }
 
@@ -16,7 +16,7 @@ impl StreamKey {
     fn blank() -> StreamKey {
         StreamKey {
             version: 0,
-            uuid: [0; 32],
+            id: Default::default(),
             key: Default::default(),
         }
     }
@@ -29,8 +29,16 @@ impl StreamKey {
         k
     }
 
-    pub fn get_uuid(&self) -> &[u8; 32] {
-        &self.uuid
+    pub fn from_secret(k: SecretKey) -> StreamKey {
+        let mut stream = StreamKey::blank();
+        stream.version = 1;
+        stream.key = k;
+        stream.complete();
+        stream
+    }
+
+    pub fn get_id(&self) -> &StreamId {
+        &self.id
     }
 
     pub fn get_version(&self) -> u8 {
@@ -42,7 +50,7 @@ impl StreamKey {
     }
 
     pub fn complete(&mut self) {
-        derive_uuid(&self.key, &mut self.uuid)
+        derive_id(&self.key, &mut self.id)
     }
 
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
@@ -73,19 +81,17 @@ mod tests {
                              0x9f, 0x12, 0xca, 0xf7, 0xad, 0xea, 0xfe, 0x66,
                              0xfe, 0x5a, 0x77, 0x2f, 0x0f, 0x50, 0x83, 0x6d,
                              0x63, 0x4f, 0xf1, 0x8a, 0xa5, 0x43, 0x26, 0x64];
-        let mut key = StreamKey { version: 1, key: SecretKey(key), uuid: [0; 32] };
-        derive_uuid(&key.key, &mut key.uuid);
-        key
+        StreamKey::from_secret(SecretKey(key))
     }
 
     #[test]
-    fn test_uuid_gen() {
+    fn test_id_gen() {
         let key = example_key();
         let subkey: [u8; 32] = [0x79, 0x91, 0xee, 0x19, 0x16, 0x78, 0x60, 0xe3,
                                 0x5a, 0xaf, 0x5d, 0x54, 0x5e, 0xf9, 0x80, 0x58,
                                 0x72, 0xb9, 0x35, 0x25, 0x61, 0x76, 0x37, 0x21,
                                 0xd4, 0xef, 0x15, 0x5e, 0xaa, 0x53, 0xb1, 0x47];
-        assert_eq!(key.uuid, subkey);
+        assert_eq!(key.id.0, subkey);
     }
 
     fn enc_dec(k: StreamKey) {
@@ -94,7 +100,7 @@ mod tests {
         let kd = StreamKey::read(&mut &v[..]).unwrap();
         assert_eq!(k.version, kd.version);
         assert_eq!(k.key.0, kd.key.0);
-        assert_eq!(k.uuid, kd.uuid);
+        assert_eq!(k.id.0, kd.id.0);
     }
     
     #[test]

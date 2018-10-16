@@ -4,7 +4,6 @@ extern crate serde_json;
 extern crate hex;
 
 extern crate constant_time_eq;
-extern crate blake2_rfc;
 extern crate rmp;
 extern crate rmpv;
 extern crate byteorder;

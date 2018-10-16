@@ -1,62 +1,59 @@
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::CryptoError;
-use super::sodium::{SecretKey,Tag,Nonce,randombytes,aead_encrypt};
-use super::StreamKey;
+use super::sodium::*;
+use super::{Identity,StreamKey};
 
 #[derive(Clone)]
 pub enum LockType {
-    PublicKey([u8; 64]),     // ephemeral key and the identity key used to make the shared secret (stream key)
-    Stream([u8; 32]),        // UUID of the stream
-    PublicKeyNoId([u8; 32]), // ephemeral key only
-    StreamNoId,          // Nothing
+    PublicKey((PublicSignKey,PublicCryptKey)), // identity and ephemeral key used to make secret StreamKey
+    Stream(StreamId),         // ID of the stream
 }
 impl LockType {
 
     fn to_u8(&self) -> u8 {
         match *self {
-            LockType::PublicKey(_)     => 1,
-            LockType::Stream(_)        => 2,
-            LockType::PublicKeyNoId(_) => 3,
-            LockType::StreamNoId       => 4,
+            LockType::PublicKey(_) => 1,
+            LockType::Stream(_)    => 2,
         }
     }
 
     pub fn len(&self) -> usize {
         1 + match *self {
-            LockType::PublicKey(v)     => v.len(),
-            LockType::Stream(v)        => v.len(),
-            LockType::PublicKeyNoId(v) => v.len(),
-            LockType::StreamNoId       => 0,
+            LockType::PublicKey(ref v) => ((v.0).0.len() + (v.1).0.len()),
+            LockType::Stream(ref v)    => v.0.len(),
         }
     }
 
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
         wr.write_u8(self.to_u8())?;
         match *self {
-            LockType::PublicKey(d)     => wr.write_all(&d),
-            LockType::Stream(d)        => wr.write_all(&d),
-            LockType::PublicKeyNoId(d) => wr.write_all(&d),
-            LockType::StreamNoId       => Ok(()),
-        }.map_err(CryptoError::Io)
+            LockType::PublicKey(ref d) => {
+                wr.write_all(&(d.0).0).map_err(CryptoError::Io)?;
+                wr.write_all(&(d.1).0).map_err(CryptoError::Io)
+            },
+            LockType::Stream(ref d)    => wr.write_all(&d.0).map_err(CryptoError::Io),
+        }
     }
 
     pub fn read<R: Read>(rd: &mut R) -> Result<LockType, CryptoError> {
         let id = rd.read_u8().map_err(CryptoError::Io)?;
-        let lock_type = match id {
-            1 => LockType::PublicKey([0; 64]),
-            2 => LockType::Stream([0; 32]),
-            3 => LockType::PublicKeyNoId([0; 32]),
-            4 => LockType::StreamNoId,
-            _ => return Err(CryptoError::UnsupportedVersion),
-        };
-        match lock_type {
-            LockType::PublicKey(mut d)     => rd.read_exact(&mut d),
-            LockType::Stream(mut d)        => rd.read_exact(&mut d),
-            LockType::PublicKeyNoId(mut d) => rd.read_exact(&mut d),
-            LockType::StreamNoId           => Ok(()),
-        }?;
-        Ok(lock_type)
+
+        match id {
+            1 => {
+                let mut pk: PublicSignKey = Default::default();
+                let mut epk: PublicCryptKey = Default::default();
+                rd.read_exact(&mut pk.0)?;
+                rd.read_exact(&mut epk.0)?;
+                Ok(LockType::PublicKey((pk,epk)))
+            },
+            2 => {
+                let mut id: StreamId = Default::default();
+                rd.read_exact(&mut id.0)?;
+                Ok(LockType::Stream(id))
+            },
+            _ => Err(CryptoError::UnsupportedVersion),
+        }
     }
 }
 
@@ -75,26 +72,38 @@ pub struct Lock {
 
 impl Lock {
 
-    pub fn from_stream(k: &StreamKey, use_id: bool) -> Lock {
+    pub fn from_stream(k: &StreamKey) -> Result<Lock,CryptoError> {
+        let version = k.get_version();
+        if version != 1 { return Err(CryptoError::UnsupportedVersion); }
         let mut nonce: Nonce = Default::default();
         randombytes(&mut nonce.0);
-        if use_id {
-            Lock { 
-                version: k.get_version(),
-                type_id: LockType::Stream(k.get_uuid().clone()),
-                key: k.get_key().clone(),
-                nonce: nonce,
-                decoded: true
-            }
-        } else {
-            Lock { 
-                version: k.get_version(),
-                type_id: LockType::StreamNoId,
-                key: k.get_key().clone(),
-                nonce: nonce,
-                decoded: true
-            }
-        }
+        Ok(Lock { 
+            version,
+            type_id: LockType::Stream(k.get_id().clone()),
+            key: k.get_key().clone(),
+            nonce,
+            decoded: true
+        })
+    }
+
+    // Can fail due to bad public key
+    pub fn from_identity(id: &Identity) -> Result<(Lock,StreamKey),CryptoError> {
+        let version = id.get_version();
+        if version != 1 { return Err(CryptoError::UnsupportedVersion); }
+        let mut nonce: Nonce = Default::default();
+        randombytes(&mut nonce.0);
+        let mut esk: SecretCryptKey = Default::default();
+        let mut epk: PublicCryptKey = Default::default();
+        crypt_keypair(&mut epk, &mut esk);
+        let k = calc_secret(id.get_crypt(), &esk)?;
+        let k = StreamKey::from_secret(k);
+        Ok((Lock {
+            version,
+            type_id: LockType::Stream(k.get_id().clone()),
+            key: k.get_key().clone(),
+            nonce,
+            decoded: true
+        }, k))
     }
 
     // Determine the length of the encrypted data, given the length of the message
@@ -121,7 +130,7 @@ impl Lock {
     pub fn read<R: Read>(rd: &mut R) -> Result<Lock, CryptoError> {
         let mut lock = Lock {
             version: 0,
-            type_id: LockType::StreamNoId,
+            type_id: LockType::Stream(Default::default()),
             key: Default::default(),
             nonce: Default::default(),
             decoded:false,
@@ -148,7 +157,7 @@ impl Lock {
 // so maybe there's a clue in the front
 // So that clue can be either
 // - the identity needed
-// - the uuid of the secret key needed
+// - the id of the secret key needed
 // and we should be able to look it up from those. does that mean we want to be able to 
 // auto-complete public keys? Or just look them up, more likely.
 //

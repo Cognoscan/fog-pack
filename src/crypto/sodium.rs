@@ -8,6 +8,7 @@
 use super::CryptoError;
 use std::ops::Drop;
 use std::fmt;
+use std::ptr;
 use std::ffi::CString;
 use libc::c_ulonglong;
 use libsodium_sys;
@@ -110,23 +111,42 @@ pub fn aead_keygen(key: &mut SecretKey) {
 pub fn aead_encrypt(message: &mut [u8], ad: &[u8], n: &Nonce, k: &SecretKey) -> Tag {
     // tag will store the message authentication tag
     let mut tag = Tag([0; TAG_BYTES]);
-    // Function call sets mac_len to TAG_BYTES and does nothing else, so we'll do nothing with it
-    let mut mac_len = TAG_BYTES as c_ulonglong;
     unsafe {
         libsodium_sys::crypto_aead_xchacha20poly1305_ietf_encrypt_detached(
             message.as_mut_ptr(),
             tag.0.as_mut_ptr(),
-            &mut mac_len,
+            ptr::null_mut(),
             message.as_ptr(),
             message.len() as c_ulonglong,
             ad.as_ptr(),
             ad.len() as c_ulonglong, 
-            0 as *mut _,
+            ptr::null_mut(),
             n.0.as_ptr(),
             k.0.as_ptr()
         );
     }
     tag
+}
+
+// Does in-place decryption of crypt and returns true if verification succeeds
+pub fn aead_decrypt(crypt: &mut [u8], ad: &[u8], n: &Nonce, k: &SecretKey) -> bool {
+    if unsafe {
+        libsodium_sys::crypto_aead_xchacha20poly1305_ietf_decrypt(
+            crypt.as_mut_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            crypt.as_ptr(),
+            crypt.len() as c_ulonglong,
+            ad.as_ptr(),
+            ad.len() as c_ulonglong,
+            n.0.as_ptr(),
+            k.0.as_ptr()
+        )
+    } >= 0 {
+        true
+    } else {
+        false
+    }
 }
 
 // Shouldn't fail as long as the input parameters are valid

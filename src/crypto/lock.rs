@@ -2,25 +2,25 @@ use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::CryptoError;
 use super::sodium::*;
-use super::{Identity,StreamKey};
+use super::{Key,Identity,StreamKey};
 
 #[derive(Clone)]
 pub enum LockType {
-    PublicKey((PublicSignKey,PublicCryptKey)), // identity and ephemeral key used to make secret StreamKey
+    Identity((PublicSignKey,PublicCryptKey)), // identity and ephemeral key used to make secret StreamKey
     Stream(StreamId),         // ID of the stream
 }
 impl LockType {
 
     fn to_u8(&self) -> u8 {
         match *self {
-            LockType::PublicKey(_) => 1,
+            LockType::Identity(_) => 1,
             LockType::Stream(_)    => 2,
         }
     }
 
     pub fn len(&self) -> usize {
         1 + match *self {
-            LockType::PublicKey(ref v) => ((v.0).0.len() + (v.1).0.len()),
+            LockType::Identity(ref v) => ((v.0).0.len() + (v.1).0.len()),
             LockType::Stream(ref v)    => v.0.len(),
         }
     }
@@ -28,7 +28,7 @@ impl LockType {
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
         wr.write_u8(self.to_u8())?;
         match *self {
-            LockType::PublicKey(ref d) => {
+            LockType::Identity(ref d) => {
                 wr.write_all(&(d.0).0).map_err(CryptoError::Io)?;
                 wr.write_all(&(d.1).0).map_err(CryptoError::Io)
             },
@@ -45,7 +45,7 @@ impl LockType {
                 let mut epk: PublicCryptKey = Default::default();
                 rd.read_exact(&mut pk.0)?;
                 rd.read_exact(&mut epk.0)?;
-                Ok(LockType::PublicKey((pk,epk)))
+                Ok(LockType::Identity((pk,epk)))
             },
             2 => {
                 let mut id: StreamId = Default::default();
@@ -57,10 +57,26 @@ impl LockType {
     }
 }
 
-/// Lock
-/// - Starts with a type identifier (one byte)
-/// - When made with a Key, consists of a Curve25519 public key, XChaCha20 key, and random nonce
-/// - When made with a StreamKey, consists of the XChaCha20 key and chosen nonce.
+/// Contains everything needed to encrypt one payload. A lock can be generated from an 
+/// [`Identity`], which also will produce an associated [`StreamKey`]. A lock can also be generated 
+/// by any valid `StreamKey`.
+///
+/// To use it for encryption, use `write` to write its identifying information into a byte stream. 
+/// Next, write any additional certified data to the byte stream, then use `encrypt` to encrypt and 
+/// append all encrypted data to a `Vec`. This wil use XChaCha20 for encryption, and use Poly1305 
+/// for the authentication tag. This follows the AEAD construction used by libsodium.
+///
+/// A lock **must** only be used for a single payload. If encrypting multiple payloads, generate 
+/// one lock for each.
+///
+/// To use it for decryption, use `read` to read it from a byte stream. Next, use `needs` to get 
+/// the type of lock and identifying information, and call either `decode_identity` or 
+/// `decode_stream` to recover the secret key
+///
+/// To use it for decryption, use `read` to read it from a byte stream. Next, use `needs` to get 
+/// the type of lock and identifying information, and call either `decode_identity` or 
+/// `decode_stream` to recover the secret key. Once this is done, call `decrypt` to decode and 
+/// verify the encrypted data.
 #[derive(Clone)]
 pub struct Lock {
     version: u8,
@@ -95,7 +111,7 @@ impl Lock {
         let mut esk: SecretCryptKey = Default::default();
         let mut epk: PublicCryptKey = Default::default();
         crypt_keypair(&mut epk, &mut esk);
-        let k = calc_secret(id.get_crypt(), &esk)?;
+        let k = id.calc_stream_key(&esk)?;
         let k = StreamKey::from_secret(k);
         Ok((Lock {
             version,
@@ -111,13 +127,30 @@ impl Lock {
         message_len + Tag::len()
     }
 
-    pub fn encrypt(&self, message: &[u8], ad: &[u8], out: &mut Vec<u8>) {
+    pub fn encrypt(&self, message: &[u8], ad: &[u8], out: &mut Vec<u8>) -> Result<(), CryptoError> {
+        if !self.decoded { return Err(CryptoError::BadKey); }
         out.reserve(self.encrypt_len(message.len())); // Prepare the vector
         let crypt_start = out.len(); // Store for later when we do the in-place encryption
         out.extend_from_slice(message);
         // Iterate over the copied message and append the tag
         let tag = aead_encrypt(&mut out[crypt_start..], ad, &self.nonce, &self.key);
         out.extend_from_slice(&tag.0);
+        Ok(())
+    }
+
+    pub fn decrypt(&self, crypt: &[u8], ad: &[u8], out: &mut Vec<u8>) -> Result<(), CryptoError> {
+        if !self.decoded { return Err(CryptoError::BadKey); }
+        let m_len = crypt.len() - Tag::len();
+        out.reserve(m_len); // Prepare the output vector
+        let message_start = out.len(); // Store for later when we do in-place decryption
+        out.extend_from_slice(&crypt[..m_len]);
+        // Iterate over copied ciphertext and verify the tag
+        let success = aead_decrypt(&mut out[message_start..], ad, &self.nonce, &self.key);
+        if success {
+            Ok(())
+        } else {
+            Err(CryptoError::DecryptFailed)
+        }
     }
 
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
@@ -145,31 +178,37 @@ impl Lock {
         if self.decoded { None } else { Some(&self.type_id) }
     }
 
+    pub fn decode_stream(&mut self, k: &StreamKey) -> Result<(), CryptoError> {
+        match self.type_id {
+            LockType::Identity(_) => Err(CryptoError::BadKey),
+            LockType::Stream(ref v) => {
+                if *v != *k.get_id() || self.version != k.get_version() {
+                    Err(CryptoError::BadKey)
+                }
+                else {
+                    self.key = k.get_key().clone();
+                    self.decoded = true;
+                    Ok(())
+                }
+            },
+        }
+    }
+
+    pub fn decode_identity(&mut self, k: &Key) -> Result<(), CryptoError> {
+        match self.type_id {
+            LockType::Identity(ref v) => {
+                if v.0 != k.get_id() || self.version != k.get_version() {
+                    Err(CryptoError::BadKey)
+                }
+                else {
+                    self.key = k.calc_stream_key(&v.1)?;
+                    self.decoded = true;
+                    Ok(())
+                }
+            },
+            LockType::Stream(_) => Err(CryptoError::BadKey),
+        }
+    }
+
 }
 
-// OH SHIT MF now what
-// ok so like we want to figure out what's encoded given the raw data at the front
-// And then we want to figure out what's 
-//
-// wait no
-// we want to figure out what the key is somehow
-//
-// so maybe there's a clue in the front
-// So that clue can be either
-// - the identity needed
-// - the id of the secret key needed
-// and we should be able to look it up from those. does that mean we want to be able to 
-// auto-complete public keys? Or just look them up, more likely.
-//
-// - Ok so that means we want to be able to hash the secret key and be able to hash the public 
-// keys, and look them up in the same manner
-//
-// so i need to override the default hashing functions to let me look up keys and secret keys
-// I also need to override the hashing for looking up streamkeys 
-// I guess I feed the hasher the version number as well for all of these
-//
-// final goal is to re-derive the lock from what I figure out given the pre-pended stuff
-// then decode the entire stream
-// 
-// so maybe I want to have two separate lock types? encoded lock and decoded lock
-// and the decoded lock lets me encode or decode a giant string of stuff

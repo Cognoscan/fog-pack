@@ -13,14 +13,15 @@ use std::ffi::CString;
 use libc::c_ulonglong;
 use libsodium_sys;
 
-const SECRET_KEY_BYTES: usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_KEYBYTES as usize;
-const NONCE_BYTES: usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_NPUBBYTES as usize;
-const TAG_BYTES: usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_ABYTES as usize;
-const SEED_KEY_BYTES: usize = libsodium_sys::crypto_sign_SEEDBYTES as usize;
-const SK_SIGN_KEY_BYTES: usize = libsodium_sys::crypto_sign_ed25519_SECRETKEYBYTES as usize;
+const SECRET_KEY_BYTES:   usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_KEYBYTES as usize;
+const NONCE_BYTES:        usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_NPUBBYTES as usize;
+const TAG_BYTES:          usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_ABYTES as usize;
+const SEED_KEY_BYTES:     usize = libsodium_sys::crypto_sign_SEEDBYTES as usize;
+const SK_SIGN_KEY_BYTES:  usize = libsodium_sys::crypto_sign_ed25519_SECRETKEYBYTES as usize;
 const SK_CRYPT_KEY_BYTES: usize = libsodium_sys::crypto_scalarmult_curve25519_BYTES as usize;
-const PK_SIGN_KEY_BYTES: usize = libsodium_sys::crypto_sign_ed25519_PUBLICKEYBYTES as usize;
+const PK_SIGN_KEY_BYTES:  usize = libsodium_sys::crypto_sign_ed25519_PUBLICKEYBYTES as usize;
 const PK_CRYPT_KEY_BYTES: usize = libsodium_sys::crypto_scalarmult_curve25519_BYTES as usize;
+const SIGN_BYTES:         usize = libsodium_sys::crypto_sign_ed25519_BYTES as usize;
 
 // Secret Structs
 #[derive(Clone,Default)]
@@ -43,10 +44,18 @@ pub struct Nonce(pub [u8; NONCE_BYTES]);
 pub struct Tag(pub [u8; TAG_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
 pub struct StreamId(pub [u8; 32]);
+#[derive(Clone)]
+pub struct Sign(pub [u8; SIGN_BYTES]);
 
 impl Tag {
     pub fn len() -> usize {
         TAG_BYTES
+    }
+}
+
+impl Default for Sign {
+    fn default() -> Sign {
+        Sign([0; SIGN_BYTES])
     }
 }
 
@@ -220,6 +229,33 @@ pub fn ed25519_pk_to_curve25519_pk(
         Err(CryptoError::BadKey)
     }
 }
+
+pub fn sign_detached(k: &SecretSignKey, m: &[u8]) -> Sign {
+    let mut sig: Sign = Default::default();
+    unsafe { libsodium_sys::crypto_sign_ed25519_detached(
+            sig.0.as_mut_ptr(),
+            ptr::null_mut(),
+            m.as_ptr(),
+            m.len() as c_ulonglong,
+            k.0.as_ptr());
+    };
+    sig
+}
+
+pub fn verify_detached(k: &PublicSignKey, m: &[u8], sig: &Sign) -> bool {
+    if unsafe {
+        libsodium_sys::crypto_sign_ed25519_verify_detached(
+            sig.0.as_ptr(),
+            m.as_ptr(),
+            m.len() as c_ulonglong,
+            k.0.as_ptr())
+    } >= 0 {
+        true
+    } else {
+        false
+    }
+}
+
 
 pub fn memzero(x: &mut [u8]) {
     unsafe { libsodium_sys::sodium_memzero(x.as_mut_ptr() as *mut _, x.len()); }

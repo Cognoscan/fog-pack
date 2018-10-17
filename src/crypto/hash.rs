@@ -46,6 +46,14 @@ impl Hash {
         Ok(hash)
     }
 
+    pub fn get_version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.digest
+    }
+
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
         wr.write_u8(self.version).map_err(CryptoError::Io)?;
         wr.write_all(&self.digest).map_err(CryptoError::Io)?;

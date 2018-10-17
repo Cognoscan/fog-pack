@@ -1,7 +1,57 @@
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
-use super::CryptoError;
+use super::{CryptoError, Hash};
 use super::sodium::*;
+
+#[derive(Clone)]
+pub struct Signature {
+    id_version: u8,
+    id: PublicSignKey,
+    hash_version: u8,
+    sig: Sign,
+}
+
+impl Signature {
+    pub fn get_hash_version(&self) -> u8 {
+        self.hash_version
+    }
+
+    pub fn get_identity_version(&self) -> u8 {
+        self.id_version
+    }
+
+    pub fn signed_by(&self) -> &PublicSignKey {
+        &self.id
+    }
+
+    pub fn verify(&self, hash: &Hash) -> bool {
+        verify_detached(&self.id, hash.as_bytes(), &self.sig)
+    }
+
+    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
+        wr.write_u8(self.id_version)?;
+        wr.write_u8(self.hash_version)?;
+        wr.write_all(&self.id.0)?;
+        wr.write_all(&self.sig.0)?;
+        Ok(())
+    }
+
+    pub fn read<R: Read>(rd: &mut R) -> Result<Signature, CryptoError> {
+        let id_version = rd.read_u8().map_err(CryptoError::Io)?;
+        let hash_version = rd.read_u8().map_err(CryptoError::Io)?;
+        if id_version != 1 || hash_version != 1 { return Err(CryptoError::UnsupportedVersion); }
+        let mut id: PublicSignKey = Default::default();
+        let mut sig: Sign = Default::default();
+        rd.read_exact(&mut id.0).map_err(CryptoError::Io)?;
+        rd.read_exact(&mut sig.0).map_err(CryptoError::Io)?;
+        Ok(Signature {
+            id_version,
+            id,
+            hash_version,
+            sig
+        })
+    }
+}
 
 /// Keys are the secret data needed to act as a particular Identity.
 /// - Consists of a Ed25519 private/public keypair, as well as the Curve25519 private key
@@ -59,6 +109,15 @@ impl Key {
 
     pub fn calc_stream_key(&self, pk: &PublicCryptKey) -> Result<SecretKey, CryptoError> {
         calc_secret(pk, &self.decrypting)
+    }
+
+    pub fn sign(&self, hash: &Hash) -> Signature {
+        Signature { 
+            id_version: self.version,
+            hash_version: hash.get_version(),
+            id: self.get_id(),
+            sig: sign_detached(&self.signing, hash.as_bytes())
+        }
     }
 
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {

@@ -4,7 +4,7 @@ use super::CryptoError;
 use super::sodium::*;
 use super::{Key,Identity,StreamKey};
 
-#[derive(Clone)]
+#[derive(Clone,PartialEq,Debug)]
 pub enum LockType {
     Identity((PublicSignKey,PublicCryptKey)), // identity and ephemeral key used to make secret StreamKey
     Stream(StreamId),         // ID of the stream
@@ -77,7 +77,7 @@ impl LockType {
 /// the type of lock and identifying information, and call either `decode_identity` or 
 /// `decode_stream` to recover the secret key. Once this is done, call `decrypt` to decode and 
 /// verify the encrypted data.
-#[derive(Clone)]
+#[derive(Clone,PartialEq,Debug)]
 pub struct Lock {
     version: u8,
     type_id: LockType,
@@ -214,6 +214,27 @@ impl Lock {
 
 #[cfg(test)]
 mod tests {
-    //use super::*;
+    use super::*;
+    use super::super::init;
+
+    fn enc_dec_identity(lk: Lock, k: &Key) {
+        let mut v = Vec::new();
+        lk.write(&mut v).unwrap();
+        let mut lkd = Lock::read(&mut &v[..]).unwrap();
+        match lkd.needs().unwrap() {
+            LockType::Identity(v) => assert_eq!(v.0, k.get_id()),
+            LockType::Stream(_) => panic!("Shouldn't be a stream"),
+        };
+        lkd.decode_identity(k).unwrap();
+        assert_eq!(lk, lkd);
+    }
+
+    #[test]
+    fn stream() {
+        init().unwrap();
+        let (k, id) = Key::new_pair().unwrap();
+        let (lock, stream) = Lock::from_identity(&id).unwrap();
+        enc_dec_identity(lock, &k);
+    }
 
 }

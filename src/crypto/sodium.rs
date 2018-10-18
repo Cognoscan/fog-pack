@@ -39,11 +39,11 @@ pub struct SecretKey(pub [u8; SECRET_KEY_BYTES]);
 pub struct PublicSignKey(pub [u8; PK_SIGN_KEY_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
 pub struct PublicCryptKey(pub [u8; PK_CRYPT_KEY_BYTES]);
-#[derive(Clone,PartialEq,Eq,Hash,Default)]
+#[derive(Clone,PartialEq,Eq,Hash,Default,Debug)]
 pub struct Nonce(pub [u8; NONCE_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
 pub struct Tag(pub [u8; TAG_BYTES]);
-#[derive(Clone,PartialEq,Eq,Hash,Default)]
+#[derive(Clone,PartialEq,Eq,Hash,Default,Debug)]
 pub struct StreamId(pub [u8; 32]);
 #[derive(Clone)]
 pub struct Sign(pub [u8; SIGN_BYTES]);

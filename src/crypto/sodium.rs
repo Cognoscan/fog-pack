@@ -12,6 +12,7 @@ use std::ptr;
 use std::ffi::CString;
 use libc::c_ulonglong;
 use libsodium_sys;
+use constant_time_eq::constant_time_eq;
 
 const SECRET_KEY_BYTES:   usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_KEYBYTES as usize;
 const NONCE_BYTES:        usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_NPUBBYTES as usize;
@@ -58,6 +59,28 @@ impl Default for Sign {
         Sign([0; SIGN_BYTES])
     }
 }
+impl fmt::Debug for Sign {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ {:?} }}", stringify!(Sign), &self.0[..])
+    }
+}
+impl PartialEq for Sign {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.iter().zip(other.0.iter()).all(|(a,b)| a == b)
+    }
+}
+
+impl fmt::Debug for PublicSignKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ {:?} }}", stringify!(PublicSignKey), &self.0[..])
+    }
+}
+
+impl fmt::Debug for PublicCryptKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ {:?} }}", stringify!(PublicCryptKey), &self.0[..])
+    }
+}
 
 // Seed
 impl Drop for Seed {
@@ -68,6 +91,12 @@ impl Drop for Seed {
 impl fmt::Debug for Seed {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{}(****)", stringify!(Seed))
+    }
+}
+impl PartialEq for Seed {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        constant_time_eq(&self.0, &other.0)
     }
 }
 
@@ -87,6 +116,12 @@ impl fmt::Debug for SecretSignKey {
         write!(formatter, "{}(****)", stringify!(SecretSignKey))
     }
 }
+impl PartialEq for SecretSignKey {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        constant_time_eq(&self.0, &other.0)
+    }
+}
 
 // SecretCryptKey
 impl Drop for SecretCryptKey {
@@ -99,6 +134,12 @@ impl fmt::Debug for SecretCryptKey {
         write!(formatter, "{}(****)", stringify!(SecretCryptKey))
     }
 }
+impl PartialEq for SecretCryptKey {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        constant_time_eq(&self.0, &other.0)
+    }
+}
 
 // SecretKey
 impl Drop for SecretKey {
@@ -109,6 +150,12 @@ impl Drop for SecretKey {
 impl fmt::Debug for SecretKey {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{}(****)", stringify!(SecretKey))
+    }
+}
+impl PartialEq for SecretKey {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        constant_time_eq(&self.0, &other.0)
     }
 }
 
@@ -271,7 +318,7 @@ mod tests {
     const BEFORE_NM_BYTES: usize = libsodium_sys::crypto_box_curve25519xchacha20poly1305_BEFORENMBYTES as usize;
 
     #[test]
-    fn test_libsodium_correct_sizes() {
+    fn correct_sizes() {
         assert_eq!(BEFORE_NM_BYTES, SECRET_KEY_BYTES);
     }
 }

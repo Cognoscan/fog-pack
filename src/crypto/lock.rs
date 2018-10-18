@@ -212,3 +212,8 @@ impl Lock {
 
 }
 
+#[cfg(test)]
+mod tests {
+    //use super::*;
+
+}

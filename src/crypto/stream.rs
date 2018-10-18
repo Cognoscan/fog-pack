@@ -85,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn test_id_gen() {
+    fn id_gen() {
         let key = example_key();
         let subkey: [u8; 32] = [0x79, 0x91, 0xee, 0x19, 0x16, 0x78, 0x60, 0xe3,
                                 0x5a, 0xaf, 0x5d, 0x54, 0x5e, 0xf9, 0x80, 0x58,
@@ -104,7 +104,7 @@ mod tests {
     }
     
     #[test]
-    fn test_stream_enc() {
+    fn stream_enc() {
         let k = example_key();
         enc_dec(k);
     }

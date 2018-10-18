@@ -10,7 +10,7 @@ mod sodium;
 use libsodium_sys;
 
 pub use self::hash::Hash;
-pub use self::key::{Key,Identity};
+pub use self::key::{Key,Identity,Signature};
 pub use self::stream::StreamKey;
 pub use self::lock::Lock;
 
@@ -56,15 +56,6 @@ pub use self::lock::Lock;
 ///     - Starts with a type identifier (one byte)
 ///     - Begins with necessary data to decrypt - nonce, public key or hash of StreamKey
 ///     - Has a Poly1305 authentication tag appended to the end
-
-/// Indicates the Key paired with an Identity was used to sign a hash. The signature indicates the 
-/// identity used.
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct Signature (Vec<u8>);
-
-/// Data that cannot be seen without the correct key. Signature is optionally embedded inside.
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct LockBox(Vec<u8>);
 
 #[derive(Debug)]
 pub enum CryptoError {

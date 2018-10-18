@@ -40,7 +40,7 @@ impl Hash {
 
     pub fn new(version: u8, data: &[u8]) -> Result<Hash, CryptoError> {
         if version != 1 { return Err(CryptoError::UnsupportedVersion); }
-        if data.len() as u64 > ::std::u64::MAX { return Err(CryptoError::BadLength); }
+        if data.len() > ::std::u64::MAX as usize { return Err(CryptoError::BadLength); }
         let mut hash = Hash {version, digest: [0;64]};
         blake2b(&mut hash.digest, data);
         Ok(hash)
@@ -84,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_vectors() {
+    fn hash_vectors() {
         let file_ref = fs::File::open("test-resources/blake2b-test-vectors.json").unwrap();
         let json_ref : Value = serde_json::from_reader(file_ref).unwrap();
 
@@ -96,5 +96,19 @@ mod tests {
             assert_eq!(h.digest[..], ref_hash[..]);
             enc_dec(h)
         }
+    }
+
+    #[test]
+    fn edge_cases() {
+        match Hash::new(0, &[1,2]).unwrap_err() {
+            CryptoError::UnsupportedVersion => (),
+            _ => panic!("Hash should always fail on version 0"),
+        };
+        let digest = hex::decode(
+            "29102511d749db3cc9b4e335fa1f5e8faca8421d558f6a3f3321d50d044a248b\
+             a595cfc3efd3d2adc97334da732413f5cbf4751c362ba1d53862ac1e8dabeee8").unwrap();
+        let h = Hash::new(1, &hex::decode("00010203040506070809").unwrap()).unwrap();
+        assert_eq!(h.get_version(), 1);
+        assert_eq!(h.as_bytes(), &digest[..]);
     }
 }

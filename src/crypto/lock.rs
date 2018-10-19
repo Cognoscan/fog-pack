@@ -115,14 +115,18 @@ impl Lock {
         let k = StreamKey::from_secret(k);
         Ok((Lock {
             version,
-            type_id: LockType::Stream(k.get_id().clone()),
+            type_id: LockType::Identity((id.get_id(),epk)),
             key: k.get_key().clone(),
             nonce,
             decoded: true
         }, k))
     }
 
-    // Determine the length of the encrypted data, given the length of the message
+    pub fn len(&self) -> usize {
+        1 + self.type_id.len() + self.nonce.0.len()
+    }
+
+    /// Determine the length of the encrypted data, given the length of the message
     pub fn encrypt_len(&self, message_len: usize) -> usize {
         message_len + Tag::len()
     }
@@ -223,18 +227,32 @@ mod tests {
         let mut lkd = Lock::read(&mut &v[..]).unwrap();
         match lkd.needs().unwrap() {
             LockType::Identity(v) => assert_eq!(v.0, k.get_id()),
-            LockType::Stream(_) => panic!("Shouldn't be a stream"),
+            LockType::Stream(_) => panic!("Shouldn't be a stream lock"),
         };
         lkd.decode_identity(k).unwrap();
         assert_eq!(lk, lkd);
     }
 
+    fn enc_dec_stream(lk: Lock, stream: &StreamKey) {
+        let mut v = Vec::new();
+        lk.write(&mut v).unwrap();
+        let mut lkd = Lock::read(&mut &v[..]).unwrap();
+        match lkd.needs().unwrap() {
+            LockType::Identity(_) => panic!("Shouldn't be a identity lock"),
+            LockType::Stream(i) => assert_eq!(i, stream.get_id()),
+        };
+        lkd.decode_stream(stream).unwrap();
+        assert_eq!(lk, lkd);
+    }
+
     #[test]
-    fn stream() {
+    fn lock_types() {
         init().unwrap();
         let (k, id) = Key::new_pair().unwrap();
         let (lock, stream) = Lock::from_identity(&id).unwrap();
         enc_dec_identity(lock, &k);
+        let lock = Lock::from_stream(&stream).unwrap();
+        enc_dec_stream(lock, &stream);
     }
 
 }

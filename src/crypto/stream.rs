@@ -109,5 +109,4 @@ mod tests {
         enc_dec(k);
     }
 
-    //TODO: Make sure to test encrypting a message of length 0
 }

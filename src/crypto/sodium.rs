@@ -185,14 +185,14 @@ pub fn aead_encrypt(message: &mut [u8], ad: &[u8], n: &Nonce, k: &SecretKey) -> 
 }
 
 // Does in-place decryption of crypt and returns true if verification succeeds
-pub fn aead_decrypt(crypt: &mut [u8], ad: &[u8], n: &Nonce, k: &SecretKey) -> bool {
+pub fn aead_decrypt(crypt: &mut [u8], ad: &[u8], tag: &[u8],n: &Nonce, k: &SecretKey) -> bool {
     if unsafe {
-        libsodium_sys::crypto_aead_xchacha20poly1305_ietf_decrypt(
+        libsodium_sys::crypto_aead_xchacha20poly1305_ietf_decrypt_detached(
             crypt.as_mut_ptr(),
-            ptr::null_mut(),
             ptr::null_mut(),
             crypt.as_ptr(),
             crypt.len() as c_ulonglong,
+            tag.as_ptr(),
             ad.as_ptr(),
             ad.len() as c_ulonglong,
             n.0.as_ptr(),

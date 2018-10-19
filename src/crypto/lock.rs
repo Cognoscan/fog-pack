@@ -149,7 +149,12 @@ impl Lock {
         let message_start = out.len(); // Store for later when we do in-place decryption
         out.extend_from_slice(&crypt[..m_len]);
         // Iterate over copied ciphertext and verify the tag
-        let success = aead_decrypt(&mut out[message_start..], ad, &self.nonce, &self.key);
+        let success = aead_decrypt(
+            &mut out[message_start..],
+            ad,
+            &crypt[m_len..],
+            &self.nonce,
+            &self.key);
         if success {
             Ok(())
         } else {
@@ -255,4 +260,45 @@ mod tests {
         enc_dec_stream(lock, &stream);
     }
 
+    #[test]
+    fn stream_encrypt() {
+        init().unwrap();
+        let stream = StreamKey::new();
+        let lock = Lock::from_stream(&stream).unwrap();
+        let (data, a_data) = (vec![], vec![]);
+        encrypt_decrypt(&lock, data, a_data);
+        let (data, a_data) = (vec![0], vec![]);
+        encrypt_decrypt(&lock, data, a_data);
+        let (data, a_data) = (vec![], vec![0]);
+        encrypt_decrypt(&lock, data, a_data);
+        let (data, a_data) = (vec![0,1,2], vec![0,1,2]);
+        encrypt_decrypt(&lock, data, a_data);
+    }
+
+    #[test]
+    fn identity_encrypt() {
+        init().unwrap();
+        let (_, id) = Key::new_pair().unwrap();
+        let (lock, _) = Lock::from_identity(&id).unwrap();
+        let (data, a_data) = (vec![], vec![]);
+        encrypt_decrypt(&lock, data, a_data);
+        let (data, a_data) = (vec![0], vec![]);
+        encrypt_decrypt(&lock, data, a_data);
+        let (data, a_data) = (vec![], vec![0]);
+        encrypt_decrypt(&lock, data, a_data);
+        let (data, a_data) = (vec![0,1,2], vec![0,1,2]);
+        encrypt_decrypt(&lock, data, a_data);
+    }
+
+    fn encrypt_decrypt(lk: &Lock, d: Vec<u8>, ad: Vec<u8>) {
+        let mut ciphertext: Vec<u8> = Vec::new();
+        let mut plaintext: Vec<u8> = Vec::new();
+        lk.encrypt(&d[..], &ad[..], &mut ciphertext).unwrap();
+        assert_eq!(ciphertext.len(), lk.encrypt_len(d.len()));
+        if d.len() > 0 {
+            assert_ne!(ciphertext[..d.len()], d[..]);
+        }
+        lk.decrypt(&ciphertext[..], &ad[..], &mut plaintext).unwrap();
+        assert_eq!(d, plaintext);
+    }
 }

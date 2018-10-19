@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::collections::BTreeMap;
 //use std::io::Write;
 use rmpv::Value;
-use byteorder::WriteBytesExt;
+use byteorder::{WriteBytesExt, ReadBytesExt};
 
 use std::{fmt, io};
 use std::error::Error;
@@ -82,7 +82,7 @@ impl From<crypto::CryptoError> for EncodeError {
 //        and signatures are attached. 
 
 pub enum ExtType {
-    Uuid,
+    Index,
     Hash,
     Identity,
     Signature,
@@ -93,7 +93,7 @@ pub enum ExtType {
 impl ExtType {
     fn to_i8(&self) -> i8 {
         match *self {
-            ExtType::Uuid      => 1,
+            ExtType::Index      => 1,
             ExtType::Hash      => 2,
             ExtType::Identity  => 3,
             ExtType::Signature => 4,
@@ -104,11 +104,76 @@ impl ExtType {
     }
 }
 
-pub fn encode_uuid(uuid: (u64, u64)) -> Result<Vec<u8>,EncodeError> {
-    let mut enc = Vec::new();
-    rmp::encode::write_ext_meta(&mut enc, 16, ExtType::Uuid.to_i8())?;
-    enc.write_u64::<byteorder::BigEndian>(uuid.0)?;
-    Ok(enc)
+pub struct Index (u64,u64);
+
+impl Index {
+    pub fn encode(&self) -> Value {
+        let mut enc = Vec::new();
+        if self.1 == 0 {
+            if self.0 < 256 {
+                enc.write_u8(self.0 as u8).unwrap();
+            }
+            else if self.0 < 65536 {
+                enc.write_u16::<byteorder::BigEndian>(self.0 as u16).unwrap();
+            }
+            else if self.0 < 4294967295 {
+                enc.write_u32::<byteorder::BigEndian>(self.0 as u32).unwrap();
+            }
+            else {
+                enc.write_u64::<byteorder::BigEndian>(self.0).unwrap();
+            }
+        }
+        else {
+            enc.write_u64::<byteorder::BigEndian>(self.1).unwrap();
+            enc.write_u64::<byteorder::BigEndian>(self.0).unwrap();
+        }
+        Value::Ext(ExtType::Index.to_i8(), enc)
+    }
+
+    pub fn valid_ext(ext: i8, len: usize) -> bool {
+        ext == ExtType::Index.to_i8() &&
+            (len == 1 || len == 2 || len == 4 || len == 8 || len ==16)
+    }
+
+
+    pub fn decode(v: &Value) -> Option<Index> {
+        match v {
+            Value::Ext(ext, ref data) => {
+                let len = data.len();
+                if *ext == ExtType::Index.to_i8() {
+                    if len == 1 {
+                        let mut r = &data[..];
+                        Some(Index (0, r.read_u8().unwrap_or(0u8) as u64))
+                    }
+                    else if len == 2 {
+                        let mut r = &data[..];
+                        Some(Index (0, r.read_u16::<byteorder::BigEndian>().unwrap_or(0u16) as u64))
+                    }
+                    else if len == 4 {
+                        let mut r = &data[..];
+                        Some(Index (0, r.read_u32::<byteorder::BigEndian>().unwrap_or(0u32) as u64))
+                    }
+                    else if len == 8 {
+                        let mut r = &data[..];
+                        Some(Index (0, r.read_u64::<byteorder::BigEndian>().unwrap_or(0u64)))
+                    }
+                    else if len == 16 {
+                        let mut r = &data[..];
+                        let v1 = r.read_u64::<byteorder::BigEndian>().unwrap_or(0u64);
+                        let v0 = r.read_u64::<byteorder::BigEndian>().unwrap_or(0u64);
+                        Some(Index (v1, v0))
+                    }
+                    else {
+                        None
+                    }
+                }
+                else {
+                    None
+                }
+            },
+            _ => None,
+        }
+    }
 }
 
 pub struct Query {

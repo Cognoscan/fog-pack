@@ -3,42 +3,48 @@ use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::CryptoError;
 use super::sodium::{StreamId, SecretKey, aead_keygen, derive_id};
 
-/// StreamKey: A secret XChaCha20 key, identifiable by its ID
-#[derive(Clone)]
+#[derive(Clone,PartialEq,Eq,Hash)]
 pub struct StreamKey {
+    version: u8,
+    id: StreamId,
+}
+
+/// FullStreamKey: A secret XChaCha20 key, identifiable by its ID
+#[derive(Clone)]
+pub struct FullStreamKey {
     version: u8,
     id: StreamId,
     key: SecretKey,
 }
 
-impl StreamKey {
+impl FullStreamKey {
     
-    fn blank() -> StreamKey {
-        StreamKey {
+    fn blank() -> FullStreamKey {
+        FullStreamKey {
             version: 0,
             id: Default::default(),
             key: Default::default(),
         }
     }
 
-    pub fn new() -> StreamKey {
-        let mut k = StreamKey::blank();
+    pub fn new() -> FullStreamKey {
+        let mut k = FullStreamKey::blank();
         k.version = 1;
         aead_keygen(&mut k.key);
         k.complete();
         k
     }
 
-    pub fn from_secret(k: SecretKey) -> StreamKey {
-        let mut stream = StreamKey::blank();
+    pub fn from_secret(k: SecretKey) -> FullStreamKey {
+        let mut stream = FullStreamKey::blank();
         stream.version = 1;
         stream.key = k;
         stream.complete();
         stream
     }
 
-    pub fn get_id(&self) -> &StreamId {
-        &self.id
+    pub fn get_id(&self) -> StreamId {
+        (&self.id).clone()
     }
 
     pub fn get_version(&self) -> u8 {
@@ -47,6 +53,13 @@ impl StreamKey {
 
     pub fn get_key(&self) -> &SecretKey {
         &self.key
+    }
+
+    pub fn get_stream_ref(&self) -> StreamKey {
+        StreamKey {
+            version: self.version,
+            id: self.get_id()
+        }
     }
 
     pub fn complete(&mut self) {
@@ -59,8 +72,8 @@ impl StreamKey {
         Ok(())
     }
 
-    pub fn read<R: Read>(rd: &mut R) -> Result<StreamKey, CryptoError> {
-        let mut k = StreamKey::blank();
+    pub fn read<R: Read>(rd: &mut R) -> Result<FullStreamKey, CryptoError> {
+        let mut k = FullStreamKey::blank();
         k.version = rd.read_u8().map_err(CryptoError::Io)?;
         if k.version != 1 { return Err(CryptoError::UnsupportedVersion); }
         rd.read_exact(&mut k.key.0).map_err(CryptoError::Io)?;
@@ -74,14 +87,14 @@ impl StreamKey {
 mod tests {
     use super::*;
 
-    fn example_key() -> StreamKey {
+    fn example_key() -> FullStreamKey {
         // Below test vectors come from using the C version of crypto_kdf_derive_from_key with 
         // subkey index of 1 and "condense" as the context.
         let key: [u8; 32] = [0x49, 0x2f, 0xeb, 0x2e, 0x37, 0x5f, 0x2c, 0x70, 
                              0x9f, 0x12, 0xca, 0xf7, 0xad, 0xea, 0xfe, 0x66,
                              0xfe, 0x5a, 0x77, 0x2f, 0x0f, 0x50, 0x83, 0x6d,
                              0x63, 0x4f, 0xf1, 0x8a, 0xa5, 0x43, 0x26, 0x64];
-        StreamKey::from_secret(SecretKey(key))
+        FullStreamKey::from_secret(SecretKey(key))
     }
 
     #[test]
@@ -94,10 +107,10 @@ mod tests {
         assert_eq!(key.id.0, subkey);
     }
 
-    fn enc_dec(k: StreamKey) {
+    fn enc_dec(k: FullStreamKey) {
         let mut v = Vec::new();
         k.write(&mut v).unwrap();
-        let kd = StreamKey::read(&mut &v[..]).unwrap();
+        let kd = FullStreamKey::read(&mut &v[..]).unwrap();
         assert_eq!(k.version, kd.version);
         assert_eq!(k.key.0, kd.key.0);
         assert_eq!(k.id.0, kd.id.0);

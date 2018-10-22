@@ -18,8 +18,7 @@ use byteorder::{WriteBytesExt, ReadBytesExt};
 use std::{fmt, io};
 use std::error::Error;
 
-use crypto::Signature;
-use crypto::hash::Hash;
+use crypto::Hash;
 
 pub mod crypto;
 
@@ -182,7 +181,6 @@ pub struct Query {
 #[derive(Clone)]
 pub struct Entry {
     hash: Hash,
-    signatures: Vec<Signature>,
 }
 impl Entry {
     pub fn encode(self, _key: (u64, u64)) -> Vec<u8> {

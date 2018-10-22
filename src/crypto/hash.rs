@@ -6,7 +6,7 @@ use super::CryptoError;
 use std::hash;
 use super::sodium::blake2b;
 
-/// Crytographically secure hash of data. Can be signed by a Key. It is impractical to generate an 
+/// Crytographically secure hash of data. Can be signed by a FullKey. It is impractical to generate an 
 /// identical hash from different data.
 #[derive(Clone)]
 pub struct Hash {

@@ -312,6 +312,17 @@ pub fn randombytes(x: &mut [u8]) {
     unsafe { libsodium_sys::randombytes_buf(x.as_mut_ptr() as *mut _, x.len()); }
 }
 
+/// Initializes the underlying crypto library and makes all random number generation functions 
+/// thread-safe.
+pub fn init() -> Result<(), ()> {
+    if unsafe { libsodium_sys::sodium_init() } >= 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

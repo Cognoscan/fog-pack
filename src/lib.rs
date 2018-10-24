@@ -85,20 +85,16 @@ pub enum ExtType {
     Hash,
     Identity,
     Signature,
-    Lock,
-    Key,
-    LockBox
+    LockBox,
 }
 impl ExtType {
     fn to_i8(&self) -> i8 {
         match *self {
-            ExtType::Index      => 1,
+            ExtType::Index     => 1,
             ExtType::Hash      => 2,
             ExtType::Identity  => 3,
             ExtType::Signature => 4,
-            ExtType::Lock      => 5,
-            ExtType::Key       => 6,
-            ExtType::LockBox   => 7,
+            ExtType::LockBox   => 5,
         }
     }
 }

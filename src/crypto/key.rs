@@ -3,10 +3,12 @@ use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::{CryptoError, Hash};
 use super::sodium::*;
 
+#[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Key {
     version: u8,
     id: PublicSignKey,
 }
+#[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Identity {
     version: u8,
     id: PublicSignKey,

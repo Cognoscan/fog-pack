@@ -1,8 +1,10 @@
 use std::fmt;
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
-use super::{CryptoError, Hash};
-use super::sodium::*;
+
+use crypto::error::CryptoError;
+use crypto::hash::Hash;
+use crypto::sodium::*;
 
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Key {

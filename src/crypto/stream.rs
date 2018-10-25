@@ -1,8 +1,9 @@
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
-use super::CryptoError;
-use super::sodium::{StreamId, SecretKey, aead_keygen, derive_id};
 use std::fmt;
+
+use crypto::error::CryptoError;
+use crypto::sodium::{StreamId, SecretKey, aead_keygen, derive_id};
 
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct StreamKey {

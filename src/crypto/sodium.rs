@@ -5,7 +5,6 @@
 //! Signing keys are all ed25519, encrypting keys are curve25519, secret keys are 32-byte shared 
 //! secrets used for XChaCha20.
 
-use super::CryptoError;
 use std::ops::Drop;
 use std::fmt;
 use std::ptr;
@@ -13,6 +12,8 @@ use std::ffi::CString;
 use libc::c_ulonglong;
 use libsodium_sys;
 use constant_time_eq::constant_time_eq;
+
+use crypto::error::CryptoError;
 
 const SECRET_KEY_BYTES:   usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_KEYBYTES as usize;
 const NONCE_BYTES:        usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_NPUBBYTES as usize;

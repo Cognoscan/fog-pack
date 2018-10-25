@@ -2,9 +2,10 @@ use constant_time_eq::constant_time_eq;
 use std::fmt;
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
-use super::CryptoError;
 use std::hash;
-use super::sodium::blake2b;
+
+use crypto::error::CryptoError;
+use crypto::sodium::blake2b;
 
 /// Crytographically secure hash of data. Can be signed by a FullKey. It is impractical to generate an 
 /// identical hash from different data.

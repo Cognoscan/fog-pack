@@ -1,8 +1,10 @@
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
-use super::CryptoError;
-use super::sodium::*;
-use super::{FullKey,FullIdentity,FullStreamKey};
+
+use crypto::error::CryptoError;
+use crypto::sodium::*;
+use crypto::key::{FullKey,FullIdentity};
+use crypto::stream::FullStreamKey;
 
 #[derive(Clone,PartialEq,Debug)]
 pub enum LockType {

@@ -351,10 +351,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stream_encrypt() {
+    fn stream_encrypt_value() {
+        // Setup keys
         init().unwrap();
         let mut vault = Vault::new();
         let stream = vault.new_stream();
+        // Run test on data
         let data = Value::from("test");
         let encrypted = vault.encrypt_stream(LockBoxContents::Value(data.clone()), &stream).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
@@ -368,16 +370,98 @@ mod tests {
     }
 
     #[test]
-    fn identity_encrypt() {
+    fn identity_encrypt_value() {
+        // Setup keys
         init().unwrap();
         let mut vault = Vault::new();
         let key = vault.new_key();
         let id = key.get_identity();
+        // Run test on data
         let data = Value::from("test");
         let (stream, encrypted) = vault.encrypt_for(LockBoxContents::Value(data.clone()), &id).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
         let data_d = match data_d {
             LockBoxContents::Value(v) => v,
+            _ => panic!("Lockbox should contain a value!"),
+        };
+        assert_eq!(stream, stream_d);
+        assert_eq!(data, data_d);
+        assert_eq!(key_option, Some(key));
+    }
+
+    #[test]
+    fn stream_encrypt_key() {
+        // Setup keys
+        init().unwrap();
+        let mut vault = Vault::new();
+        let key = vault.new_key();
+        let stream = vault.new_stream();
+        // Run test on data
+        let data = vault.new_key();
+        let encrypted = vault.encrypt_stream(LockBoxContents::Key(data.clone()), &stream).unwrap();
+        let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
+        let data_d = match data_d {
+            LockBoxContents::Key(k) => k,
+            _ => panic!("Lockbox should contain a value!"),
+        };
+        assert_eq!(stream, stream_d);
+        assert_eq!(data, data_d);
+        assert_eq!(key_option, None);
+    }
+
+    #[test]
+    fn identity_encrypt_key() {
+        // Setup keys
+        init().unwrap();
+        let mut vault = Vault::new();
+        let key = vault.new_key();
+        let id = key.get_identity();
+        let data = Value::from("test");
+        // Run test on data
+        let data = vault.new_key();
+        let (stream, encrypted) = vault.encrypt_for(LockBoxContents::Key(data.clone()), &id).unwrap();
+        let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
+        let data_d = match data_d {
+            LockBoxContents::Key(k) => k,
+            _ => panic!("Lockbox should contain a value!"),
+        };
+        assert_eq!(stream, stream_d);
+        assert_eq!(data, data_d);
+        assert_eq!(key_option, Some(key));
+    }
+
+    #[test]
+    fn stream_encrypt_stream() {
+        // Setup keys
+        init().unwrap();
+        let mut vault = Vault::new();
+        let stream = vault.new_stream();
+        // Run test on data
+        let data = vault.new_stream();
+        let encrypted = vault.encrypt_stream(LockBoxContents::StreamKey(data.clone()), &stream).unwrap();
+        let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
+        let data_d = match data_d {
+            LockBoxContents::StreamKey(s) => s,
+            _ => panic!("Lockbox should contain a value!"),
+        };
+        assert_eq!(stream, stream_d);
+        assert_eq!(data, data_d);
+        assert_eq!(key_option, None);
+    }
+
+    #[test]
+    fn identity_encrypt() {
+        // Setup keys
+        init().unwrap();
+        let mut vault = Vault::new();
+        let key = vault.new_key();
+        let id = key.get_identity();
+        // Run test on data
+        let data = vault.new_stream();
+        let (stream, encrypted) = vault.encrypt_for(LockBoxContents::StreamKey(data.clone()), &id).unwrap();
+        let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
+        let data_d = match data_d {
+            LockBoxContents::StreamKey(s) => s,
             _ => panic!("Lockbox should contain a value!"),
         };
         assert_eq!(stream, stream_d);

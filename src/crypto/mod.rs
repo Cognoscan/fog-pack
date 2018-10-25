@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use rmpv::Value;
 use rmpv;
 use super::ExtType;
-use std::io::{Write,Read};
-use byteorder::{ReadBytesExt,WriteBytesExt};
+use byteorder::ReadBytesExt;
 
 mod hash;
 mod key;
@@ -27,7 +26,7 @@ pub enum CryptoError {
     DecryptFailed,
     BadLength,
     BadKey,
-    BadMsgPack,
+    BadFormat,
     NotInStorage,
     Io(io::Error),
 }
@@ -39,7 +38,7 @@ impl fmt::Display for CryptoError {
             CryptoError::DecryptFailed        => write!(f, "Could not decrypt with key"),
             CryptoError::BadKey               => write!(f, "Crypto key is weak or invalid"),
             CryptoError::BadLength            => write!(f, "Provided data length is invalid"),
-            CryptoError::BadMsgPack           => write!(f, "MessagePack encode/decode failed"),
+            CryptoError::BadFormat            => write!(f, "Format of data does not match specification"),
             CryptoError::NotInStorage         => write!(f, "Provided Key/Identity/StreamKey is not in storage"),
             CryptoError::Io(ref err)          => err.fmt(f),
         }
@@ -53,7 +52,7 @@ impl Error for CryptoError {
             CryptoError::DecryptFailed        => "decryption failed",
             CryptoError::BadKey               => "weak or invalid key",
             CryptoError::BadLength            => "invalid data length",
-            CryptoError::BadMsgPack           => "bad Messagepack value",
+            CryptoError::BadFormat            => "incorrect format for data",
             CryptoError::NotInStorage         => "Key/Identity/StreamKey not in storage",
             CryptoError::Io(ref err)          => err.description(),
         }
@@ -72,6 +71,7 @@ pub fn init() -> Result<(), ()> {
     sodium::init()
 }
 
+#[derive(Debug)]
 pub enum LockBoxContents {
     Key(Key),
     StreamKey(StreamKey),
@@ -86,7 +86,7 @@ enum LockBoxType {
 
 impl LockBoxType {
     fn from_u8(i: u8) -> Option<LockBoxType> {
-        match self {
+        match i {
             1 => Some(LockBoxType::Key),
             2 => Some(LockBoxType::StreamKey),
             3 => Some(LockBoxType::Value),
@@ -126,13 +126,13 @@ impl Vault {
     }
 
     /// Create a new key and add to permanent store.
-    pub fn new_key(&mut self) -> (Key, Identity) {
+    pub fn new_key(&mut self) -> Key {
         let (k, id) = FullKey::new_pair().unwrap();
         let key_ref = k.get_key_ref();
         let id_ref = id.get_identity_ref();
         self.perm_keys.insert(key_ref.clone(),k);
-        self.perm_ids.insert(id_ref.clone(), id);
-        (key_ref, id_ref)
+        self.perm_ids.insert(id_ref, id);
+        key_ref
     }
 
     /// Create a new Stream and add to permanent store.
@@ -212,80 +212,124 @@ impl Vault {
         self.temp_streams.remove(&stream);
     }
 
-    /// Encrypt a msgpack Value for a given Identity, returning the StreamKey used and the 
-    /// encrypted Value
-    pub fn encrypt_for(&mut self, data: Value, id: &Identity) -> Result<(StreamKey, Value), CryptoError> {
-        let (lock,full_stream) = {
+    /// Encrypt something for a given Identity, returning the StreamKey used and an encrypted Value
+    pub fn encrypt_for(&mut self, data: LockBoxContents, id: &Identity) -> Result<(StreamKey, Value), CryptoError> {
+        // Construct lock
+        let (lock, full_stream) = {
             let full_id = self.get_id(id)?;
             Lock::from_identity(full_id)?
         };
         let stream_ref = full_stream.get_stream_ref();
         self.temp_streams.insert(stream_ref.clone(), full_stream);
-        let mut plaintext: Vec<u8> = Vec::new();
-        plaintext.push(LockBoxType::Value.to_u8());
-        rmpv::encode::write_value(&mut plaintext, &data).or(Err(CryptoError::BadMsgPack))?;
-        let mut crypt: Vec<u8> = Vec::with_capacity(lock.len());
-        lock.write(&mut crypt);
-        lock.encrypt(&plaintext, &[], &mut crypt)?;
-        Ok((stream_ref, Value::Ext(ExtType::LockBox.to_i8(), crypt)))
+        // Encode & encrypt data
+        let mut plaintext = self.encode_data(data)?;
+        let crypt = Vault::encrypt_raw(&plaintext, lock)?;
+        // Zero out plaintext
+        sodium::memzero(&mut plaintext);
+        Ok((stream_ref, crypt))
     }
 
-    /// Encrypt a msgpack Value using a given StreamKey, returning the encrypted Value
-    pub fn encrypt_stream(&self, data: Value, stream: &StreamKey) -> Result<Value, CryptoError> {
+    /// Encrypt something using a given StreamKey, returning an encrypted Value
+    pub fn encrypt_stream(&self, data: LockBoxContents, stream: &StreamKey) -> Result<Value, CryptoError> {
+        // Construct lock
         let full_stream = self.get_stream(stream)?;
         let lock = Lock::from_stream(full_stream)?;
+        // Encode & encrypt data
+        let mut plaintext = self.encode_data(data)?;
+        let crypt = Vault::encrypt_raw(&plaintext, lock)?;
+        // Zero out plaintext
+        sodium::memzero(&mut plaintext);
+        Ok(crypt)
+    }
+
+    fn encode_data(&self, data: LockBoxContents) -> Result<Vec<u8>, CryptoError> {
         let mut plaintext: Vec<u8> = Vec::new();
-        plaintext.push(LockBoxType::Value.to_u8());
-        rmpv::encode::write_value(&mut plaintext, &data).or(Err(CryptoError::BadMsgPack))?;
-        let mut crypt: Vec<u8> = Vec::with_capacity(lock.len());
-        lock.write(&mut crypt);
-        lock.encrypt(&plaintext, &[], &mut crypt)?;
+        match data {
+            LockBoxContents::Value(v) => {
+                plaintext.push(LockBoxType::Value.to_u8());
+                rmpv::encode::write_value(&mut plaintext, &v).or(Err(CryptoError::BadFormat))?;
+            },
+            LockBoxContents::Key(k) => {
+                plaintext.push(LockBoxType::Key.to_u8());
+                let full_key = self.get_key(&k)?;
+                full_key.write(&mut plaintext)?;
+            },
+            LockBoxContents::StreamKey(s) => {
+                plaintext.push(LockBoxType::StreamKey.to_u8());
+                let full_stream = self.get_stream(&s)?;
+                full_stream.write(&mut plaintext)?;
+            },
+        };
+        Ok(plaintext)
+    }
+
+    fn encrypt_raw(data: &[u8], lock: Lock) -> Result<Value, CryptoError> {
+        let mut crypt: Vec<u8> = Vec::with_capacity(lock.len()+lock.encrypt_len(data.len()));
+        lock.write(&mut crypt)?;
+        lock.encrypt(data, &[], &mut crypt)?;
         Ok(Value::Ext(ExtType::LockBox.to_i8(), crypt))
     }
 
     /// Decrypt a msgpack Value using stored keys, returning the decrypted Value and keys needed 
     /// for it. If the StreamKey used is new, it will be stored for temporary use
     pub fn decrypt(&mut self, crypt: Value) -> Result<(Option<Key>, StreamKey, LockBoxContents), CryptoError> {
-        let (ext_type, crypt_data) = crypt.as_ext().ok_or(CryptoError::BadMsgPack)?;
+        // Unpack the Value and check it
+        let (ext_type, crypt_data) = crypt.as_ext().ok_or(CryptoError::BadFormat)?;
         let mut crypt_data = &crypt_data[..];
-        if ext_type != ExtType::LockBox.to_i8() { return Err(CryptoError::BadMsgPack); }
+        if ext_type != ExtType::LockBox.to_i8() { return Err(CryptoError::BadFormat); }
+
+        // Extract the Lock used for encryption and determine what is needed for decryption
         let mut lock = Lock::read(&mut crypt_data)?;
-        let need = lock.needs().ok_or(CryptoError::BadMsgPack)?.clone(); // Error should never occur
-        match need {
+        let need = lock.needs().ok_or(CryptoError::BadFormat)?.clone(); // Error should never occur
+
+        // Decrypt depending on lock type
+        let (key_ref, stream_ref) = match need {
             LockType::Identity(id_raw) => {
+                // Fetch key and prepare lock for decoding
                 let key_ref = self::key::key_from_id(lock.get_version(), id_raw.0.clone());
-                let key = self.get_key(&key_ref)?;
-                lock.decode_identity(&key)?;
+                lock.decode_identity(
+                    self.get_key(&key_ref)?
+                )?;
                 let stream = lock.get_stream().ok_or(CryptoError::BadKey)?;
                 let stream_ref = stream.get_stream_ref();
-                let mut plaintext: Vec<u8> = Vec::new();
-                lock.decrypt(&crypt_data, &[], &mut plaintext)?;
-                let mut plaintext_data = &plaintext[..];
-                let content_type = plaintext_data.read_u8().or(Err(CryptoError::BadMsgPack))?;
-                let content_type = LockBoxType::from_u8(content_type).ok_or(CryptoError::BadMsgPack)?;
-                match content_type {
-                    LockBoxType::Value => {
-                        let value = rmpv::decode::read_value(&mut plaintext_data).or(Err(CryptoError::BadMsgPack))?;
-                        Ok((Some(key_ref), stream_ref, LockBoxContents::Value(value)))
-                    },
-                    LockBoxType::Key => {
-                        let new_key = 
-                    },
-                    LockBoxType::StreamKey => {
-                    },
-                }
+                self.temp_streams.insert(stream_ref.clone(),stream);
+                (Some(key_ref), stream_ref)
             },
             LockType::Stream(stream_raw) => {
                 let stream_ref = self::stream::stream_from_id(lock.get_version(), stream_raw.clone());
                 let stream = self.get_stream(&stream_ref)?;
                 let stream_ref = stream.get_stream_ref();
-                lock.decode_stream(&stream);
-                let mut plaintext: Vec<u8> = Vec::new();
-                lock.decrypt(&crypt_data, &[], &mut plaintext)?;
-                let value = rmpv::decode::read_value(&mut &plaintext[..]).or(Err(CryptoError::BadMsgPack))?;
-                Ok((None, stream_ref, value))
+                lock.decode_stream(&stream)?;
+                (None, stream_ref)
             },
-        }
+        };
+        // Decode raw data
+        let mut plaintext: Vec<u8> = Vec::new();
+        lock.decrypt(&crypt_data, &[], &mut plaintext)?;
+        let mut plaintext_data = &plaintext[..];
+        let content_type = plaintext_data.read_u8().or(Err(CryptoError::BadFormat))?;
+        let content_type = LockBoxType::from_u8(content_type).ok_or(CryptoError::BadFormat)?;
+        let content = match content_type {
+            LockBoxType::Value => {
+                let value = rmpv::decode::read_value(&mut plaintext_data).or(Err(CryptoError::BadFormat))?;
+                LockBoxContents::Value(value)
+            },
+            LockBoxType::Key => {
+                // Read out the key and put it in the temp store
+                let (key, id) = FullKey::read(&mut plaintext_data)?;
+                let key_ref = key.get_key_ref();
+                self.temp_keys.insert(key_ref.clone(), key);
+                self.temp_ids.insert(id.get_identity_ref(), id);
+                LockBoxContents::Key(key_ref)
+            },
+            LockBoxType::StreamKey => {
+                let stream = FullStreamKey::read(&mut plaintext_data)?;
+                let stream_ref = stream.get_stream_ref();
+                self.temp_streams.insert(stream_ref.clone(), stream);
+                LockBoxContents::StreamKey(stream_ref)
+            },
+        };
+        Ok((key_ref, stream_ref, content))
     }
 
     fn get_key(&self, k: &Key) -> Result<&FullKey, CryptoError> {
@@ -311,9 +355,13 @@ mod tests {
         init().unwrap();
         let mut vault = Vault::new();
         let stream = vault.new_stream();
-        let data: Value = Value::from("test");
-        let encrypted = vault.encrypt_stream(data.clone(), &stream).unwrap();
+        let data = Value::from("test");
+        let encrypted = vault.encrypt_stream(LockBoxContents::Value(data.clone()), &stream).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
+        let data_d = match data_d {
+            LockBoxContents::Value(v) => v,
+            _ => panic!("Lockbox should contain a value!"),
+        };
         assert_eq!(stream, stream_d);
         assert_eq!(data, data_d);
         assert_eq!(key_option, None);
@@ -323,10 +371,15 @@ mod tests {
     fn identity_encrypt() {
         init().unwrap();
         let mut vault = Vault::new();
-        let (key, id) = vault.new_key();
-        let data: Value = Value::from("test");
-        let (stream, encrypted) = vault.encrypt_for(data.clone(), &id).unwrap();
+        let key = vault.new_key();
+        let id = key.get_identity();
+        let data = Value::from("test");
+        let (stream, encrypted) = vault.encrypt_for(LockBoxContents::Value(data.clone()), &id).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
+        let data_d = match data_d {
+            LockBoxContents::Value(v) => v,
+            _ => panic!("Lockbox should contain a value!"),
+        };
         assert_eq!(stream, stream_d);
         assert_eq!(data, data_d);
         assert_eq!(key_option, Some(key));

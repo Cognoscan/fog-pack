@@ -88,8 +88,8 @@ pub enum ExtType {
     LockBox,
 }
 impl ExtType {
-    fn to_i8(&self) -> i8 {
-        match *self {
+    fn to_i8(self) -> i8 {
+        match self {
             ExtType::Index     => 1,
             ExtType::Hash      => 2,
             ExtType::Identity  => 3,

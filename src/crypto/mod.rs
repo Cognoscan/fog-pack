@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use rmpv::Value;
 use rmpv;
 use super::ExtType;
+use std::io::{Write,Read};
+use byteorder::{ReadBytesExt,WriteBytesExt};
 
 mod hash;
 mod key;
@@ -68,6 +70,36 @@ impl From<io::Error> for CryptoError {
 /// thread-safe. *Must* be called successfully before using the rest of this library.
 pub fn init() -> Result<(), ()> {
     sodium::init()
+}
+
+pub enum LockBoxContents {
+    Key(Key),
+    StreamKey(StreamKey),
+    Value(Value),
+}
+
+enum LockBoxType {
+    Key,
+    StreamKey,
+    Value,
+}
+
+impl LockBoxType {
+    fn from_u8(i: u8) -> Option<LockBoxType> {
+        match self {
+            1 => Some(LockBoxType::Key),
+            2 => Some(LockBoxType::StreamKey),
+            3 => Some(LockBoxType::Value),
+            _ => None
+        }
+    }
+    fn to_u8(self) -> u8 {
+        match self {
+            LockBoxType::Key       => 1,
+            LockBoxType::StreamKey => 2,
+            LockBoxType::Value     => 3,
+        }
+    }
 }
 
 pub struct Vault {
@@ -190,6 +222,7 @@ impl Vault {
         let stream_ref = full_stream.get_stream_ref();
         self.temp_streams.insert(stream_ref.clone(), full_stream);
         let mut plaintext: Vec<u8> = Vec::new();
+        plaintext.push(LockBoxType::Value.to_u8());
         rmpv::encode::write_value(&mut plaintext, &data).or(Err(CryptoError::BadMsgPack))?;
         let mut crypt: Vec<u8> = Vec::with_capacity(lock.len());
         lock.write(&mut crypt);
@@ -202,6 +235,7 @@ impl Vault {
         let full_stream = self.get_stream(stream)?;
         let lock = Lock::from_stream(full_stream)?;
         let mut plaintext: Vec<u8> = Vec::new();
+        plaintext.push(LockBoxType::Value.to_u8());
         rmpv::encode::write_value(&mut plaintext, &data).or(Err(CryptoError::BadMsgPack))?;
         let mut crypt: Vec<u8> = Vec::with_capacity(lock.len());
         lock.write(&mut crypt);
@@ -211,7 +245,7 @@ impl Vault {
 
     /// Decrypt a msgpack Value using stored keys, returning the decrypted Value and keys needed 
     /// for it. If the StreamKey used is new, it will be stored for temporary use
-    pub fn decrypt(&mut self, crypt: Value) -> Result<(Option<Key>, StreamKey, Value), CryptoError> {
+    pub fn decrypt(&mut self, crypt: Value) -> Result<(Option<Key>, StreamKey, LockBoxContents), CryptoError> {
         let (ext_type, crypt_data) = crypt.as_ext().ok_or(CryptoError::BadMsgPack)?;
         let mut crypt_data = &crypt_data[..];
         if ext_type != ExtType::LockBox.to_i8() { return Err(CryptoError::BadMsgPack); }
@@ -226,8 +260,20 @@ impl Vault {
                 let stream_ref = stream.get_stream_ref();
                 let mut plaintext: Vec<u8> = Vec::new();
                 lock.decrypt(&crypt_data, &[], &mut plaintext)?;
-                let value = rmpv::decode::read_value(&mut &plaintext[..]).or(Err(CryptoError::BadMsgPack))?;
-                Ok((Some(key_ref), stream_ref, value))
+                let mut plaintext_data = &plaintext[..];
+                let content_type = plaintext_data.read_u8().or(Err(CryptoError::BadMsgPack))?;
+                let content_type = LockBoxType::from_u8(content_type).ok_or(CryptoError::BadMsgPack)?;
+                match content_type {
+                    LockBoxType::Value => {
+                        let value = rmpv::decode::read_value(&mut plaintext_data).or(Err(CryptoError::BadMsgPack))?;
+                        Ok((Some(key_ref), stream_ref, LockBoxContents::Value(value)))
+                    },
+                    LockBoxType::Key => {
+                        let new_key = 
+                    },
+                    LockBoxType::StreamKey => {
+                    },
+                }
             },
             LockType::Stream(stream_raw) => {
                 let stream_ref = self::stream::stream_from_id(lock.get_version(), stream_raw.clone());

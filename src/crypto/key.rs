@@ -15,6 +15,18 @@ pub struct Identity {
     id: PublicSignKey,
 }
 
+impl Key {
+    pub fn get_identity(&self) -> Identity {
+        Identity { version: self.version, id: self.id.clone() }
+    }
+}
+
+impl Identity {
+    pub fn get_key(&self) -> Key {
+        Key { version: self.version, id: self.id.clone() }
+    }
+}
+
 impl fmt::Debug for Key {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{} {{ ver={}, {:x?} }}", stringify!(Key), &self.version, &self.id.0[..])

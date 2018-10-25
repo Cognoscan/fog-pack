@@ -70,7 +70,7 @@ pub fn init() -> Result<(), ()> {
     sodium::init()
 }
 
-struct Vault {
+pub struct Vault {
     perm_keys: HashMap <Key, FullKey>,
     perm_ids: HashMap <Identity, FullIdentity>,
     perm_streams: HashMap <StreamKey, FullStreamKey>,
@@ -81,6 +81,7 @@ struct Vault {
 
 impl Vault {
 
+    /// Create a brand-new empty Vault
     pub fn new() -> Vault {
         Vault {
             perm_keys: Default::default(),
@@ -92,7 +93,7 @@ impl Vault {
         }
     }
 
-    /// Create a new key and add to permanent store
+    /// Create a new key and add to permanent store.
     pub fn new_key(&mut self) -> (Key, Identity) {
         let (k, id) = FullKey::new_pair().unwrap();
         let key_ref = k.get_key_ref();
@@ -102,12 +103,81 @@ impl Vault {
         (key_ref, id_ref)
     }
 
-    /// Create a new Stream and add to permanent store
+    /// Create a new Stream and add to permanent store.
     pub fn new_stream(&mut self) -> StreamKey {
         let k = FullStreamKey::new();
         let k_ref = k.get_stream_ref();
         self.perm_streams.insert(k_ref.clone(), k);
         k_ref
+    }
+
+    /// Moves both the Key and Identity to the permanent store.
+    pub fn key_to_perm(&mut self, k: &Key) -> bool {
+        // Move key and hold onto FullKey if needed to reconstruct identity
+        let key = match self.temp_keys.remove(&k) {
+            Some(key) => {
+                self.perm_keys.insert(k.clone(),key);
+                self.perm_keys.get(&k)
+            },
+            None => self.perm_keys.get(&k),
+        };
+        // Halt now if we don't actually have the key
+        let key = match key {
+            Some(v) => v,
+            None => { return false; },
+        };
+        // Since we have the key, we can make sure it ends up in the identity store
+        let id_ref = k.get_identity();
+        match self.temp_ids.remove(&id_ref) {
+            Some(id) => {
+                self.perm_ids.insert(id_ref,id);
+            },
+            None => {
+                // The below code shouldn't need to run unless there's a logic error elsewhere
+                if !self.perm_ids.contains_key(&id_ref) {
+                    // Panic occurs only if a bad key made it into the store. This is panic-worthy.
+                    let id = key.get_identity()
+                        .expect("Bad Key was unexpectedly found in crypto vault!");
+                    self.perm_ids.insert(id_ref,id);
+                }
+            },
+        }
+        true
+    }
+
+    /// Moves the given Identity to the permanent store.
+    pub fn identity_to_perm(&mut self, id: &Identity) -> bool {
+        match self.temp_ids.remove(&id) {
+            Some(full_id) => {self.perm_ids.insert(id.clone(),full_id); true},
+            None => self.perm_ids.contains_key(&id),
+        }
+    }
+
+    /// Moves the given Stream to the permanent store.
+    pub fn stream_to_perm(&mut self, stream: &StreamKey) -> bool {
+        match self.temp_streams.remove(&stream) {
+            Some(full_stream) => {self.perm_streams.insert(stream.clone(),full_stream); true},
+            None => self.perm_streams.contains_key(&stream),
+        }
+    }
+
+    /// Drops just the given key from every store.
+    pub fn drop_key(&mut self, k: Key) {
+        self.perm_keys.remove(&k);
+        self.temp_keys.remove(&k);
+    }
+
+    /// Drops the given identity from every store. Also drops the key if we have it.
+    pub fn drop_identity(&mut self, id: Identity) {
+        self.perm_ids.remove(&id);
+        self.temp_ids.remove(&id);
+        self.drop_key(id.get_key());
+    }
+
+    /// Drops the given stream from every store.
+    pub fn drop_stream(&mut self, stream: StreamKey) {
+        self.perm_streams.remove(&stream);
+        self.temp_streams.remove(&stream);
     }
 
     /// Encrypt a msgpack Value for a given Identity, returning the StreamKey used and the 

@@ -2,11 +2,22 @@ use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::CryptoError;
 use super::sodium::{StreamId, SecretKey, aead_keygen, derive_id};
+use std::fmt;
 
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct StreamKey {
     version: u8,
     id: StreamId,
+}
+
+pub fn stream_from_id(version: u8, id: StreamId) -> StreamKey {
+    StreamKey { version, id }
+}
+
+impl fmt::Debug for StreamKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ ver={}, {:x?} }}", stringify!(StreamKey), &self.version, &self.id.0[..])
+    }
 }
 
 /// FullStreamKey: A secret XChaCha20 key, identifiable by its ID

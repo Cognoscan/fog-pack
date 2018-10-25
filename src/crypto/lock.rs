@@ -122,6 +122,10 @@ impl Lock {
         }, k))
     }
 
+    pub fn get_version(&self) -> u8 {
+        self.version
+    }
+
     pub fn len(&self) -> usize {
         1 + self.type_id.len() + self.nonce.0.len()
     }
@@ -187,6 +191,11 @@ impl Lock {
         if self.decoded { None } else { Some(&self.type_id) }
     }
 
+    pub fn get_stream(&self) -> Option<FullStreamKey> {
+        if !self.decoded { return None; };
+        Some(FullStreamKey::from_secret(self.key.clone()))
+    }
+
     pub fn decode_stream(&mut self, k: &FullStreamKey) -> Result<(), CryptoError> {
         match self.type_id {
             LockType::Identity(_) => Err(CryptoError::BadKey),
@@ -244,7 +253,7 @@ mod tests {
         let mut lkd = Lock::read(&mut &v[..]).unwrap();
         match lkd.needs().unwrap() {
             LockType::Identity(_) => panic!("Shouldn't be a identity lock"),
-            LockType::Stream(i) => assert_eq!(i, stream.get_id()),
+            LockType::Stream(i) => assert_eq!(*i, stream.get_id()),
         };
         lkd.decode_stream(stream).unwrap();
         assert_eq!(lk, lkd);

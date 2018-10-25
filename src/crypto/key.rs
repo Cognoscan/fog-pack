@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
 use super::{CryptoError, Hash};
@@ -12,6 +13,26 @@ pub struct Key {
 pub struct Identity {
     version: u8,
     id: PublicSignKey,
+}
+
+impl fmt::Debug for Key {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ ver={}, {:x?} }}", stringify!(Key), &self.version, &self.id.0[..])
+    }
+}
+
+impl fmt::Debug for Identity {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ ver={}, {:x?} }}", stringify!(Identity), &self.version, &self.id.0[..])
+    }
+}
+
+pub fn key_from_id(version: u8, id: PublicSignKey) -> Key {
+    Key { version, id }
+}
+
+pub fn identity_from_id(version: u8, id: PublicSignKey) -> Identity {
+    Identity { version, id }
 }
 
 /// FullSignatures are used to authenticate a piece of data based on its hash. One can be generated 

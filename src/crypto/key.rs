@@ -1,10 +1,12 @@
 use std::fmt;
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
+use rmpv::Value;
 
+use crypto::sodium::*;
 use crypto::error::CryptoError;
 use crypto::hash::Hash;
-use crypto::sodium::*;
+use crypto::ext_type::ExtType;
 
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Key {
@@ -26,6 +28,23 @@ impl Key {
 impl Identity {
     pub fn get_key(&self) -> Key {
         Key { version: self.version, id: self.id.clone() }
+    }
+
+    pub fn get_value(&self) -> Value {
+        let mut v: Vec<u8> = Vec::with_capacity(1+self.id.0.len());
+        v.push(self.version);
+        v.extend_from_slice(&self.id.0);
+        Value::Ext(ExtType::Identity.to_i8(), v)
+    }
+
+    pub fn from_value(v: &Value) -> Option<Identity> {
+        let (ty, buf) = v.as_ext()?;
+        if ty != ExtType::Identity.to_i8() { return None; }
+        let mut id = Identity { version: 0, id: Default::default() };
+        let mut reader = &buf[..];
+        id.version = reader.read_u8().ok()?;
+        reader.read_exact(&mut id.id.0).ok()?;
+        Some(id)
     }
 }
 
@@ -374,6 +393,16 @@ mod tests {
         assert_eq!(*sig.signed_by(), id.get_id());
         assert!(sig.verify(&h));
         signature_enc_dec(sig);
+    }
+
+    #[test]
+    fn identity_value() {
+        init().unwrap();
+        let (k, id) = FullKey::new_pair().unwrap();
+        let id_ref = id.get_identity_ref();
+        let val = id_ref.get_value();
+        let id_ref_decoded = Identity::from_value(&val).expect("Didn't decode as a valid Identity");;
+        assert_eq!(id_ref, id_ref_decoded);
     }
 
 }

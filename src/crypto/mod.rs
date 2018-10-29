@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use rmpv::Value;
 use rmpv;
-use super::ExtType;
 use byteorder::ReadBytesExt;
 
 mod sodium;
@@ -10,11 +9,19 @@ mod hash;
 mod key;
 mod stream;
 mod lock;
+mod ext_type;
+
+mod timestamp;
+mod integer;
+mod utf8string;
+
+pub mod value;
 
 use self::key::{FullKey,FullIdentity};
 use self::stream::FullStreamKey;
 use self::lock::{Lock,LockType};
 
+pub use self::ext_type::ExtType;
 pub use self::error::CryptoError;
 pub use self::hash::Hash;
 pub use self::key::{Key, Identity};

@@ -1,10 +1,14 @@
-use std::ops::Index;
+use std::ops;
 use std::borrow::Cow;
 use std::fmt::{self, Display};
 
 use crypto::integer::Integer;
 use crypto::utf8string::{Utf8String, Utf8StringRef};
 use crypto::timestamp::Timestamp;
+use crypto::lock::Lockbox;
+use crypto::hash::Hash;
+use crypto::key::{Identity,Signature};
+use crypto::index::Index;
 
 /// Represents any valid MessagePack value.
 #[derive(Clone, Debug, PartialEq)]
@@ -44,8 +48,19 @@ pub enum Value {
     Array(Vec<Value>),
     /// Map represents key-value pairs of objects.
     Map(Vec<(Value, Value)>),
-    /// Timestamp represents a UNIX timestamp with optional nanoseconds field.
+    /// A UNIX timestamp with optional nanoseconds field.
     Timestamp(Timestamp),
+    /// A 128-bit unsigned value.
+    Index(Index),
+    /// A cryptographic hash of data, usually another encoded Value.
+    Hash(Hash),
+    /// An identity is a public key that can be used to verify signatures and encrypt data.
+    Identity(Identity),
+    /// A signature can be appended to an array to sign that array's contents with a particular key. 
+    /// Others can use the associated Identity to verify the correctness of the signature.
+    Signature(Signature),
+    /// A lockbox contains encrypted data. It can contain a secret Key, StreamKey, or Value.
+    Lockbox(Lockbox),
     /// Extended implements Extension interface: represents a tuple of type information and a byte
     /// array where type information is an integer whose meaning is defined by applications.
     Ext(i8, Vec<u8>),
@@ -261,6 +276,10 @@ impl Value {
         self.as_map().is_some()
     }
 
+    pub fn is_timestamp(&self) -> bool {
+        self.as_timestamp().is_some()
+    }
+
     /// Returns true if the `Value` is an Ext. Returns false otherwise.
     pub fn is_ext(&self) -> bool {
         self.as_ext().is_some()
@@ -440,6 +459,14 @@ impl Value {
         }
     }
 
+    pub fn as_timestamp(&self) -> Option<Timestamp> {
+        if let Value::Timestamp(time) = *self {
+            Some(time)
+        } else {
+            None
+        }
+    }
+
     /// If the `Value` is an Ext, returns the associated tuple with a ty and slice.
     /// Returns None otherwise.
     ///
@@ -464,7 +491,7 @@ impl Value {
 static NIL: Value = Value::Nil;
 static NIL_REF: ValueRef<'static> = ValueRef::Nil;
 
-impl Index<usize> for Value {
+impl ops::Index<usize> for Value {
     type Output = Value;
 
     fn index(&self, index: usize) -> &Value {
@@ -595,6 +622,12 @@ impl From<Vec<Value>> for Value {
 impl From<Vec<(Value, Value)>> for Value {
     fn from(v: Vec<(Value, Value)>) -> Self {
         Value::Map(v)
+    }
+}
+
+impl From<Timestamp> for Value {
+    fn from(v: Timestamp) -> Self {
+        Value::Timestamp(v)
     }
 }
 
@@ -868,6 +901,12 @@ impl<'a> From<Vec<ValueRef<'a>>> for ValueRef<'a> {
 impl<'a> From<Vec<(ValueRef<'a>, ValueRef<'a>)>> for ValueRef<'a> {
     fn from(v: Vec<(ValueRef<'a>, ValueRef<'a>)>) -> Self {
         ValueRef::Map(v)
+    }
+}
+
+impl<'a> From<Timestamp> for ValueRef<'a> {
+    fn from(v: Timestamp) -> Self {
+        ValueRef::Timestamp(v)
     }
 }
 

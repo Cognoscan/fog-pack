@@ -10,7 +10,7 @@ pub enum ExtType {
     Hash,
     Identity,
     Signature,
-    LockBox,
+    Lockbox,
 }
 
 impl ExtType {
@@ -22,7 +22,7 @@ impl ExtType {
             ExtType::Hash      => 2,
             ExtType::Identity  => 3,
             ExtType::Signature => 4,
-            ExtType::LockBox   => 5,
+            ExtType::Lockbox   => 5,
         }
     }
 
@@ -34,7 +34,7 @@ impl ExtType {
             2  => Some(ExtType::Hash),
             3  => Some(ExtType::Identity),
             4  => Some(ExtType::Signature),
-            5  => Some(ExtType::LockBox),
+            5  => Some(ExtType::Lockbox),
             _  => None,
         }
     }

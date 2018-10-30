@@ -68,21 +68,22 @@ pub fn identity_from_id(version: u8, id: PublicSignKey) -> Identity {
     Identity { version, id }
 }
 
-/// FullSignatures are used to authenticate a piece of data based on its hash. One can be generated 
+
+/// Signatures are used to authenticate a piece of data based on its hash. One can be generated 
 /// from a [`FullKey`] and a [`Hash`]. The versions of each are stored, along with the identifying 
 /// information of the FullKey used (i.e. the public signing key).
 ///
 /// It can be verified by providing the hash of the data. The signing identity can be determined 
 /// using the public signing key retrieved by `get_identity_version`.
 #[derive(Debug,PartialEq,Clone)]
-pub struct FullSignature {
+pub struct Signature {
     id_version: u8,
     id: PublicSignKey,
     hash_version: u8,
     sig: Sign,
 }
 
-impl FullSignature {
+impl Signature {
     /// Version of the `Hash` used in signature computation.
     pub fn get_hash_version(&self) -> u8 {
         self.hash_version
@@ -113,7 +114,7 @@ impl FullSignature {
     }
 
     /// Read a buffer to reconstruct a signature.
-    pub fn read<R: Read>(rd: &mut R) -> Result<FullSignature, CryptoError> {
+    pub fn read<R: Read>(rd: &mut R) -> Result<Signature, CryptoError> {
         let id_version = rd.read_u8().map_err(CryptoError::Io)?;
         let hash_version = rd.read_u8().map_err(CryptoError::Io)?;
         if id_version != 1 || hash_version != 1 { return Err(CryptoError::UnsupportedVersion); }
@@ -121,7 +122,7 @@ impl FullSignature {
         let mut sig: Sign = Default::default();
         rd.read_exact(&mut id.0).map_err(CryptoError::Io)?;
         rd.read_exact(&mut sig.0).map_err(CryptoError::Io)?;
-        Ok(FullSignature {
+        Ok(Signature {
             id_version,
             id,
             hash_version,
@@ -206,8 +207,8 @@ impl FullKey {
         calc_secret(pk, &self.decrypting)
     }
 
-    pub fn sign(&self, hash: &Hash) -> FullSignature {
-        FullSignature { 
+    pub fn sign(&self, hash: &Hash) -> Signature {
+        Signature { 
             id_version: self.version,
             hash_version: hash.get_version(),
             id: self.get_id(),
@@ -334,10 +335,10 @@ mod tests {
         assert_eq!(id,idd);
     }
 
-    fn signature_enc_dec(sig: FullSignature) {
+    fn signature_enc_dec(sig: Signature) {
         let mut v = Vec::new();
         sig.write(&mut v).unwrap();
-        let sigd = FullSignature::read(&mut &v[..]).unwrap();
+        let sigd = Signature::read(&mut &v[..]).unwrap();
         assert_eq!(sig,sigd);
     }
 

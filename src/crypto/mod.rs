@@ -14,6 +14,7 @@ mod ext_type;
 mod timestamp;
 mod integer;
 mod utf8string;
+mod index;
 
 pub mod value;
 
@@ -35,32 +36,32 @@ pub fn init() -> Result<(), ()> {
 }
 
 #[derive(Debug)]
-pub enum LockBoxContents {
+pub enum LockboxContents {
     Key(Key),
     StreamKey(StreamKey),
     Value(Value),
 }
 
-enum LockBoxType {
+enum LockboxType {
     Key,
     StreamKey,
     Value,
 }
 
-impl LockBoxType {
-    fn from_u8(i: u8) -> Option<LockBoxType> {
+impl LockboxType {
+    fn from_u8(i: u8) -> Option<LockboxType> {
         match i {
-            1 => Some(LockBoxType::Key),
-            2 => Some(LockBoxType::StreamKey),
-            3 => Some(LockBoxType::Value),
+            1 => Some(LockboxType::Key),
+            2 => Some(LockboxType::StreamKey),
+            3 => Some(LockboxType::Value),
             _ => None
         }
     }
     fn to_u8(self) -> u8 {
         match self {
-            LockBoxType::Key       => 1,
-            LockBoxType::StreamKey => 2,
-            LockBoxType::Value     => 3,
+            LockboxType::Key       => 1,
+            LockboxType::StreamKey => 2,
+            LockboxType::Value     => 3,
         }
     }
 }
@@ -176,7 +177,7 @@ impl Vault {
     }
 
     /// Encrypt something for a given Identity, returning the StreamKey used and an encrypted Value
-    pub fn encrypt_for(&mut self, data: LockBoxContents, id: &Identity) -> Result<(StreamKey, Value), CryptoError> {
+    pub fn encrypt_for(&mut self, data: LockboxContents, id: &Identity) -> Result<(StreamKey, Value), CryptoError> {
         // Construct lock
         let (lock, full_stream) = {
             let full_id = self.get_id(id)?;
@@ -193,7 +194,7 @@ impl Vault {
     }
 
     /// Encrypt something using a given StreamKey, returning an encrypted Value
-    pub fn encrypt_stream(&self, data: LockBoxContents, stream: &StreamKey) -> Result<Value, CryptoError> {
+    pub fn encrypt_stream(&self, data: LockboxContents, stream: &StreamKey) -> Result<Value, CryptoError> {
         // Construct lock
         let full_stream = self.get_stream(stream)?;
         let lock = Lock::from_stream(full_stream)?;
@@ -205,20 +206,20 @@ impl Vault {
         Ok(crypt)
     }
 
-    fn encode_data(&self, data: LockBoxContents) -> Result<Vec<u8>, CryptoError> {
+    fn encode_data(&self, data: LockboxContents) -> Result<Vec<u8>, CryptoError> {
         let mut plaintext: Vec<u8> = Vec::new();
         match data {
-            LockBoxContents::Value(v) => {
-                plaintext.push(LockBoxType::Value.to_u8());
+            LockboxContents::Value(v) => {
+                plaintext.push(LockboxType::Value.to_u8());
                 rmpv::encode::write_value(&mut plaintext, &v).or(Err(CryptoError::BadFormat))?;
             },
-            LockBoxContents::Key(k) => {
-                plaintext.push(LockBoxType::Key.to_u8());
+            LockboxContents::Key(k) => {
+                plaintext.push(LockboxType::Key.to_u8());
                 let full_key = self.get_key(&k)?;
                 full_key.write(&mut plaintext)?;
             },
-            LockBoxContents::StreamKey(s) => {
-                plaintext.push(LockBoxType::StreamKey.to_u8());
+            LockboxContents::StreamKey(s) => {
+                plaintext.push(LockboxType::StreamKey.to_u8());
                 let full_stream = self.get_stream(&s)?;
                 full_stream.write(&mut plaintext)?;
             },
@@ -230,16 +231,16 @@ impl Vault {
         let mut crypt: Vec<u8> = Vec::with_capacity(lock.len()+lock.encrypt_len(data.len()));
         lock.write(&mut crypt)?;
         lock.encrypt(data, &[], &mut crypt)?;
-        Ok(Value::Ext(ExtType::LockBox.to_i8(), crypt))
+        Ok(Value::Ext(ExtType::Lockbox.to_i8(), crypt))
     }
 
     /// Decrypt a msgpack Value using stored keys, returning the decrypted Value and keys needed 
     /// for it. If the StreamKey used is new, it will be stored for temporary use
-    pub fn decrypt(&mut self, crypt: Value) -> Result<(Option<Key>, StreamKey, LockBoxContents), CryptoError> {
+    pub fn decrypt(&mut self, crypt: Value) -> Result<(Option<Key>, StreamKey, LockboxContents), CryptoError> {
         // Unpack the Value and check it
         let (ext_type, crypt_data) = crypt.as_ext().ok_or(CryptoError::BadFormat)?;
         let mut crypt_data = &crypt_data[..];
-        if ext_type != ExtType::LockBox.to_i8() { return Err(CryptoError::BadFormat); }
+        if ext_type != ExtType::Lockbox.to_i8() { return Err(CryptoError::BadFormat); }
 
         // Extract the Lock used for encryption and determine what is needed for decryption
         let mut lock = Lock::read(&mut crypt_data)?;
@@ -271,25 +272,25 @@ impl Vault {
         lock.decrypt(&crypt_data, &[], &mut plaintext)?;
         let mut plaintext_data = &plaintext[..];
         let content_type = plaintext_data.read_u8().or(Err(CryptoError::BadFormat))?;
-        let content_type = LockBoxType::from_u8(content_type).ok_or(CryptoError::BadFormat)?;
+        let content_type = LockboxType::from_u8(content_type).ok_or(CryptoError::BadFormat)?;
         let content = match content_type {
-            LockBoxType::Value => {
+            LockboxType::Value => {
                 let value = rmpv::decode::read_value(&mut plaintext_data).or(Err(CryptoError::BadFormat))?;
-                LockBoxContents::Value(value)
+                LockboxContents::Value(value)
             },
-            LockBoxType::Key => {
+            LockboxType::Key => {
                 // Read out the key and put it in the temp store
                 let (key, id) = FullKey::read(&mut plaintext_data)?;
                 let key_ref = key.get_key_ref();
                 self.temp_keys.insert(key_ref.clone(), key);
                 self.temp_ids.insert(id.get_identity_ref(), id);
-                LockBoxContents::Key(key_ref)
+                LockboxContents::Key(key_ref)
             },
-            LockBoxType::StreamKey => {
+            LockboxType::StreamKey => {
                 let stream = FullStreamKey::read(&mut plaintext_data)?;
                 let stream_ref = stream.get_stream_ref();
                 self.temp_streams.insert(stream_ref.clone(), stream);
-                LockBoxContents::StreamKey(stream_ref)
+                LockboxContents::StreamKey(stream_ref)
             },
         };
         Ok((key_ref, stream_ref, content))
@@ -321,10 +322,10 @@ mod tests {
         let stream = vault.new_stream();
         // Run test on data
         let data = Value::from("test");
-        let encrypted = vault.encrypt_stream(LockBoxContents::Value(data.clone()), &stream).unwrap();
+        let encrypted = vault.encrypt_stream(LockboxContents::Value(data.clone()), &stream).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
         let data_d = match data_d {
-            LockBoxContents::Value(v) => v,
+            LockboxContents::Value(v) => v,
             _ => panic!("Lockbox should contain a value!"),
         };
         assert_eq!(stream, stream_d);
@@ -341,10 +342,10 @@ mod tests {
         let id = key.get_identity();
         // Run test on data
         let data = Value::from("test");
-        let (stream, encrypted) = vault.encrypt_for(LockBoxContents::Value(data.clone()), &id).unwrap();
+        let (stream, encrypted) = vault.encrypt_for(LockboxContents::Value(data.clone()), &id).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
         let data_d = match data_d {
-            LockBoxContents::Value(v) => v,
+            LockboxContents::Value(v) => v,
             _ => panic!("Lockbox should contain a value!"),
         };
         assert_eq!(stream, stream_d);
@@ -361,10 +362,10 @@ mod tests {
         let stream = vault.new_stream();
         // Run test on data
         let data = vault.new_key();
-        let encrypted = vault.encrypt_stream(LockBoxContents::Key(data.clone()), &stream).unwrap();
+        let encrypted = vault.encrypt_stream(LockboxContents::Key(data.clone()), &stream).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
         let data_d = match data_d {
-            LockBoxContents::Key(k) => k,
+            LockboxContents::Key(k) => k,
             _ => panic!("Lockbox should contain a value!"),
         };
         assert_eq!(stream, stream_d);
@@ -382,10 +383,10 @@ mod tests {
         let data = Value::from("test");
         // Run test on data
         let data = vault.new_key();
-        let (stream, encrypted) = vault.encrypt_for(LockBoxContents::Key(data.clone()), &id).unwrap();
+        let (stream, encrypted) = vault.encrypt_for(LockboxContents::Key(data.clone()), &id).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
         let data_d = match data_d {
-            LockBoxContents::Key(k) => k,
+            LockboxContents::Key(k) => k,
             _ => panic!("Lockbox should contain a value!"),
         };
         assert_eq!(stream, stream_d);
@@ -401,10 +402,10 @@ mod tests {
         let stream = vault.new_stream();
         // Run test on data
         let data = vault.new_stream();
-        let encrypted = vault.encrypt_stream(LockBoxContents::StreamKey(data.clone()), &stream).unwrap();
+        let encrypted = vault.encrypt_stream(LockboxContents::StreamKey(data.clone()), &stream).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
         let data_d = match data_d {
-            LockBoxContents::StreamKey(s) => s,
+            LockboxContents::StreamKey(s) => s,
             _ => panic!("Lockbox should contain a value!"),
         };
         assert_eq!(stream, stream_d);
@@ -421,10 +422,10 @@ mod tests {
         let id = key.get_identity();
         // Run test on data
         let data = vault.new_stream();
-        let (stream, encrypted) = vault.encrypt_for(LockBoxContents::StreamKey(data.clone()), &id).unwrap();
+        let (stream, encrypted) = vault.encrypt_for(LockboxContents::StreamKey(data.clone()), &id).unwrap();
         let (key_option, stream_d, data_d)  = vault.decrypt(encrypted).unwrap();
         let data_d = match data_d {
-            LockBoxContents::StreamKey(s) => s,
+            LockboxContents::StreamKey(s) => s,
             _ => panic!("Lockbox should contain a value!"),
         };
         assert_eq!(stream, stream_d);

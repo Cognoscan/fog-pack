@@ -1,25 +1,22 @@
 use rmpv::Value;
-use byteorder::{WriteBytesExt, ReadBytesExt};
-
-use std::{fmt, io};
-use std::error::Error;
+use byteorder::{self,WriteBytesExt, ReadBytesExt};
 
 use crypto::ext_type::ExtType;
-use crypto::timestamp::Timestamp;
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Index (u64,u64);
 
 impl Index {
     pub fn encode(&self) -> Value {
         let mut enc = Vec::new();
         if self.1 == 0 {
-            if self.0 < ::std::u8::MAX {
+            if self.0 < ::std::u8::MAX as u64 {
                 enc.write_u8(self.0 as u8).unwrap();
             }
-            else if self.0 < ::std::u16::MAX {
+            else if self.0 < ::std::u16::MAX as u64 {
                 enc.write_u16::<byteorder::BigEndian>(self.0 as u16).unwrap();
             }
-            else if self.0 < ::std::u32::MAX {
+            else if self.0 < ::std::u32::MAX as u64 {
                 enc.write_u32::<byteorder::BigEndian>(self.0 as u32).unwrap();
             }
             else {

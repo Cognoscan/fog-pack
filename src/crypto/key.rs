@@ -26,6 +26,10 @@ impl Key {
 }
 
 impl Identity {
+    pub fn get_version(&self) -> u8 {
+        self.version
+    }
+
     pub fn get_key(&self) -> Key {
         Key { version: self.version, id: self.id.clone() }
     }

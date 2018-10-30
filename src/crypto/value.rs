@@ -5,7 +5,7 @@ use std::fmt::{self, Display};
 use crypto::integer::Integer;
 use crypto::utf8string::{Utf8String, Utf8StringRef};
 use crypto::timestamp::Timestamp;
-use crypto::lock::Lockbox;
+use crypto::lock::{Lockbox,LockboxRef};
 use crypto::hash::Hash;
 use crypto::key::{Identity,Signature};
 use crypto::index::Index;
@@ -111,6 +111,11 @@ impl Value {
                 ValueRef::Map(val.iter().map(|&(ref k, ref v)| (k.as_ref(), v.as_ref())).collect())
             }
             &Value::Timestamp(val) => ValueRef::Timestamp(val),
+            &Value::Index(val) => ValueRef::Index(val),
+            &Value::Hash(val) => ValueRef::Hash(val),
+            &Value::Identity(val) => ValueRef::Identity(val),
+            &Value::Signature(val) => ValueRef::Signature(val),
+            &Value::Lockbox(ref val) => ValueRef::Lockbox(val.as_ref()),
             &Value::Ext(ty, ref buf) => ValueRef::Ext(ty, buf.as_slice()),
         }
     }
@@ -670,6 +675,11 @@ impl Display for Value {
                 write!(f, "}}")
             }
             Value::Timestamp(ref val) => write!(f, "{}", val),
+            Value::Index(ref val) => write!(f, "{}", val),
+            Value::Hash(ref val) => write!(f, "{{Hash V{}}}", val.get_version()),
+            Value::Identity(ref val) => write!(f, "{{Identity V{}}}", val.get_version()),
+            Value::Signature(ref val) => write!(f, "{{Signature ID=V{}, Hash=V{}}}", val.get_identity_version(), val.get_hash_version()),
+            Value::Lockbox(ref val) => write!(f, "{{Lockbox V{}}}", val.get_version()),
             Value::Ext(ty, ref data) => {
                 write!(f, "[{}, {:?}]", ty, data)
             }
@@ -701,6 +711,17 @@ pub enum ValueRef<'a> {
     Map(Vec<(ValueRef<'a>, ValueRef<'a>)>),
     /// Timestamp represents a UNIX timestamp with optional nanoseconds field.
     Timestamp(Timestamp),
+    /// A 128-bit unsigned value.
+    Index(Index),
+    /// A cryptographic hash of data, usually another encoded Value.
+    Hash(Hash),
+    /// An identity is a public key that can be used to verify signatures and encrypt data.
+    Identity(Identity),
+    /// A signature can be appended to an array to sign that array's contents with a particular key. 
+    /// Others can use the associated Identity to verify the correctness of the signature.
+    Signature(Signature),
+    /// A lockbox contains encrypted data. It can contain a secret Key, StreamKey, or Value.
+    Lockbox(LockboxRef<'a>),
     /// Extended implements Extension interface: represents a tuple of type information and a byte
     /// array where type information is an integer whose meaning is defined by applications.
     Ext(i8, &'a [u8]),
@@ -753,6 +774,11 @@ impl<'a> ValueRef<'a> {
                 Value::Map(val.iter().map(|&(ref k, ref v)| (k.to_owned(), v.to_owned())).collect())
             }
             &ValueRef::Timestamp(val) => Value::Timestamp(val),
+            &ValueRef::Index(val) => Value::Index(val),
+            &ValueRef::Hash(val) => Value::Hash(val),
+            &ValueRef::Identity(val) => Value::Identity(val),
+            &ValueRef::Signature(val) => Value::Signature(val),
+            &ValueRef::Lockbox(val) => Value::Lockbox(val.into()),
             &ValueRef::Ext(ty, buf) => Value::Ext(ty, buf.to_vec()),
         }
     }
@@ -947,6 +973,11 @@ impl<'a> Display for ValueRef<'a> {
                 write!(f, "}}")
             }
             ValueRef::Timestamp(ref val) => write!(f, "{}", val),
+            ValueRef::Index(ref val) => write!(f, "{}", val),
+            ValueRef::Hash(ref val) => write!(f, "{{Hash V{}}}", val.get_version()),
+            ValueRef::Identity(ref val) => write!(f, "{{Identity V{}}}", val.get_version()),
+            ValueRef::Signature(ref val) => write!(f, "{{Signature ID=V{}, Hash=V{}}}", val.get_identity_version(), val.get_hash_version()),
+            ValueRef::Lockbox(ref val) => write!(f, "{{Lockbox V{}}}", val.get_version()),
             ValueRef::Ext(ty, ref data) => {
                 write!(f, "[{}, {:?}]", ty, data)
             }

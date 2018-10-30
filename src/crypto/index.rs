@@ -1,9 +1,10 @@
+use std::fmt;
 use rmpv::Value;
 use byteorder::{self,WriteBytesExt, ReadBytesExt};
 
 use crypto::ext_type::ExtType;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Index (u64,u64);
 
 impl Index {
@@ -73,5 +74,11 @@ impl Index {
             },
             _ => None,
         }
+    }
+}
+
+impl fmt::Display for Index {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{},{}", self.1, self.0)
     }
 }

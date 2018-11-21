@@ -1,0 +1,74 @@
+# Certificates #
+
+Certificates are documents with a special position in the system - that is, they 
+have a special meaning in the context of a query or in permissions.
+
+## Format ##
+
+```
+Document: {
+	"$schema": <Hash(cert schema)>,
+	"id": <Identity(root)>,
+}, signed by <Identity(root)>
+
+Entry: {
+	"cert": {
+		"id": <Identity(x)>
+		"begin": <Timestamp>,
+		"end": <Timestamp>,
+		"name": <String>,
+		"value": <Integer>
+	}
+}, signed by <Identity(root)>
+
+```
+
+Certificate Store Schema is as follows:
+```
+Document: {
+	"name": "Certificate Store",
+	"required": ["id"],
+	"optional": ["name"],
+	"properties": {
+		"id": {
+			"type": "identity"
+		},
+		"name": {
+			"type": "string",
+			"max_len": 255
+		}
+		"cert": {
+			"type": "map",
+			"required": ["id","begin","end","name","value"],
+			"
+			"properties": {
+				"id": {
+					"type": "identity"
+				},
+				"begin": {
+					"type:" "timestamp"
+				},
+				"end": {
+					"type": "timestamp"
+				},
+				"name": {
+					"type": "string",
+					"max_len": 255
+				},
+				"value": {
+					"type": "integer"
+				},
+			}
+		}
+	}
+}
+```
+
+## Querying or Permissions ##
+
+When asking about signatures in a query, we can ask:
+
+1. Logical and/or/not of signatures
+
+We may also accept signature whose Identity has been certified by some other 
+Identity that meets our requirements. Namely, it matches a string. 

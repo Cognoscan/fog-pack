@@ -72,3 +72,82 @@ When asking about signatures in a query, we can ask:
 
 We may also accept signature whose Identity has been certified by some other 
 Identity that meets our requirements. Namely, it matches a string. 
+
+
+### Retrieving Certificate Chains ###
+
+A certificate chain can be retrieved using an ordinary query. If a query 
+response is received, but fails identity validation, a node might generate a 
+query to retrieve a certificate chain from the responding node. It can then 
+decide if the responding node has lied or not.
+
+```
+{
+	root: [<Hash>],
+	query: {
+		$schema: <Hash - cert schema>,
+		cert: {
+			begin: {
+				$gte: <Timestamp - now>
+			},
+			end: {
+				$lte: <Timestamp - now>
+			},
+			name: "friend",
+			value: {
+				$gt: 0
+			},
+			link: {
+				$link: {
+					$schema: <Hash - cert schema>,
+					cert: {
+						begin: {
+							$gte: <Timestamp - now>
+						},
+						end: {
+							$lte: <Timestamp - now>
+						},
+						name: "friend",
+						value: {
+							$gt: 0
+						}
+						link: {
+							$link: {
+								$schema: <Hash - cert schema>,
+								id: <Identity - received Identity>
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+```
+
+
+```
+Document: {
+	"$schema": <Hash(cert schema)>,
+	"id": <Identity(root)>,
+}, signed by <Identity(root)>
+
+Entry: {
+	"cert": {
+		"id": <Identity(x)>
+		"begin": <Timestamp>,
+		"end": <Timestamp>,
+		"name": <String>,
+		"value": <Integer>
+	}
+}, signed by <Identity(root)>
+
+
+
+
+
+
+
+
+
+
+

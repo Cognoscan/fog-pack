@@ -9,6 +9,14 @@ entries, and can follow hashes to other documents and match against those
 documents. A match occurs when all statements in the query evaluate to true. The 
 matching documents and entries are all returned as a single result.
 
+## Allowable Query Types ##
+
+- query - Allow direct equivalence checking and checking for existance
+- ordinal - Allow ordinal comparisons
+- bit - Allow bitwise checking of an Integer
+- array - Allow checking array contents
+- signed - Allow checking signatures
+
 ## Types ##
 
 Queries break MessagePack values down into a set of types and assign them 
@@ -128,7 +136,7 @@ default logical ANDing of query clauses.
 | $or  | Logical OR of two query clauses  |
 | $nor | Logical NOR of two query clauses |
 
-### Element Query Operators ###
+### Field Query Operators ###
 
 These allow for determining if a field exists, and if so, if it matches a specific 
 type.
@@ -143,9 +151,86 @@ the "Types" section for the names and numbers for each type.
 
 **The string value should be considered case-sensitive.**
 
-### Text Operators ###
+### Array Operators ###
 
-These require more elaborate evaluation on a specific field. 
+### Miscellaneous Operators ###
+
+| Name    | Description                                         |
+| --      | --                                                  |
+| $link   | Follow a Hash to a document and query that document |
+| $signed | Evaluate the digital signatures for an object       |
+
+### $signed ###
+
+Requires that the field holding the array be marked as "signed".
+
+`$signed` performs signature verification beyond simple matching. It checks the 
+certificate store based on the provided fields:
+
+- `name`: String that should exactly match for a certificate
+- `value`: Integer that can be compared against or matched exactly
+- `id`: Either a single Identity or an array of Identities
+- `$signed`: Chains to another `$signed` query
+
+If both the `id` and `$signed` fields are present, this will evaluate as true if 
+either any of the provided Identities was the signer or if the `$signed` 
+sub-query evaluates to true.
+
+#### Example ####
+
+Say the data on a node is as below:
+
+```
+document: [
+	{
+		$schema: <Hash - location record-keeping schema>,
+		name: "Team Work Locations",
+		root: <Identity - root>
+	},
+	<Signature - ID root>
+]
+
+entry: [ <Hash - document>, "loc_status", { team: "Finance",     location: "Home"   }, <Signature - ID user0>]
+entry: [ <Hash - document>, "loc_status", { team: "Accounting",  location: "Work"   }, <Signature - ID user1>]
+entry: [ <Hash - document>, "loc_status", { team: "Sales", 		   location: "Travel" }, <Signature - ID user2>]
+entry: [ <Hash - document>, "loc_status", { team: "Engineering", location: "Work"   }, <Signature - ID user3>]
+
+```
+
+The below will match on any array whose first element is an object with a team 
+field set to "Finance" and a location field with a string value. The array must 
+also contain a signature, as indicated by `$signed`. Any Identity with a valid 
+"user" certificate (name="user" and value>0) from another Identity with a valid 
+"admin" certificate (name="admin" and value>0) that was signed by a given 
+Identity will be accepted.
+
+```
+query: {
+	root: [ <Hash - document> ],
+	query: {
+		loc_status: {
+			team: "Finance",
+			location: { $type: "string" },
+			$signed: {
+				value: { $gt: 0 },
+				name: "user",
+				$signed: {
+					value: { $gt: 0 },
+					name: "admin"
+					id: <Identity>
+				}
+			}
+		}
+	}
+}
+```
+
+This will return a single entry:
+
+```
+entry: [ <Hash>, "loc_status", { team: "Finance",     location: "Home"   }, <Signature - ID user0>]
+```
+
 
 ## Priority ##
 

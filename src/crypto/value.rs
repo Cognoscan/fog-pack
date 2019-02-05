@@ -8,93 +8,27 @@ use crypto::timestamp::Timestamp;
 use crypto::lock::{Lockbox,LockboxRef};
 use crypto::hash::Hash;
 use crypto::key::{Identity,Signature};
-use crypto::index::Index;
 
 /// Represents any valid MessagePack value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
-    /// Nil represents nil.
     Nil,
-    /// Boolean represents true or false.
     Boolean(bool),
-    /// Integer represents an integer.
-    ///
-    /// A value of an `Integer` object is limited from `-(2^63)` upto `(2^64)-1`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(42, Value::from(42).as_i64().unwrap());
-    /// ```
     Integer(Integer),
-    /// A 32-bit floating point number.
     F32(f32),
-    /// A 64-bit floating point number.
     F64(f64),
-    /// String extending Raw type represents a UTF-8 string.
-    ///
-    /// # Note
-    ///
-    /// String objects may contain invalid byte sequence and the behavior of a deserializer depends
-    /// on the actual implementation when it received invalid byte sequence. Deserializers should
-    /// provide functionality to get the original byte array so that applications can decide how to
-    /// handle the object
     String(Utf8String),
-    /// Binary extending Raw type represents a byte array.
     Binary(Vec<u8>),
-    /// Array represents a sequence of objects.
     Array(Vec<Value>),
-    /// Map represents key-value pairs of objects.
     Map(Vec<(Value, Value)>),
-    /// A UNIX timestamp with optional nanoseconds field.
     Timestamp(Timestamp),
-    /// A 128-bit unsigned value.
-    Index(Index),
-    /// A cryptographic hash of data, usually another encoded Value.
     Hash(Hash),
-    /// An identity is a public key that can be used to verify signatures and encrypt data.
     Identity(Identity),
-    /// A signature can be appended to an array to sign that array's contents with a particular key. 
-    /// Others can use the associated Identity to verify the correctness of the signature.
-    Signature(Signature),
-    /// A lockbox contains encrypted data. It can contain a secret Key, StreamKey, or Value.
     Lockbox(Lockbox),
-    /// Extended implements Extension interface: represents a tuple of type information and a byte
-    /// array where type information is an integer whose meaning is defined by applications.
     Ext(i8, Vec<u8>),
 }
 
 impl Value {
-    /// Converts the current owned Value to a ValueRef.
-    ///
-    /// # Panics
-    ///
-    /// Panics in unable to allocate memory to keep all internal structures and buffers.
-    ///
-    /// # Examples
-    /// ```
-    /// use rmpv::{Value, ValueRef};
-    ///
-    /// let val = Value::Array(vec![
-    ///     Value::Nil,
-    ///     Value::from(42),
-    ///     Value::Array(vec![
-    ///         Value::String("le message".into())
-    ///     ])
-    /// ]);
-    ///
-    /// let expected = ValueRef::Array(vec![
-    ///    ValueRef::Nil,
-    ///    ValueRef::from(42),
-    ///    ValueRef::Array(vec![
-    ///        ValueRef::from("le message"),
-    ///    ])
-    /// ]);
-    ///
-    /// assert_eq!(expected, val.as_ref());
-    /// ```
     pub fn as_ref(&self) -> ValueRef {
         match self {
             &Value::Nil => ValueRef::Nil,
@@ -111,7 +45,6 @@ impl Value {
                 ValueRef::Map(val.iter().map(|&(ref k, ref v)| (k.as_ref(), v.as_ref())).collect())
             }
             &Value::Timestamp(val) => ValueRef::Timestamp(val),
-            &Value::Index(val) => ValueRef::Index(val),
             &Value::Hash(val) => ValueRef::Hash(val),
             &Value::Identity(val) => ValueRef::Identity(val),
             &Value::Signature(val) => ValueRef::Signature(val),
@@ -120,15 +53,6 @@ impl Value {
         }
     }
 
-    /// Returns true if the `Value` is a Null. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::Nil.is_nil());
-    /// ```
     pub fn is_nil(&self) -> bool {
         if let Value::Nil = *self {
             true
@@ -137,32 +61,10 @@ impl Value {
         }
     }
 
-    /// Returns true if the `Value` is a Boolean. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::Boolean(true).is_bool());
-    ///
-    /// assert!(!Value::Nil.is_bool());
-    /// ```
     pub fn is_bool(&self) -> bool {
         self.as_bool().is_some()
     }
 
-    /// Returns true if the `Value` is convertible to an i64. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::from(42).is_i64());
-    ///
-    /// assert!(!Value::from(42.0).is_i64());
-    /// ```
     pub fn is_i64(&self) -> bool {
         if let Value::Integer(ref v) = *self {
             v.is_i64()
@@ -171,18 +73,6 @@ impl Value {
         }
     }
 
-    /// Returns true if the `Value` is convertible to an u64. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::from(42).is_u64());
-    ///
-    /// assert!(!Value::F32(42.0).is_u64());
-    /// assert!(!Value::F64(42.0).is_u64());
-    /// ```
     pub fn is_u64(&self) -> bool {
         if let Value::Integer(ref v) = *self {
             v.is_u64()
@@ -191,18 +81,6 @@ impl Value {
         }
     }
 
-    /// Returns true if (and only if) the `Value` is a f32. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::F32(42.0).is_f32());
-    ///
-    /// assert!(!Value::from(42).is_f32());
-    /// assert!(!Value::F64(42.0).is_f32());
-    /// ```
     pub fn is_f32(&self) -> bool {
         if let Value::F32(..) = *self {
             true
@@ -211,18 +89,6 @@ impl Value {
         }
     }
 
-    /// Returns true if (and only if) the `Value` is a f64. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::F64(42.0).is_f64());
-    ///
-    /// assert!(!Value::from(42).is_f64());
-    /// assert!(!Value::F32(42.0).is_f64());
-    /// ```
     pub fn is_f64(&self) -> bool {
         if let Value::F64(..) = *self {
             true
@@ -231,19 +97,6 @@ impl Value {
         }
     }
 
-    /// Returns true if the `Value` is a Number. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::from(42).is_number());
-    /// assert!(Value::F32(42.0).is_number());
-    /// assert!(Value::F64(42.0).is_number());
-    ///
-    /// assert!(!Value::Nil.is_number());
-    /// ```
     pub fn is_number(&self) -> bool {
         match *self {
             Value::Integer(..) | Value::F32(..) | Value::F64(..) => true,
@@ -251,32 +104,18 @@ impl Value {
         }
     }
 
-    /// Returns true if the `Value` is a String. Returns false otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert!(Value::String("value".into()).is_str());
-    ///
-    /// assert!(!Value::Nil.is_str());
-    /// ```
     pub fn is_str(&self) -> bool {
         self.as_str().is_some()
     }
 
-    /// Returns true if the `Value` is a Binary. Returns false otherwise.
     pub fn is_bin(&self) -> bool {
         self.as_slice().is_some()
     }
 
-    /// Returns true if the `Value` is an Array. Returns false otherwise.
     pub fn is_array(&self) -> bool {
         self.as_array().is_some()
     }
 
-    /// Returns true if the `Value` is a Map. Returns false otherwise.
     pub fn is_map(&self) -> bool {
         self.as_map().is_some()
     }
@@ -285,23 +124,10 @@ impl Value {
         self.as_timestamp().is_some()
     }
 
-    /// Returns true if the `Value` is an Ext. Returns false otherwise.
     pub fn is_ext(&self) -> bool {
         self.as_ext().is_some()
     }
 
-    /// If the `Value` is a Boolean, returns the associated bool.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(Some(true), Value::Boolean(true).as_bool());
-    ///
-    /// assert_eq!(None, Value::Nil.as_bool());
-    /// ```
     pub fn as_bool(&self) -> Option<bool> {
         if let Value::Boolean(val) = *self {
             Some(val)
@@ -309,19 +135,6 @@ impl Value {
             None
         }
     }
-
-    /// If the `Value` is an integer, return or cast it to a i64.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(Some(42i64), Value::from(42).as_i64());
-    ///
-    /// assert_eq!(None, Value::F64(42.0).as_i64());
-    /// ```
     pub fn as_i64(&self) -> Option<i64> {
         match *self {
             Value::Integer(ref n) => n.as_i64(),
@@ -329,19 +142,6 @@ impl Value {
         }
     }
 
-    /// If the `Value` is an integer, return or cast it to a u64.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(Some(42u64), Value::from(42).as_u64());
-    ///
-    /// assert_eq!(None, Value::from(-42).as_u64());
-    /// assert_eq!(None, Value::F64(42.0).as_u64());
-    /// ```
     pub fn as_u64(&self) -> Option<u64> {
         match *self {
             Value::Integer(ref n) => n.as_u64(),
@@ -349,22 +149,6 @@ impl Value {
         }
     }
 
-    /// If the `Value` is a number, return or cast it to a f64.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(Some(42.0), Value::from(42).as_f64());
-    /// assert_eq!(Some(42.0), Value::F32(42.0f32).as_f64());
-    /// assert_eq!(Some(42.0), Value::F64(42.0f64).as_f64());
-    ///
-    /// assert_eq!(Some(2147483647.0), Value::from(i32::max_value() as i64).as_f64());
-    ///
-    /// assert_eq!(None, Value::Nil.as_f64());
-    /// ```
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
             Value::Integer(ref n) => n.as_f64(),
@@ -374,18 +158,6 @@ impl Value {
         }
     }
 
-    /// If the `Value` is a String, returns the associated str.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(Some("le message"), Value::String("le message".into()).as_str());
-    ///
-    /// assert_eq!(None, Value::Boolean(true).as_str());
-    /// ```
     pub fn as_str(&self) -> Option<&str> {
         if let Value::String(ref val) = *self {
             val.as_str()
@@ -394,18 +166,6 @@ impl Value {
         }
     }
 
-    /// If the `Value` is a Binary or a String, returns the associated slice.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(Some(&[1, 2, 3, 4, 5][..]), Value::Binary(vec![1, 2, 3, 4, 5]).as_slice());
-    ///
-    /// assert_eq!(None, Value::Boolean(true).as_slice());
-    /// ```
     pub fn as_slice(&self) -> Option<&[u8]> {
         if let Value::Binary(ref val) = *self {
             Some(val)
@@ -416,20 +176,6 @@ impl Value {
         }
     }
 
-    /// If the `Value` is an Array, returns the associated vector.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// let val = Value::Array(vec![Value::Nil, Value::Boolean(true)]);
-    ///
-    /// assert_eq!(Some(&vec![Value::Nil, Value::Boolean(true)]), val.as_array());
-    ///
-    /// assert_eq!(None, Value::Nil.as_array());
-    /// ```
     pub fn as_array(&self) -> Option<&Vec<Value>> {
         if let Value::Array(ref array) = *self {
             Some(&*array)
@@ -438,24 +184,6 @@ impl Value {
         }
     }
 
-    /// If the `Value` is a Map, returns the associated vector of key-value tuples.
-    /// Returns None otherwise.
-    ///
-    /// # Note
-    ///
-    /// MessagePack represents map as a vector of key-value tuples.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// let val = Value::Map(vec![(Value::Nil, Value::Boolean(true))]);
-    ///
-    /// assert_eq!(Some(&vec![(Value::Nil, Value::Boolean(true))]), val.as_map());
-    ///
-    /// assert_eq!(None, Value::Nil.as_map());
-    /// ```
     pub fn as_map(&self) -> Option<&Vec<(Value, Value)>> {
         if let Value::Map(ref map) = *self {
             Some(map)
@@ -472,18 +200,6 @@ impl Value {
         }
     }
 
-    /// If the `Value` is an Ext, returns the associated tuple with a ty and slice.
-    /// Returns None otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rmpv::Value;
-    ///
-    /// assert_eq!(Some((42, &[1, 2, 3, 4, 5][..])), Value::Ext(42, vec![1, 2, 3, 4, 5]).as_ext());
-    ///
-    /// assert_eq!(None, Value::Boolean(true).as_ext());
-    /// ```
     pub fn as_ext(&self) -> Option<(i8, &[u8])> {
         if let Value::Ext(ty, ref buf) = *self {
             Some((ty, buf))
@@ -675,13 +391,12 @@ impl Display for Value {
                 write!(f, "}}")
             }
             Value::Timestamp(ref val) => write!(f, "{}", val),
-            Value::Index(ref val) => write!(f, "{}", val),
-            Value::Hash(ref val) => write!(f, "{{Hash V{}}}", val.get_version()),
-            Value::Identity(ref val) => write!(f, "{{Identity V{}}}", val.get_version()),
-            Value::Signature(ref val) => write!(f, "{{Signature ID=V{}, Hash=V{}}}", val.get_identity_version(), val.get_hash_version()),
-            Value::Lockbox(ref val) => write!(f, "{{Lockbox V{}}}", val.get_version()),
+            Value::Hash(ref val) => write!(f, "<Hash({})>", val.get_version()),
+            Value::Identity(ref val) => write!(f, "<Identity({})>", val.get_version()),
+            Value::Signature(ref val) => write!(f, "<Signature({},{})>", val.get_identity_version(), val.get_hash_version()),
+            Value::Lockbox(ref val) => write!(f, "<Lockbox({})>", val.get_version()),
             Value::Ext(ty, ref data) => {
-                write!(f, "[{}, {:?}]", ty, data)
+                write!(f, "<ext({},{:?})>", ty, data)
             }
         }
     }
@@ -711,8 +426,6 @@ pub enum ValueRef<'a> {
     Map(Vec<(ValueRef<'a>, ValueRef<'a>)>),
     /// Timestamp represents a UNIX timestamp with optional nanoseconds field.
     Timestamp(Timestamp),
-    /// A 128-bit unsigned value.
-    Index(Index),
     /// A cryptographic hash of data, usually another encoded Value.
     Hash(Hash),
     /// An identity is a public key that can be used to verify signatures and encrypt data.
@@ -774,7 +487,6 @@ impl<'a> ValueRef<'a> {
                 Value::Map(val.iter().map(|&(ref k, ref v)| (k.to_owned(), v.to_owned())).collect())
             }
             &ValueRef::Timestamp(val) => Value::Timestamp(val),
-            &ValueRef::Index(val) => Value::Index(val),
             &ValueRef::Hash(val) => Value::Hash(val),
             &ValueRef::Identity(val) => Value::Identity(val),
             &ValueRef::Signature(val) => Value::Signature(val),
@@ -973,7 +685,6 @@ impl<'a> Display for ValueRef<'a> {
                 write!(f, "}}")
             }
             ValueRef::Timestamp(ref val) => write!(f, "{}", val),
-            ValueRef::Index(ref val) => write!(f, "{}", val),
             ValueRef::Hash(ref val) => write!(f, "{{Hash V{}}}", val.get_version()),
             ValueRef::Identity(ref val) => write!(f, "{{Identity V{}}}", val.get_version()),
             ValueRef::Signature(ref val) => write!(f, "{{Signature ID=V{}, Hash=V{}}}", val.get_identity_version(), val.get_hash_version()),

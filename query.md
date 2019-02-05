@@ -1,4 +1,5 @@
-# Query Language #
+Query Language
+==============
 
 Queries are themselves valid MessagePack Documents, which use reserved names for 
 their operators.
@@ -9,15 +10,30 @@ entries, and can follow hashes to other documents and match against those
 documents. A match occurs when all statements in the query evaluate to true. The 
 matching documents and entries are all returned as a single result.
 
-## Allowable Query Types ##
+By default, a query has an unlimited lifetime. As long as it is active, new 
+results may be returned, either because a new node with results was discovered 
+or because a known node updated its database.
+
+Given that they have unlimited lifetimes, queries can alternately be viewed as a 
+sort of publish-subscribe system, where the query is a way of subscribing to a 
+document and narrowing the scope of the subscription.
+
+Allowable Query Types
+---------------------
+
+Document schema allow for specifying which fields should be queryable, and what 
+types of queries are allowed. This serves as a guideline for the query maker and 
+the database - the database is encouraged to plan for certain query types, and 
+the query maker is encouraged to only use queries that meet the schema.
 
 - query - Allow direct equivalence checking and checking for existance
 - ordinal - Allow ordinal comparisons
-- bit - Allow bitwise checking of an Integer
+- bit - Allow bitwise checking of an Integer or Binary type.
 - array - Allow checking array contents
 - signed - Allow checking signatures
 
-## Types ##
+Types
+-----
 
 Queries break MessagePack values down into a set of types and assign them 
 specific names and numbers, given in the table below. These names should be 
@@ -29,10 +45,11 @@ considered case-sensitive.
 | boolean   | 1           |
 | integer   | 2           |
 | string    | 3           |
-| floating  | 4           |
-| binary    | 5           |
-| array     | 6           |
-| object    | 7           |
+| f32       | 4           |
+| f64       | 5           |
+| binary    | 6           |
+| array     | 7           |
+| object    | 8           |
 | hash      | 258=256+2   |
 | identity  | 259=256+3   |
 | signature | 260=256+3   |
@@ -113,20 +130,38 @@ All comparison operators evaluate as false if the types do not match.
 - Integer: standard integer ordering.
 - String: simple binary comparison. Shorter strings are always less than longer 
   strings.
-- Floating Point: Should follow the total order specified by IEEE 754-2008. 
+- Floating Point: Shall follow the total order specified by IEEE 754-2008. 
   However, it is recommended that an implementation accept when this ordering is 
 	violated for NaN entries, or when postive and negative zero are treated as 
-	equal.
+	equal, as actual implementations will likely fail to follow this.
 - Binary data: simple binary comparison. Shorter byte sequences are always less 
   than longer sequences.
 - Array, Object, Hash, Identity, Signature, Lockbox: Always evaluate as false.
 - Timestamp: standard integer ordering. Assume nanoseconds is zero if it is not 
   present.
 
+### Bit Operators ###
+
+These allow for checking specific bits, treating the field as a binary array. 
+They are only capable of operating on the "binary" annd "integer" types. For all 
+other types, these will always evaluate as false.
+
+Requires that the field be queriable and makred as "bit".
+
+| Name          | Description                                                    |
+| --            | --                                                             |
+| $bitsAllClear | Selects bits from mask and is true if all bits are zero        |
+| $bitsAllSet   | Selects bits from mask and is true if all bits are non-zero    |
+| $bitsAnyClear | Selects bits from mask and is true if any bits are zero        |
+| $bitsAnySet   | Selects bits from mask and is true if any bits are non-zero    |
+
 ### Logical Operators ###
 
 These allow joining of other query operations. They may be used to override the 
 default logical ANDing of query clauses.
+
+No specific requirements are needed for these operators, as they do not operate 
+directly on any fields.
 
 | Name | Description                      |
 | --   | --                               |
@@ -140,6 +175,8 @@ default logical ANDing of query clauses.
 These allow for determining if a field exists, and if so, if it matches a specific 
 type.
 
+These operators require that the field be queriable.
+
 | Name    | Description                                  |
 | --      | --                                           |
 | $exists | True if the provided field exists            |
@@ -152,14 +189,33 @@ the "Types" section for the names and numbers for each type.
 
 ### Array Operators ###
 
+These allow for querying the properties of an array.
+
+These operators require that the field be queriable and marked as "array".
+
+| Name  | Description                                           |
+| --    | --                                                    |
+| $all  | True if the array contains all the elements specified |
+| $size | True if the field's array is of a specific size       |
+
+#### $all ####
+
+Checks an array an makes sure all values listed are present in it.
+
+```
+<field>: { $all: [<value1>, <value2>, ... ] }
+```
+
 ### Miscellaneous Operators ###
+
+The below operators are special. The `$signed` operator requires that the field 
+be marked as "signed".
 
 | Name    | Description                                         |
 | --      | --                                                  |
-| $link   | Follow a Hash to a document and query that document |
 | $signed | Evaluate the digital signatures for an object       |
 
-### $signed ###
+#### $signed ####
 
 Requires that the field holding the array be marked as "signed".
 
@@ -175,9 +231,7 @@ If both the `id` and `$signed` fields are present, this will evaluate as true if
 either any of the provided Identities was the signer or if the `$signed` 
 sub-query evaluates to true.
 
-#### Example ####
-
-Say the data on a node is as below:
+As an example, say the data on a node is as below:
 
 ```
 document: [
@@ -230,8 +284,8 @@ This will return a single entry:
 entry: [ <Hash>, "loc_status", { team: "Finance",     location: "Home"   }, <Signature - ID user0>]
 ```
 
-
-## Priority ##
+Priority
+--------
 
 By default, all matched documents are returned in no particular order. If the 
 responding node should prioritize certain documents over others, a priority can 

@@ -1,25 +1,47 @@
 # Certificates #
 
-Certificates are documents with a special position in the system - that is, they 
-have a special meaning in the context of a query or in permissions.
+Certificates are entries with a special position in the system - that is, they 
+have a special meaning in the context of a query, permission-setting, and 
+establishing links with other nodes.
+
+A certificate is a entry attached to a specific document containing only two 
+fields: the `$schema` field, set to the hash of the Certificate schema, and the 
+`id` field, set to the Identity that is being certified. The entry itself has 
+the `cert` field, with an object having the `begin`, `end`, `name`, and `value` 
+fields. the entry is then signed by the certifying Identity.
+
+- `begin` specifies the time after which the certificate is valid.
+- `end` specifies the time after which the certificate is not valid.
+- `name` is a string that may be matched against when using certificates.
+- `value` is an integer that may be compared against when using certificates.
+
+A certificate is considered valid if the current time falls after `begin` and 
+before `end`. It is invalid otherwise.
 
 ## Format ##
 
 ```
-Document: {
-	"$schema": <Hash(cert schema)>,
-	"id": <Identity(root)>,
-}, signed by <Identity(root)>
-
-Entry: {
-	"cert": {
-		"id": <Identity(x)>
-		"begin": <Timestamp>,
-		"end": <Timestamp>,
-		"name": <String>,
-		"value": <Integer>
+document(ID user cert): [
+	{
+		$schema: <hash(Schema - Certificate List)>,
+		id: <identity(ID user)>
 	}
-}, signed by <Identity(root)>
+]
+
+entry: [
+	[
+		<hash(ID user cert)>,
+		"cert",
+		{
+			begin: <timestamp>,
+			end: <timestamp>,
+			name: <string>,
+			value: <integer>
+		}
+	],
+	<signature(ID signer 0)>
+]
+
 
 ```
 
@@ -29,6 +51,7 @@ Document: {
 	"name": "Certificate List",
 	"required": ["id"],
 	"optional": ["name"],
+	"entries": ["cert"],
 	"properties": {
 		"id": {
 			"type": "identity"
@@ -82,20 +105,12 @@ decide if the responding node has lied or not.
 
 ```
 {
-	root: [<Hash>],
+	root: [ <hash(ID user cert> ],
 	query: {
-		$schema: <Hash - cert schema>,
 		cert: {
-			begin: {
-				$gte: <Timestamp - now>
-			},
-			end: {
-				$lte: <Timestamp - now>
-			},
+			begin: { $gte: <timestamp(now)> },
+			end: { $lte: <timestamp(now)> },
 			name: "friend",
-			value: {
-				$gt: 0
-			},
 			link: {
 				$link: {
 					$schema: <Hash - cert schema>,

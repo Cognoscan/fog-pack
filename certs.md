@@ -23,10 +23,10 @@ Entry: {
 
 ```
 
-Certificate Store Schema is as follows:
+Certificate List Schema is as follows:
 ```
 Document: {
-	"name": "Certificate Store",
+	"name": "Certificate List",
 	"required": ["id"],
 	"optional": ["name"],
 	"properties": {
@@ -40,7 +40,6 @@ Document: {
 		"cert": {
 			"type": "map",
 			"required": ["id","begin","end","name","value"],
-			"
 			"properties": {
 				"id": {
 					"type": "identity"
@@ -128,19 +127,19 @@ decide if the responding node has lied or not.
 ```
 Document: {
 	"$schema": <Hash(cert schema)>,
-	"id": <Identity(root)>,
-}, signed by <Identity(root)>
+	"id": <Identity(child)>,
+}
 
 Entry: {
 	"cert": {
-		"id": <Identity(x)>
+		"id": <Identity(child)>
 		"begin": <Timestamp>,
 		"end": <Timestamp>,
 		"name": <String>,
 		"value": <Integer>
 	}
 }, signed by <Identity(root)>
-
+```
 
 
 

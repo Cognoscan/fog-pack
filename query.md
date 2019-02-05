@@ -25,7 +25,7 @@ considered case-sensitive.
 
 | Type      | Number      |
 | --        | --          |
-| null      | 0           |
+| nil       | 0           |
 | boolean   | 1           |
 | integer   | 2           |
 | string    | 3           |
@@ -108,8 +108,7 @@ All comparison operators evaluate as false if the types do not match.
 
 #### Comparisons ####
 
-- Null: always evaluates as true, regardless of comparison, regardless of 
-  comparison
+- Nil: always evaluates as true, regardless of comparison
 - Boolean: true is greater than false.
 - Integer: standard integer ordering.
 - String: simple binary comparison. Shorter strings are always less than longer 

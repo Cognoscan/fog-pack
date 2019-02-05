@@ -1,73 +1,71 @@
 # Condense-db Specification #
 
-The concepts behind Condense-db can be broken down into two categories: encoding 
-definitions and implementation recommendations. The goal of Condense-db is 
-ultimately to define a mechanism for data exchange, verification, retrieval, and 
-modification. The true goal is that this mechanism should fit easily into any 
-protocol stack, such that a user need not concern themselves with exact network 
-implementations.
+Introduction
+------------
 
-## Encoding Definitions ##
+Condense-db is a system for locating, exchanging, and verifying portable data 
+objects. The core of it is a flat document database, where each document is 
+immutable. Documents may be added and removed from the database at any time, 
+and "entries" may be appended to a document. By appending entries, documents may 
+change over time in the database while still being locatable by their hash.
 
-Condense-db defines the following structures:
+An application interacts with the database by storing and removing documents and 
+entries. The database may also be queried using a special "query" document, 
+whose format is described in `query.md`.
 
-- Document: A key-value map
-- Entry: A key-value pair with a parent document
-- Query: A query for retrieving documents and entries from a database
+Documents and their attached entries may follow a specific "schema" document. A 
+schema document defines the allowed format for a document, any attached entries, 
+and which fields in the document may be queried. This allows the database to 
+index a document & its entries to speed up querying. See `schema.md` for details 
+on the format of schema documents and their usage.
+
+Documents are formatted using a modified version of MessagePack. In addition to 
+the base MessagePack specification, a unambiguous encoding is defined, and 
+extension types are added for cryptographic primitives. To use these 
+cryptographic extensions, Condense-db also includes a keystore of public, 
+private, and secret keys for encryption and verification purposes.
+
+In addition to the keystore, a certificate store is maintained within the 
+document database. For every known public key, there exists a coresponding 
+document (called a "Certificate List") in the certificate store. Entries 
+appended to this document are signed by other keys, allowing for the issuing of 
+certificates. See `certs.md` for details. The certificate documents are a 
+special component used in queries, allowing for more complex signature schemes.
+
+Finally, the database may be accessed by other applications or systems. 
+Queries, likewise, may be spread to other systems that maintain their own 
+Condense-db databases. Permissions may be set on the database and each query to 
+determine under what circumstances they are presented to other systems. See 
+`permissions.md` for details.
+
+Encoding Definitions
+--------------------
+
+Condense-db defines the following objects:
+
+- Document: A key-value map. Defined in [Document Format](#document-format).
+- Entry: A key-value pair with a parent document. Defined in [Document 
+  Format](#document-format)
+- Query: A query for retrieving documents and entries from a database. Defined 
+  in `query.md`.
 - Schema: A definition of what format is allowed for documents, entries, and 
-  queries run against them.
+  queries run against them. Defined in `schema.md`.
 - Certificate: A public key signed with another public key, with associated 
-  metadata.
+  metadata. Defined in `certs.md`.
 
 These structures must have consistant encodings, as this is a necessary 
-prerequisite for consistant hashing, encryption, and cryptographic signing. As 
-such, the following encodings need to be defined:
-
-- MessagePack with cryptographic extensions
-	- Used for all structures
-	- Extended with types for cryptographic keys, encryption, hashes, and 
-	  signatures.
-	- Extended with a required order for maps
-	- Reduced to require that all values use the most compact available encoding 
-	  for its data - ex. a 32-bit unsigned integer will be encoded as an 8-bit 
-		unsigned if its value is 255 or less.
-- Document encoding
-	- Simple Key-Value map where all keys are strings, with the option to sign the 
-		entire document.
-- Entry encoding
-	- Key (string), Value, hash of parent document, with the option to sign all 
-	- three.
-- Certificate encoding
-	- Defines a special document with only two keys: "type" and "key". "type" is 
-	  always set to "cert" and "key" is always set to a public key.
-	- Entries appended to this special document always have the key "cert" with a 
-		string-keyed map as the value. The map contains "start", "end", "name", and 
-		optional "meta" keys.
-- Query language
-	- Complex language that is used for document and entry retrieval.
-	- Can specify specific documents
-	- Can specify entries whose keys match, and whose values meet certain 
-	  criteria.
-	- Can specify entries whose values are hashes, and select only those whose 
-	  linked documents meet certain criteria.
-- Schema language
-	- Complex language used for defining document format and format of attached 
-	  entries.
-	- Also defines what in the document may be queried and how it may be queried.
-		
-## Implementation Recommendations ##
-
-- Use a local database for storing documents. Just needs to be a key-value 
-  store, where the keys are the document hashes.
-- Attach entries directly to each document in a list
-- Maintain indexing data for documents as required by their schema in this 
-  database
-- Use permissions.
+prerequisite for consistant hashing, encryption, and cryptographic signing. See 
+[MessagePack Encoding](#messagepack-encoding) for the consistant encoding used 
+by all of the structures.
 
 
+MessagePack Encoding
+--------------------
 
-## MessagePack Encoding ##
-
+Condense-db encodes everything using [MessagePack](https://msgpack.org). Because 
+Condense-db makes use of cryptographic hashes, an unambiguous encoding for 
+MessagePack must be defined. In addition, various cryptographic primitives are 
+defined as MessagePack `ext` types.
 
 ### Extension Type ###
 
@@ -80,7 +78,7 @@ MessagePack is extended with the following `ext` types:
 | 4    | Signature | A public key, and signature of some byte sequence            |
 | 5    | Lockbox   | Encrypted data and the ID of the key needed to decrypt it    |
 
-All positive types are reserved for future use. If a specific additional 
+All positive numbered types are reserved for future use. If a specific additional 
 primitive is desired, this specification or the MessagePack specification should 
 be expanded.
 
@@ -92,12 +90,9 @@ byte sequence:
 
 1. The shortest available encoding is always used. This covers the `int`, `str`, 
 `bin`, `array`, `map`, and `ext` encodings.
-2. Any integer is encoded using the shortest possible sequence in the `int` 
-	family of encodings. If the integer cannot fit in a 64-bit signed or 
-	unsigned value, it shall be considered a byte array, not an integer.
-3. IEEE single-precision and double-precision floating points are not 
+2. IEEE single-precision and double-precision floating points are not 
 	interchangeable. Each is considered a unique type.
-4. The `map` format family has a specific order for its key-value pairs:
+3. The `map` format family has a specific order for its key-value pairs:
 	1. For each pair, encode both and concatenate them together as a key-value 
 		set.
 	2. Sort the pairs by byte order, appending the pair with the smallest value 
@@ -133,11 +128,11 @@ verifying a cryptographic signature. If separate keys are used for encryption
 and verification, they are both provided as a single unit here.
 
 The first byte of an Identity is the "type byte", which indicates what type of 
-public key information is provided.
+public key information is provided. The remaining bytes are the key information.
 
 Currently, only one type is supported: an Ed25519 public key, which can be 
 transformed into a Curve25519 key for encryption. For this type, the type 
-byte is set to 1.
+byte is set to 1, and the Ed25519 public key is then attached.
 
 Each public key type has a matching private key type. See the description of 
 Lockbox for how private keys may be encoded.
@@ -153,9 +148,18 @@ MessagePack object: the object being signed. As such, a Signature *must* be part
 of an array. The first element of this array is the MessagePack object that was 
 signed, and all other elements must be Signatures signing that object.
 
-An encoded signature contains 4 elements: 
+An encoded signature contains 4 elements in the following order: 
+
+1. The "type byte" of the Identity that was used in the signature.
+2. A byte indicating what hashing method was used to create the digest that was 
+   signed.
+3. The Identity used in signing, except for the "type byte".
+4. The digital signature. Format is determined by the Identity type.
 
 ### Lockbox ###
+
+A lockbox stores encrypted information. It can store one of 3 things: A private 
+key, a secret key, or a MessagePack object.
 
 ### Timestamps ###
 The timestamp type (-1) is supported, with caveats. Timestamps specifically use 

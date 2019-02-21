@@ -8,6 +8,7 @@ use crypto::timestamp::Timestamp;
 use crypto::lock::{Lockbox,LockboxRef};
 use crypto::hash::Hash;
 use crypto::key::{Identity,Signature};
+use crypto::index::Index;
 
 /// Represents any valid MessagePack value.
 #[derive(Clone, Debug, PartialEq)]
@@ -22,8 +23,10 @@ pub enum Value {
     Array(Vec<Value>),
     Map(Vec<(Value, Value)>),
     Timestamp(Timestamp),
+    Index(Index),
     Hash(Hash),
     Identity(Identity),
+    Signature(Signature),
     Lockbox(Lockbox),
     Ext(i8, Vec<u8>),
 }
@@ -45,6 +48,7 @@ impl Value {
                 ValueRef::Map(val.iter().map(|&(ref k, ref v)| (k.as_ref(), v.as_ref())).collect())
             }
             &Value::Timestamp(val) => ValueRef::Timestamp(val),
+            &Value::Index(val) => ValueRef::Index(val),
             &Value::Hash(val) => ValueRef::Hash(val),
             &Value::Identity(val) => ValueRef::Identity(val),
             &Value::Signature(val) => ValueRef::Signature(val),
@@ -53,7 +57,7 @@ impl Value {
         }
     }
 
-    pub fn is_nil(&self) -> bool {
+    pub fn is_null(&self) -> bool {
         if let Value::Nil = *self {
             true
         } else {
@@ -97,13 +101,6 @@ impl Value {
         }
     }
 
-    pub fn is_number(&self) -> bool {
-        match *self {
-            Value::Integer(..) | Value::F32(..) | Value::F64(..) => true,
-            _ => false,
-        }
-    }
-
     pub fn is_str(&self) -> bool {
         self.as_str().is_some()
     }
@@ -128,6 +125,7 @@ impl Value {
         self.as_ext().is_some()
     }
 
+
     pub fn as_bool(&self) -> Option<bool> {
         if let Value::Boolean(val) = *self {
             Some(val)
@@ -135,6 +133,19 @@ impl Value {
             None
         }
     }
+
+    /// If the `Value` is an integer, return or cast it to a i64.
+    /// Returns None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// assert_eq!(Some(42i64), Value::from(42).as_i64());
+    ///
+    /// assert_eq!(None, Value::F64(42.0).as_i64());
+    /// ```
     pub fn as_i64(&self) -> Option<i64> {
         match *self {
             Value::Integer(ref n) => n.as_i64(),
@@ -142,6 +153,19 @@ impl Value {
         }
     }
 
+    /// If the `Value` is an integer, return or cast it to a u64.
+    /// Returns None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// assert_eq!(Some(42u64), Value::from(42).as_u64());
+    ///
+    /// assert_eq!(None, Value::from(-42).as_u64());
+    /// assert_eq!(None, Value::F64(42.0).as_u64());
+    /// ```
     pub fn as_u64(&self) -> Option<u64> {
         match *self {
             Value::Integer(ref n) => n.as_u64(),
@@ -149,6 +173,22 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a number, return or cast it to a f64.
+    /// Returns None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// assert_eq!(Some(42.0), Value::from(42).as_f64());
+    /// assert_eq!(Some(42.0), Value::F32(42.0f32).as_f64());
+    /// assert_eq!(Some(42.0), Value::F64(42.0f64).as_f64());
+    ///
+    /// assert_eq!(Some(2147483647.0), Value::from(i32::max_value() as i64).as_f64());
+    ///
+    /// assert_eq!(None, Value::Nil.as_f64());
+    /// ```
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
             Value::Integer(ref n) => n.as_f64(),
@@ -158,6 +198,18 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a String, returns the associated str.
+    /// Returns None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// assert_eq!(Some("le message"), Value::String("le message".into()).as_str());
+    ///
+    /// assert_eq!(None, Value::Boolean(true).as_str());
+    /// ```
     pub fn as_str(&self) -> Option<&str> {
         if let Value::String(ref val) = *self {
             val.as_str()
@@ -166,6 +218,18 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a Binary or a String, returns the associated slice.
+    /// Returns None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// assert_eq!(Some(&[1, 2, 3, 4, 5][..]), Value::Binary(vec![1, 2, 3, 4, 5]).as_slice());
+    ///
+    /// assert_eq!(None, Value::Boolean(true).as_slice());
+    /// ```
     pub fn as_slice(&self) -> Option<&[u8]> {
         if let Value::Binary(ref val) = *self {
             Some(val)
@@ -176,6 +240,20 @@ impl Value {
         }
     }
 
+    /// If the `Value` is an Array, returns the associated vector.
+    /// Returns None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// let val = Value::Array(vec![Value::Nil, Value::Boolean(true)]);
+    ///
+    /// assert_eq!(Some(&vec![Value::Nil, Value::Boolean(true)]), val.as_array());
+    ///
+    /// assert_eq!(None, Value::Nil.as_array());
+    /// ```
     pub fn as_array(&self) -> Option<&Vec<Value>> {
         if let Value::Array(ref array) = *self {
             Some(&*array)
@@ -184,6 +262,24 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a Map, returns the associated vector of key-value tuples.
+    /// Returns None otherwise.
+    ///
+    /// # Note
+    ///
+    /// MessagePack represents map as a vector of key-value tuples.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// let val = Value::Map(vec![(Value::Nil, Value::Boolean(true))]);
+    ///
+    /// assert_eq!(Some(&vec![(Value::Nil, Value::Boolean(true))]), val.as_map());
+    ///
+    /// assert_eq!(None, Value::Nil.as_map());
+    /// ```
     pub fn as_map(&self) -> Option<&Vec<(Value, Value)>> {
         if let Value::Map(ref map) = *self {
             Some(map)
@@ -200,6 +296,18 @@ impl Value {
         }
     }
 
+    /// If the `Value` is an Ext, returns the associated tuple with a ty and slice.
+    /// Returns None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmpv::Value;
+    ///
+    /// assert_eq!(Some((42, &[1, 2, 3, 4, 5][..])), Value::Ext(42, vec![1, 2, 3, 4, 5]).as_ext());
+    ///
+    /// assert_eq!(None, Value::Boolean(true).as_ext());
+    /// ```
     pub fn as_ext(&self) -> Option<(i8, &[u8])> {
         if let Value::Ext(ty, ref buf) = *self {
             Some((ty, buf))
@@ -391,12 +499,13 @@ impl Display for Value {
                 write!(f, "}}")
             }
             Value::Timestamp(ref val) => write!(f, "{}", val),
-            Value::Hash(ref val) => write!(f, "<Hash({})>", val.get_version()),
-            Value::Identity(ref val) => write!(f, "<Identity({})>", val.get_version()),
-            Value::Signature(ref val) => write!(f, "<Signature({},{})>", val.get_identity_version(), val.get_hash_version()),
-            Value::Lockbox(ref val) => write!(f, "<Lockbox({})>", val.get_version()),
+            Value::Index(ref val) => write!(f, "{}", val),
+            Value::Hash(ref val) => write!(f, "{{Hash V{}}}", val.get_version()),
+            Value::Identity(ref val) => write!(f, "{{Identity V{}}}", val.get_version()),
+            Value::Signature(ref val) => write!(f, "{{Signature ID=V{}, Hash=V{}}}", val.get_identity_version(), val.get_hash_version()),
+            Value::Lockbox(ref val) => write!(f, "{{Lockbox V{}}}", val.get_version()),
             Value::Ext(ty, ref data) => {
-                write!(f, "<ext({},{:?})>", ty, data)
+                write!(f, "[{}, {:?}]", ty, data)
             }
         }
     }
@@ -426,6 +535,8 @@ pub enum ValueRef<'a> {
     Map(Vec<(ValueRef<'a>, ValueRef<'a>)>),
     /// Timestamp represents a UNIX timestamp with optional nanoseconds field.
     Timestamp(Timestamp),
+    /// A 128-bit unsigned value.
+    Index(Index),
     /// A cryptographic hash of data, usually another encoded Value.
     Hash(Hash),
     /// An identity is a public key that can be used to verify signatures and encrypt data.
@@ -487,6 +598,7 @@ impl<'a> ValueRef<'a> {
                 Value::Map(val.iter().map(|&(ref k, ref v)| (k.to_owned(), v.to_owned())).collect())
             }
             &ValueRef::Timestamp(val) => Value::Timestamp(val),
+            &ValueRef::Index(val) => Value::Index(val),
             &ValueRef::Hash(val) => Value::Hash(val),
             &ValueRef::Identity(val) => Value::Identity(val),
             &ValueRef::Signature(val) => Value::Signature(val),
@@ -685,6 +797,7 @@ impl<'a> Display for ValueRef<'a> {
                 write!(f, "}}")
             }
             ValueRef::Timestamp(ref val) => write!(f, "{}", val),
+            ValueRef::Index(ref val) => write!(f, "{}", val),
             ValueRef::Hash(ref val) => write!(f, "{{Hash V{}}}", val.get_version()),
             ValueRef::Identity(ref val) => write!(f, "{{Identity V{}}}", val.get_version()),
             ValueRef::Signature(ref val) => write!(f, "{{Signature ID=V{}, Hash=V{}}}", val.get_identity_version(), val.get_hash_version()),

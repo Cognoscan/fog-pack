@@ -27,38 +27,43 @@ the database - the database is encouraged to plan for certain query types, and
 the query maker is encouraged to only use queries that meet the schema.
 
 - query - Allow direct equivalence checking and checking for existance
-- ordinal - Allow ordinal comparisons
+- ord - Allow ordinal comparisons
 - bit - Allow bitwise checking of an Integer or Binary type.
 - array - Allow checking array contents
 - signed - Allow checking signatures
+- link - Allow following a hash and evaluating the matching document
 
 Types
 -----
 
 Queries break MessagePack values down into a set of types and assign them 
 specific names and numbers, given in the table below. These names should be 
-considered case-sensitive.
+considered case-sensitive. In addition, a "Short Name" may be used for the type. 
+All types can be queried with equivalence operaters if the "query" property is 
+set to true in the document schema. Other query operators can be enabled by 
+setting the appropriate property in the document schema.
 
-| Type      | Number      | Type Abbreviation |
-| --        | --          | --                |
-| Nil       | 0           | Nil               |
-| Boolean   | 1           | Bool              |
-| Integer   | 2           | Int               |
-| String    | 3           | Str               |
-| F32       | 4           | F32               |
-| F64       | 5           | F64               |
-| Binary    | 6           | Bin               |
-| Array     | 7           | Array             |
-| Object    | 8           | Obj               |
-| Hash      | 258=256+2   | Hash              |
-| Identity  | 259=256+3   | Ident             |
-| Signature | 260=256+3   | Sign              |
-| Lockbox   | 261=256+3   | Lock              |
-| Timestamp | 511=256+255 | Time              |
+| Type      | Number      | Short Name | Possible Query Types |
+| --        | --          | --         | --                   |
+| Nil       | 0           | Nil        |                      |
+| Boolean   | 1           | Bool       | ord                  |
+| Integer   | 2           | Int        | ord, bit             |
+| String    | 3           | Str        | ord                  |
+| F32       | 4           | F32        | ord                  |
+| F64       | 5           | F64        | ord                  |
+| Binary    | 6           | Bin        | ord, bit             |
+| Array     | 7           | Array      | array                |
+| Object    | 8           | Obj        |                      |
+| Hash      | 258=256+2   | Hash       | link                 |
+| Identity  | 259=256+3   | Ident      |                      |
+| Signature | 260=256+3   | Sign       | sign                 |
+| Lockbox   | 261=256+3   | Lock       |                      |
+| Timestamp | 511=256+255 | Time       | ord                  |
 
 ### Equivalence Operators ###
 
-Requires only that the field be queriable:
+Requires that the field have the "query" property set to true in the document 
+schema, or that the "ord" property be set to true.
 
 | Name | Description    |
 | --   | --             |
@@ -111,8 +116,9 @@ type.
 
 ### Comparison Operators ###
 
-Requires that the field be queriable and marked as "ordinal". Operator evaluates 
-as true depending on the ordering and the provided value.
+Requires that the field have the "ord" property set to true in the document 
+schema. Operator evaluates as true depending on the ordering and the provided 
+value.
 
 All comparison operators evaluate as false if the types do not match.
 
@@ -125,7 +131,6 @@ All comparison operators evaluate as false if the types do not match.
 
 #### Comparisons ####
 
-- Nil: always evaluates as true, regardless of comparison
 - Boolean: true is greater than false.
 - Integer: standard integer ordering.
 - String: simple binary comparison. Shorter strings are always less than longer 
@@ -136,17 +141,16 @@ All comparison operators evaluate as false if the types do not match.
 	equal, as actual implementations will likely fail to follow this.
 - Binary data: simple binary comparison. Shorter byte sequences are always less 
   than longer sequences.
-- Array, Object, Hash, Identity, Signature, Lockbox: Always evaluate as false.
 - Timestamp: standard integer ordering. Assume nanoseconds is zero if it is not 
   present.
 
 ### Bit Operators ###
 
 These allow for checking specific bits, treating the field as a binary array. 
-They are only capable of operating on the "binary" annd "integer" types. For all 
-other types, these will always evaluate as false.
+They are only capable of operating on the "Binary" annd "Integer" types.
 
-Requires that the field be queriable and makred as "bit".
+Requires that the field have the "bit" property set to true in the document 
+schema.
 
 | Name          | Description                                                    |
 | --            | --                                                             |
@@ -175,7 +179,8 @@ directly on any fields.
 These allow for determining if a field exists, and if so, if it matches a specific 
 type.
 
-These operators require that the field be queriable.
+These operators require that the field have the "query" property set to true in 
+the document schema.
 
 | Name    | Description                                  |
 | --      | --                                           |
@@ -191,7 +196,8 @@ the "Types" section for the names and numbers for each type.
 
 These allow for querying the properties of an array.
 
-These operators require that the field be queriable and marked as "array".
+These operators require that the field have the "array" property set to true in 
+the document schema.
 
 | Name  | Description                                           |
 | --    | --                                                    |
@@ -209,15 +215,19 @@ Checks an array an makes sure all values listed are present in it.
 ### Miscellaneous Operators ###
 
 The below operators are special. The `$signed` operator requires that the field 
-be marked as "signed".
+have the "sign" property set to true in the document schema. The `$link` 
+operator requires that the field have the "link" property set to an array of 
+Hash values.
 
 | Name    | Description                                         |
 | --      | --                                                  |
 | $signed | Evaluate the digital signatures for an object       |
+| $link   | Follow a Hash to a document and evaluate its fields |
 
 #### $signed ####
 
-Requires that the field holding the array be marked as "signed".
+Requires that the field holding the array has the "sign" property set to true in 
+the document schema.
 
 `$signed` performs signature verification beyond simple matching. It checks the 
 certificate store based on the provided fields:
@@ -284,13 +294,19 @@ This will return a single entry:
 entry: [ <Hash>, "loc_status", { team: "Finance",     location: "Home"   }, <Signature - ID user0>]
 ```
 
+#### $link ####
+
+Requires that the field be a Hash and have the "link" property set to true in 
+the document schema. The contents of a `$link` operator is an object with fields 
+to be queried in each sub-document. 
+
 Priority
 --------
 
 By default, all matched documents are returned in no particular order. If the 
 responding node should prioritize certain documents over others, a priority can 
-be given by specifiying a field that is both queriable and has the "ordinal" 
-property.
+be given by specifiying a field that is both queriable and has the "ord" 
+property set to true.
 
 ```
 {

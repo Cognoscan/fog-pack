@@ -55,55 +55,21 @@ until all documents have been received or added to the database.
 Schema Document Format
 ----------------------
 
-```
-document(core schema): [
-	{
-		name: "core",
-		required: [
-			{
-				name: "name",
-				type: "Str"
-			}
-		],
-		optional: [
-			{
-				name: "required",
-				type: "FieldArray"
-			},
-			{
-				name: "optional",
-				type: "FieldArray"
-			},
-			{
-				name: "entries",
-				type: "FieldArray"
-			},
-			{
-				name: "unknown_ok",
-				type: "Bool"
-			},
-			{
-				name: "types",
-				type: "TypeArray"
-			}
-		],
-		entries: [],
-		unknown_ok: false
-	}
-]
+Evaluation notes:
+
+1. Type definitions can infinitely recurse. Specifically, 
 
 
+1. Types can refer to themselves. If this is done for objects, it is possible 
+	for a type to require itself. In this case, the type validation will always 
+	fail, as any actual instance of the type would have to recurse indefinitely to 
+	satisfy the schema. A validation implementation may recognize this in advance, 
+	or naively execute; either way, the validation will fail.
 
-
-
-
-
-
-
-
-
-
-
-
+validation engine - it cannot be caught by running the schema through a 
+validator. If a schema results in infinite recursion, it should always fail.
+2. The "name" string has different meanings depending on location. In an object 
+definition, it refers to the field. In the `type` field array, it refers to the 
+name of the type.
 
 

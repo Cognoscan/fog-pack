@@ -24,14 +24,86 @@ when they are received from an external source, and when they are to be added to
 the local database. If a received document/entry is to be immediately added to 
 the database, the validation step need not occur twice.
 
-Validation is simple when adding to the local database. If the relevant schema 
-documents are not in the local database, validation fails. Likewise, if a 
-document or entry links to a document, and that document should meet specific 
-schema, it must be in the local database and aleady has been validated. If not, 
-validation fails. If these conditions are all met and the document/entry 
-otherwise passes validation, it is added to the database.
+### Validation when adding to the database
 
-Validation is different when retrieving from an external source. If the relevant 
-schema documents are not in the local database, they are requested using a query 
-with permissions & conditions identical to the query that returned the retrieved 
-document/entry. If the schema then specifies that 
+Validation is simple when adding to the local database. A document must:
+
+1. Refer to a schema document already in the database
+2. Pass validation for the schema document
+
+A entry is similarly simple. It must:
+
+1. Be an entry for a document already in the database
+2. Be a valid entry for that document
+
+If the above rules are met for a document/entry, then it passes validation and 
+will be added into the database.
+
+### Validating received data
+
+Received data must be temporarily cached in order to support validation. When a 
+document is received, if it refers to a schema document not yet in the database, 
+a query for that schema document will be generated. This query will have the 
+same permissions as the query that resulted in the received document. It will be 
+considered a related query (see query specification).
+
+Once the schema document is either in the database or cached, the received 
+document is validated against it. The same goes for received entries. If a 
+received entry refers to a document not received or in the database, it is held 
+until all documents have been received or added to the database.
+
+Schema Document Format
+----------------------
+
+```
+document(core schema): [
+	{
+		name: "core",
+		required: [
+			{
+				name: "name",
+				type: "Str"
+			}
+		],
+		optional: [
+			{
+				name: "required",
+				type: "FieldArray"
+			},
+			{
+				name: "optional",
+				type: "FieldArray"
+			},
+			{
+				name: "entries",
+				type: "FieldArray"
+			},
+			{
+				name: "unknown_ok",
+				type: "Bool"
+			},
+			{
+				name: "types",
+				type: "TypeArray"
+			}
+		],
+		entries: [],
+		unknown_ok: false
+	}
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

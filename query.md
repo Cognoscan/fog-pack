@@ -39,22 +39,22 @@ Queries break MessagePack values down into a set of types and assign them
 specific names and numbers, given in the table below. These names should be 
 considered case-sensitive.
 
-| Type      | Number      |
-| --        | --          |
-| nil       | 0           |
-| boolean   | 1           |
-| integer   | 2           |
-| string    | 3           |
-| f32       | 4           |
-| f64       | 5           |
-| binary    | 6           |
-| array     | 7           |
-| object    | 8           |
-| hash      | 258=256+2   |
-| identity  | 259=256+3   |
-| signature | 260=256+3   |
-| lockbox   | 261=256+3   |
-| timestamp | 511=256+255 |
+| Type      | Number      | Type Abbreviation |
+| --        | --          | --                |
+| Nil       | 0           | Nil               |
+| Boolean   | 1           | Bool              |
+| Integer   | 2           | Int               |
+| String    | 3           | Str               |
+| F32       | 4           | F32               |
+| F64       | 5           | F64               |
+| Binary    | 6           | Bin               |
+| Array     | 7           | Array             |
+| Object    | 8           | Obj               |
+| Hash      | 258=256+2   | Hash              |
+| Identity  | 259=256+3   | Ident             |
+| Signature | 260=256+3   | Sign              |
+| Lockbox   | 261=256+3   | Lock              |
+| Timestamp | 511=256+255 | Time              |
 
 ### Equivalence Operators ###
 
@@ -62,7 +62,7 @@ Requires only that the field be queriable:
 
 | Name | Description    |
 | --   | --             |
-| $eq  | Equiavalence   |
+| $eq  | Equivalence    |
 | $ne  | Not equivalent |
 | $in  | In set         |
 | $nin | Not in set     |

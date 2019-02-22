@@ -136,7 +136,7 @@ All comparison operators evaluate as false if the types do not match.
 - String: simple binary comparison. Shorter strings are always less than longer 
   strings.
 - Floating Point: Shall follow the total order specified by IEEE 754-2008. 
-  However, it is recommended that an implementation accept when this ordering is 
+	However, it is recommended that an implementation accept when this ordering is 
 	violated for NaN entries, or when postive and negative zero are treated as 
 	equal, as actual implementations will likely fail to follow this.
 - Binary data: simple binary comparison. Shorter byte sequences are always less 

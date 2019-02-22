@@ -22,24 +22,24 @@ before `end`. It is invalid otherwise.
 
 ```
 document(ID user cert): [
-	{
-		$schema: <hash(Schema - Certificate List)>,
-		id: <identity(ID user)>
-	}
+  {
+    $schema: <hash(Schema - Certificate List)>,
+    id: <identity(ID user)>
+  }
 ]
 
 entry: [
-	[
-		<hash(ID user cert)>,
-		"cert",
-		{
-			begin: <timestamp>,
-			end: <timestamp>,
-			name: <string>,
-			value: <integer>
-		}
-	],
-	<signature(ID signer 0)>
+  [
+    <hash(ID user cert)>,
+    "cert",
+    {
+      begin: <timestamp>,
+      end: <timestamp>,
+      name: <string>,
+      value: <integer>
+    }
+  ],
+  <signature(ID signer 0)>
 ]
 
 
@@ -47,43 +47,30 @@ entry: [
 
 Certificate List Schema is as follows:
 ```
-Document: {
-	"name": "Certificate List",
-	"required": ["id"],
-	"optional": ["name"],
-	"entries": ["cert"],
-	"properties": {
-		"id": {
-			"type": "identity"
-		},
-		"name": {
-			"type": "string",
-			"max_len": 255
-		}
-		"cert": {
-			"type": "map",
-			"required": ["id","begin","end","name","value"],
-			"properties": {
-				"id": {
-					"type": "identity"
-				},
-				"begin": {
-					"type:" "timestamp"
-				},
-				"end": {
-					"type": "timestamp"
-				},
-				"name": {
-					"type": "string",
-					"max_len": 255
-				},
-				"value": {
-					"type": "integer"
-				},
-			}
-		}
-	}
-}
+document(Condense-DB Certificate List Schema): [
+  {
+    $schema: <Hash(Condense-DB Core Schema)>,
+    name: "Condense-DB Certificate List Schema",
+    required: [
+      { name: "id", type: "Ident" }
+    ],
+    optional: [
+      { name: "name", type: "Str", max_len: 255 }
+    ],
+    entries: [
+      {
+        name: "cert",
+        type: "Obj",
+        required: [
+          { name: "name",  type: "Str", max_len: 255 },
+          { name: "begin", type: "Time"  },
+          { name: "end",   type: "Time"  },
+          { name: "value", type: "Int"   }
+        ]
+      }
+    ]
+  }
+]
 ```
 
 ## Querying or Permissions ##
@@ -105,54 +92,54 @@ decide if the responding node has lied or not.
 
 ```
 {
-	root: [ <hash(ID user cert> ],
-	query: {
-		cert: {
-			begin: { $gte: <timestamp(now)> },
-			end: { $lte: <timestamp(now)> },
-			name: "friend",
-			link: {
-				$link: {
-					$schema: <Hash - cert schema>,
-					cert: {
-						begin: {
-							$gte: <Timestamp - now>
-						},
-						end: {
-							$lte: <Timestamp - now>
-						},
-						name: "friend",
-						value: {
-							$gt: 0
-						}
-						link: {
-							$link: {
-								$schema: <Hash - cert schema>,
-								id: <Identity - received Identity>
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+  root: [ <hash(ID user cert> ],
+  query: {
+    cert: {
+      begin: { $gte: <timestamp(now)> },
+      end: { $lte: <timestamp(now)> },
+      name: "friend",
+      link: {
+        $link: {
+          $schema: <Hash - cert schema>,
+          cert: {
+            begin: {
+              $gte: <Timestamp - now>
+            },
+            end: {
+              $lte: <Timestamp - now>
+            },
+            name: "friend",
+            value: {
+              $gt: 0
+            }
+            link: {
+              $link: {
+                $schema: <Hash - cert schema>,
+                id: <Identity - received Identity>
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 ```
 
 
 ```
 Document: {
-	"$schema": <Hash(cert schema)>,
-	"id": <Identity(child)>,
+  "$schema": <Hash(cert schema)>,
+  "id": <Identity(child)>,
 }
 
 Entry: {
-	"cert": {
-		"id": <Identity(child)>
-		"begin": <Timestamp>,
-		"end": <Timestamp>,
-		"name": <String>,
-		"value": <Integer>
-	}
+  "cert": {
+    "id": <Identity(child)>
+    "begin": <Timestamp>,
+    "end": <Timestamp>,
+    "name": <String>,
+    "value": <Integer>
+  }
 }, signed by <Identity(root)>
 ```
 

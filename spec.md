@@ -43,8 +43,8 @@ Encoding Definitions
 
 Condense-db defines the following objects:
 
-- Document: A key-value map. Defined in [Document Format](#document-format).
-- Entry: A key-value pair with a parent document. Defined in [Document 
+- Document: A field-value map. Defined in [Document Format](#document-format).
+- Entry: A field-value pair with a parent document. Defined in [Document 
   Format](#document-format)
 - Query: A query for retrieving documents and entries from a database. Defined 
   in `query.md`.
@@ -66,6 +66,9 @@ Condense-db encodes everything using [MessagePack](https://msgpack.org). Because
 Condense-db makes use of cryptographic hashes, an unambiguous encoding for 
 MessagePack must be defined. In addition, various cryptographic primitives are 
 defined as MessagePack `ext` types.
+
+Finally, the MessagePack `map` type is not fully used. The only allowed `map` 
+values are ones whose keys (fields) are strings and are unique within the `map`.
 
 ### Extension Type ###
 
@@ -92,8 +95,8 @@ byte sequence:
 `bin`, `array`, `map`, and `ext` encodings.
 2. IEEE single-precision and double-precision floating points are not 
 	interchangeable. Each is considered a unique type.
-3. The `map` format family has a specific order for its key-value pairs:
-	1. For each pair, encode both and concatenate them together as a key-value 
+3. The `map` format family has a specific order for its field-value pairs:
+	1. For each pair, encode both and concatenate them together as a field-value 
 		set.
 	2. Sort the pairs by byte order, appending the pair with the smallest value 
 	first.

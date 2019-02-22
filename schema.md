@@ -55,21 +55,55 @@ until all documents have been received or added to the database.
 Schema Document Format
 ----------------------
 
-Evaluation notes:
+A schema document consists of some descriptive fields, 3 array fields specifying 
+what fields are permitted in the document, an array of complex data type 
+definitions that may be used in the schema, and a boolean field indicating if 
+the schema permits unknown fields in a document.
 
-1. Type definitions can infinitely recurse. Specifically, 
+A schema document must, at minimum, have a name field. This should be a 
+descriptive string naming the schema. The other permitted fields are all 
+optional, and unspecified fields are not allowed.
+
+The permitted optional fields are:
+
+- `comment`: Description of the schema. Not used in validation.
+- `version`: Version number to differentiate from previously named schema. Not 
+	used in validation.
+- `required`: Array of data types. Each named type is a field that must be 
+	present in a document meeting the schema.
+- `optional`: Array of data types. Each named type is a field that can be 
+	present in a document meeting the schema.
+- `entries`: Array of data types. Each named type is a field that can be used in 
+	an entry attached to the document. If an entry does not match one of the data 
+	types here, it will fail validation.
+- `types`: Array of data types. Each named type can be referred to as a type in 
+	the `required`, `optional`, and `entries` arrays. It may also be referred to 
+	by other types in the `types` array.
+- `unknown_ok`: Boolean indicating if unknown fields are allowed in the 
+	document.
+
+First, read in all types in the schema `type` array and store them as type 
+validators. Do likewise for the `required`, `optional`, and `entries` field. 
+Then, for each field in the document being validated:
+
+1. If field is named in the `required` array types, validate against the type 
+	whose name it has. If it passes, record that that type has been used. If the 
+	type has been previously used, validation fails.
+2. If field is named in the `optional` array types, validate against the type 
+	whose name it has. If it passes, record that that type has been used. If the 
+  type has been previously used, validation fails.
+3. If the field is named in neither and `unknown_ok` is not present or is set as 
+  false, 
 
 
-1. Types can refer to themselves. If this is done for objects, it is possible 
-	for a type to require itself. In this case, the type validation will always 
-	fail, as any actual instance of the type would have to recurse indefinitely to 
-	satisfy the schema. A validation implementation may recognize this in advance, 
-	or naively execute; either way, the validation will fail.
 
-validation engine - it cannot be caught by running the schema through a 
-validator. If a schema results in infinite recursion, it should always fail.
-2. The "name" string has different meanings depending on location. In an object 
-definition, it refers to the field. In the `type` field array, it refers to the 
-name of the type.
+
+
+
+
+
+
+
+
 
 

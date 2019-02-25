@@ -37,31 +37,11 @@ the query maker is encouraged to only use queries that meet the schema.
 Types
 -----
 
-Queries break MessagePack values down into a set of types and assign them 
-specific names and numbers, given in the table below. These names should be 
-considered case-sensitive. In addition, a "Short Name" may be used for the type. 
-All types can be queried with equivalence operaters if the "query" field is 
-set to true in the document schema. All types can be queried iwth the `$signed` 
-operator if the "sign" field is set to true in the document schema. Other query 
+All types can be queried with equivalence operaters if the `query` field is 
+set to true in the document schema. All types can be queried with the `$signed` 
+operator if the `sign` field is set to true in the document schema. Other query 
 operators can be enabled by setting the appropriate field in the document 
 schema.
-
-| Type      | Number      | Short Name | Possible Query Types |
-| --        | --          | --         | --                   |
-| Nil       | 0           | Nil        |                      |
-| Boolean   | 1           | Bool       | ord                  |
-| Integer   | 2           | Int        | ord, bit             |
-| String    | 3           | Str        | ord, regex           |
-| F32       | 4           | F32        | ord                  |
-| F64       | 5           | F64        | ord                  |
-| Binary    | 6           | Bin        | ord, bit             |
-| Array     | 7           | Array      | array                |
-| Object    | 8           | Obj        |                      |
-| Hash      | 258=256+2   | Hash       | link                 |
-| Identity  | 259=256+3   | Ident      |                      |
-| Signature | 260=256+3   | Sign       | array                |
-| Lockbox   | 261=256+3   | Lock       |                      |
-| Timestamp | 511=256+255 | Time       | ord                  |
 
 ### Equivalence Operators ###
 
@@ -188,10 +168,9 @@ document schema.
 | $exists | True if the provided field exists            |
 | $type   | True if the field's value is a specific type |
 
-The `$type` operator can have either an integer or a string as its value; see 
-the "Types" section for the names and numbers for each type.
+The `$type` operator can use either the long or short name for a type.
 
-**The string value should be considered case-sensitive.**
+**The string value for `$exists` should be considered case-sensitive.**
 
 ### Array Operators ###
 

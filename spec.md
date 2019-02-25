@@ -11,13 +11,14 @@ change over time in the database while still being locatable by their hash.
 
 An application interacts with the database by storing and removing documents and 
 entries. The database may also be queried using a special "query" document, 
-whose format is described in `query.md`.
+whose format is described in the [query specification](query.md).
 
 Documents and their attached entries may follow a specific "schema" document. A 
 schema document defines the allowed format for a document, any attached entries, 
 and which fields in the document may be queried. This allows the database to 
-index a document & its entries to speed up querying. See `schema.md` for details 
-on the format of schema documents and their usage.
+index a document & its entries to speed up querying. See the 
+[schema specification](schema.md) for details on the format of schema documents 
+and their usage.
 
 Documents are formatted using a modified version of MessagePack. In addition to 
 the base MessagePack specification, a unambiguous encoding is defined, and 
@@ -29,14 +30,15 @@ In addition to the keystore, a certificate store is maintained within the
 document database. For every known public key, there exists a coresponding 
 document (called a "Certificate List") in the certificate store. Entries 
 appended to this document are signed by other keys, allowing for the issuing of 
-certificates. See `certs.md` for details. The certificate documents are a 
-special component used in queries, allowing for more complex signature schemes.
+certificates. See the [certificate specification](certs.md) for details. The 
+certificate documents are a special component used in queries, allowing for more 
+complex signature schemes.
 
-Finally, the database may be accessed by other applications or systems. 
+Finally, the database may be accessed by other applications or systems.
 Queries, likewise, may be spread to other systems that maintain their own 
 Condense-db databases. Permissions may be set on the database and each query to 
 determine under what circumstances they are presented to other systems. See 
-`permissions.md` for details.
+the [permissions specification](permissions.md) for details.
 
 Encoding Definitions
 --------------------
@@ -45,13 +47,13 @@ Condense-db defines the following objects:
 
 - Document: A field-value map. Defined in [Document Format](#document-format).
 - Entry: A field-value pair with a parent document. Defined in [Document 
-  Format](#document-format)
+	Format](#document-format)
 - Query: A query for retrieving documents and entries from a database. Defined 
-  in `query.md`.
+	in `query.md`.
 - Schema: A definition of what format is allowed for documents, entries, and 
-  queries run against them. Defined in `schema.md`.
+	queries run against them. Defined in `schema.md`.
 - Certificate: A public key signed with another public key, with associated 
-  metadata. Defined in `certs.md`.
+	metadata. Defined in `certs.md`.
 
 These structures must have consistant encodings, as this is a necessary 
 prerequisite for consistant hashing, encryption, and cryptographic signing. See 
@@ -68,7 +70,8 @@ MessagePack must be defined. In addition, various cryptographic primitives are
 defined as MessagePack `ext` types.
 
 Finally, the MessagePack `map` type is not fully used. The only allowed `map` 
-values are ones whose keys (fields) are strings and are unique within the `map`.
+values are ones whose keys (fields) are strings and are unique within the `map`. 
+This type is referred throughout the documentation as an "object".
 
 ### Extension Type ###
 
@@ -84,6 +87,32 @@ MessagePack is extended with the following `ext` types:
 All positive numbered types are reserved for future use. If a specific additional 
 primitive is desired, this specification or the MessagePack specification should 
 be expanded.
+
+### Type Naming ###
+
+The MessagePack type families, along with the defined extensions, are given 
+additional short names. They may also be queried in different ways. See the
+[query specification](query.md) for the meaning of each query type. 
+
+| Type      | Short Name | Possible Query Types |
+| --        | --         | --                   |
+| Nil       | Nil        |                      |
+| Boolean   | Bool       | ord                  |
+| Integer   | Int        | ord, bit             |
+| String    | Str        | ord, regex           |
+| F32       | F32        | ord                  |
+| F64       | F64        | ord                  |
+| Binary    | Bin        | ord, bit             |
+| Array     | Array      | array                |
+| Object    | Obj        |                      |
+| Hash      | Hash       | link                 |
+| Identity  | Ident      |                      |
+| Signature | Sign       |                      |
+| Lockbox   | Lock       |                      |
+| Timestamp | Time       | ord                  |
+
+Note: although the Signature type has a short name, it is never used in actual 
+queries or schema, as signatures are always indirectly interacted with.
 
 ### Unambiguous Encoding ###
 

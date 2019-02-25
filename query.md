@@ -29,8 +29,9 @@ the query maker is encouraged to only use queries that meet the schema.
 - query - Allow direct equivalence checking and checking for existance
 - ord - Allow ordinal comparisons
 - bit - Allow bitwise checking of an Integer or Binary type.
+- regex - Allow regular expression queries on a String.
 - array - Allow checking array contents
-- signed - Allow checking signatures
+- sign - Allow checking signatures
 - link - Allow following a hash and evaluating the matching document
 
 Types
@@ -39,16 +40,18 @@ Types
 Queries break MessagePack values down into a set of types and assign them 
 specific names and numbers, given in the table below. These names should be 
 considered case-sensitive. In addition, a "Short Name" may be used for the type. 
-All types can be queried with equivalence operaters if the "query" property is 
-set to true in the document schema. Other query operators can be enabled by 
-setting the appropriate property in the document schema.
+All types can be queried with equivalence operaters if the "query" field is 
+set to true in the document schema. All types can be queried iwth the `$signed` 
+operator if the "sign" field is set to true in the document schema. Other query 
+operators can be enabled by setting the appropriate field in the document 
+schema.
 
 | Type      | Number      | Short Name | Possible Query Types |
 | --        | --          | --         | --                   |
 | Nil       | 0           | Nil        |                      |
 | Boolean   | 1           | Bool       | ord                  |
 | Integer   | 2           | Int        | ord, bit             |
-| String    | 3           | Str        | ord                  |
+| String    | 3           | Str        | ord, regex           |
 | F32       | 4           | F32        | ord                  |
 | F64       | 5           | F64        | ord                  |
 | Binary    | 6           | Bin        | ord, bit             |
@@ -56,14 +59,14 @@ setting the appropriate property in the document schema.
 | Object    | 8           | Obj        |                      |
 | Hash      | 258=256+2   | Hash       | link                 |
 | Identity  | 259=256+3   | Ident      |                      |
-| Signature | 260=256+3   | Sign       | sign                 |
+| Signature | 260=256+3   | Sign       | array                |
 | Lockbox   | 261=256+3   | Lock       |                      |
 | Timestamp | 511=256+255 | Time       | ord                  |
 
 ### Equivalence Operators ###
 
-Requires that the field have the "query" property set to true in the document 
-schema, or that the "ord" property be set to true.
+Requires that the field have the "query" field set to true in the document 
+schema, or that the "ord" field be set to true.
 
 | Name | Description    |
 | --   | --             |
@@ -116,9 +119,8 @@ type.
 
 ### Comparison Operators ###
 
-Requires that the field have the "ord" property set to true in the document 
-schema. Operator evaluates as true depending on the ordering and the provided 
-value.
+Requires that the field have the "ord" field set to true in the document schema.
+Operator evaluates as true depending on the ordering and the provided value.
 
 All comparison operators evaluate as false if the types do not match.
 
@@ -149,8 +151,7 @@ All comparison operators evaluate as false if the types do not match.
 These allow for checking specific bits, treating the field as a binary array. 
 They are only capable of operating on the "Binary" annd "Integer" types.
 
-Requires that the field have the "bit" property set to true in the document 
-schema.
+Requires that the field have the "bit" field set to true in the document schema.
 
 | Name          | Description                                                    |
 | --            | --                                                             |
@@ -179,8 +180,8 @@ directly on any fields.
 These allow for determining if a field exists, and if so, if it matches a specific 
 type.
 
-These operators require that the field have the "query" property set to true in 
-the document schema.
+These operators require that the field have the "query" field set to true in the 
+document schema.
 
 | Name    | Description                                  |
 | --      | --                                           |
@@ -196,8 +197,8 @@ the "Types" section for the names and numbers for each type.
 
 These allow for querying the properties of an array.
 
-These operators require that the field have the "array" property set to true in 
-the document schema.
+These operators require that the field have the "array" field set to true in the 
+document schema.
 
 | Name  | Description                                           |
 | --    | --                                                    |
@@ -214,20 +215,17 @@ Checks an array an makes sure all values listed are present in it.
 
 ### Miscellaneous Operators ###
 
-The below operators are special. The `$signed` operator requires that the field 
-have the "sign" property set to true in the document schema. The `$link` 
-operator requires that the field have the "link" property set to an array of 
-Hash values.
+The below operators are special and have a required field for each of them:
 
-| Name    | Description                                         |
-| --      | --                                                  |
-| $signed | Evaluate the digital signatures for an object       |
-| $link   | Follow a Hash to a document and evaluate its fields |
+| Name      | Requires | Description                                         |
+| --        | --       | --                                                  |
+| `$signed` | sign     | Evaluate the digital signatures for a value         |
+| `$link`   | link     | Follow a Hash to a document and evaluate its fields |
+| `$regex`  | regex    | Evaluate a regular expression against a string      |
 
 #### $signed ####
 
-Requires that the field holding the array has the "sign" property set to true in 
-the document schema.
+Requires that the field has the "sign" field set to true in the document schema.
 
 `$signed` performs signature verification beyond simple matching. It checks the 
 certificate store based on the provided fields:
@@ -236,6 +234,7 @@ certificate store based on the provided fields:
 - `value`: Integer that can be compared against or matched exactly
 - `id`: Either a single Identity or an array of Identities
 - `$signed`: Chains to another `$signed` query
+- `exists`
 
 If both the `id` and `$signed` fields are present, this will evaluate as true if 
 either any of the provided Identities was the signer or if the `$signed` 
@@ -296,23 +295,30 @@ entry: [ <Hash>, "loc_status", { team: "Finance",     location: "Home"   }, <Sig
 
 #### $link ####
 
-Requires that the field be a Hash and have the "link" property set to true in 
-the document schema. The contents of a `$link` operator is an object with fields 
-to be queried in each sub-document. 
+Requires that the field be a Hash and have the "link" field set to true in the 
+document schema. The contents of a `$link` operator is an object with fields to 
+be queried in each sub-document. 
+
+#### $regex ####
+
+Requires that the field be a String and have the "regex" field set to true in 
+the document schema. The contents of a `$regex` operator is a string with a 
+regular expression to be run against the field.
 
 Priority
 --------
 
 By default, all matched documents are returned in no particular order. If the 
 responding node should prioritize certain documents over others, a priority can 
-be given by specifiying a field that is both queriable and has the "ord" 
-property set to true.
+be given by specifiying a field that has the "ord" field set to true in the 
+document schema. The path to the field is specified by an array of strings, with 
+the last one being the targeted field.
 
 ```
 {
 	root: [<Hash>, ...],
 	query: { ... },
-	priority: { <field>: { <field>: ... { <field>: <target field> } .. } }
+	priority: [ <field>, <field>, ...  <field>, <target field> ]
 }
-
+```
 

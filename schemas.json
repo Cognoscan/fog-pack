@@ -1,3 +1,17 @@
+document(Condense-DB Query Schema): [
+  {
+    $schema: <Hash(Condense-DB Core Schema)>,
+    name: "Condense-DB Certificate List Schema",
+    required: [
+      { name: "root", type: "Array", items: "Hash", unique: true },
+			{ name: "query", type: "Obj", field_type: "Query" }
+    ],
+    optional: [
+      { name: "priority", type: "Array", items: "Str" }
+    ]
+  }
+]
+
 document(Condense-DB Certificate List Schema): [
   {
     $schema: <Hash(Condense-DB Core Schema)>,
@@ -47,8 +61,8 @@ document(Condense-DB Core Schema): [
         any_of: [
           "NilType",  "BoolType", "IntType",   "StrType",
           "F32Type",  "F64Type",  "BinType",   "ArrayType",
-          "ObjType",  "HashType", "IdentType", "SignType",
-          "LockType", "TimeType", "MultiType", "OtherType"
+          "ObjType",  "HashType", "IdentType", "LockType",
+					"TimeType", "MultiType", "OtherType"
         ]
       },
 
@@ -62,7 +76,8 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "comment", type: "Str"  },
-          { name: "query",   type: "Bool" }
+          { name: "query",   type: "Bool" },
+          { name: "sign",    type: "Bool" }
         ]
       },
 
@@ -75,9 +90,11 @@ document(Condense-DB Core Schema): [
           { name: "type", type: "Str", const: "Bool" }
         ],
         optional: [
+					{ name: "default", type: "Bool" },
           { name: "comment", type: "Str"  },
           { name: "const",   type: "Bool" },
           { name: "query",   type: "Bool" },
+          { name: "sign",    type: "Bool" },
           { name: "ord",     type: "Bool" }
         ]
       },
@@ -92,13 +109,16 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",      type: "Array", items: "Int", unique: true },
+          { name: "nin",     type: "Array", items: "Int", unique: true },
           { name: "const",   type: "Int"  },
           { name: "min",     type: "Int"  },
           { name: "max",     type: "Int"  },
-          { name: "ex_max",  type: "Int"  },
-          { name: "ex_min",  type: "Int"  },
+          { name: "ex_min",  type: "Bool" },
+          { name: "ex_max",  type: "Bool" },
+					{ name: "default", type: "Int"  },
           { name: "comment", type: "Str"  },
           { name: "query",   type: "Bool" },
+          { name: "sign",    type: "Bool" },
           { name: "ord",     type: "Bool" },
           { name: "bit",     type: "Bool" }
         ]
@@ -114,13 +134,17 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",      type: "Array", items: "Str", unique: true },
+          { name: "nin",     type: "Array", items: "Str", unique: true },
           { name: "const",   type: "Str"  },
           { name: "min_len", type: "Int", min: 0 },
           { name: "max_len", type: "Int", min: 0 },
-          { name: "pattern", type: "Str"  },
+          { name: "matches", type: "Str"  },
+					{ name: "default", type: "Str"  },
           { name: "comment", type: "Str"  },
           { name: "query",   type: "Bool" },
-          { name: "ord",     type: "Bool" }
+          { name: "sign",    type: "Bool" },
+          { name: "ord",     type: "Bool" },
+					{ name: "regex",   type: "Bool" }
         ]
       },
 
@@ -134,13 +158,16 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",      type: "Array", items: "F32", unique: true },
+          { name: "nin",     type: "Array", items: "F32", unique: true },
           { name: "const",   type: "F32"  },
           { name: "min",     type: "F32"  },
           { name: "max",     type: "F32"  },
-          { name: "ex_max",  type: "F32"  },
-          { name: "ex_min",  type: "F32"  },
+          { name: "ex_min",  type: "Bool" },
+          { name: "ex_max",  type: "Bool" },
+					{ name: "default", type: "F32"  },
           { name: "comment", type: "Str"  },
           { name: "query",   type: "Bool" },
+          { name: "sign",    type: "Bool" },
           { name: "ord",     type: "Bool" }
         ]
       },
@@ -155,13 +182,16 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",      type: "Array", items: "F64", unique: true },
+          { name: "nin",     type: "Array", items: "F64", unique: true },
           { name: "const",   type: "F64"  },
           { name: "min",     type: "F64"  },
           { name: "max",     type: "F64"  },
-          { name: "ex_max",  type: "F64"  },
-          { name: "ex_min",  type: "F64"  },
+          { name: "ex_min",  type: "Bool" },
+          { name: "ex_max",  type: "Bool" },
+					{ name: "default", type: "F64"  },
           { name: "comment", type: "Str"  },
           { name: "query",   type: "Bool" },
+          { name: "sign",    type: "Bool" },
           { name: "ord",     type: "Bool" }
         ]
       },
@@ -176,11 +206,14 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",      type: "Array", items: "Bin", unique: true },
+          { name: "nin",     type: "Array", items: "Bin", unique: true },
           { name: "const",   type: "Bin"  },
           { name: "min_len", type: "Int", min: 0 },
           { name: "max_len", type: "Int", min: 0 },
+					{ name: "default", type: "Bin"  },
           { name: "comment", type: "Str"  },
           { name: "query",   type: "Bool" },
+          { name: "sign",    type: "Bool" },
           { name: "bit",     type: "Bool" },
           { name: "ord",     type: "Bool" }
         ]
@@ -196,17 +229,20 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",            type: "Array", items: "Array", unique: true },
-          { name: "const",         type: "Array"  },
+          { name: "nin",           type: "Array", items: "Array", unique: true },
+          { name: "const",         type: "Array" },
           { name: "items",         type: "Multi", any_of: ["Str", "StrArray"] },
-          { name: "extra_items",   type: "Multi", any_of: ["Str", "StrArray"] },
+          { name: "extra_items",   type: "Str"   },
           { name: "contains",      type: "Multi", any_of: ["Str", "StrArray"] },
           { name: "unique_fields", type: "Array", items: "Str", unique: true },
           { name: "min_len",       type: "Int", min: 0 },
           { name: "max_len",       type: "Int", min: 0 },
-          { name: "unique",        type: "Bool" },
-          { name: "comment",       type: "Str"  },
-          { name: "query",         type: "Bool" },
-          { name: "array",         type: "Bool" }
+          { name: "unique",        type: "Bool"  },
+					{ name: "default",       type: "Array" },
+          { name: "comment",       type: "Str"   },
+          { name: "query",         type: "Bool"  },
+          { name: "sign",          type: "Bool" },
+          { name: "array",         type: "Bool"  }
         ]
       },
 
@@ -220,12 +256,18 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",         type: "Array", items: "Obj", unique: true },
+          { name: "nin",        type: "Array", items: "Obj", unique: true },
           { name: "const",      type: "Obj"  },
           { name: "required",   type: "Array", items: "Type", unique_fields: ["name"] },
           { name: "optional",   type: "Array", items: "Type", unique_fields: ["name"] },
-          { name: "comment",    type: "Str" },
+					{ name: "min_fields", type: "Int", min: 0 },
+					{ name: "max_fields", type: "Int", min: 0 },
+					{ name: "field_type", type: "Str"  },
+					{ name: "default",    type: "Obj"  },
+          { name: "comment",    type: "Str"  },
           { name: "query",      type: "Bool" },
-          { name: "unknown_ok", type: "Bool"}
+          { name: "sign",       type: "Bool" },
+          { name: "unknown_ok", type: "Bool" }
         ]
       },
 
@@ -239,9 +281,12 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",         type: "Array", items: "Hash", unique: true },
+          { name: "nin",        type: "Array", items: "Hash", unique: true },
           { name: "const",      type: "Hash" },
+					{ name: "default",    type: "Hash" },
           { name: "comment",    type: "Str" },
           { name: "query",      type: "Bool" },
+          { name: "sign",       type: "Bool" },
           { name: "link",       type: "Array", items: "Hash", unique: true }
         ]
       },
@@ -255,24 +300,6 @@ document(Condense-DB Core Schema): [
           { name: "type", type: "Str", const: "Ident" }
         ],
         optional: [
-          { name: "in",         type: "Array", items: "Ident", unique: true },
-          { name: "const",      type: "Ident" },
-          { name: "comment",    type: "Str" },
-          { name: "query",      type: "Bool" }
-        ]
-      },
-
-      {
-        name: "SignType",
-        type: "Obj",
-        comment: "Signature type: any cryptographic signature. Can be anywhere, but only has meaning in an array",
-        required: [
-          { name: "name", type: "Str" },
-          { name: "type", type: "Str", const: "Sign" }
-        ],
-        optional: [
-          { name: "in",         type: "Array", items: "Ident", unique: true },
-          { name: "const",      type: "Ident" },
           { name: "comment",    type: "Str" },
           { name: "query",      type: "Bool" },
           { name: "sign",       type: "Bool" }
@@ -289,7 +316,8 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "comment",    type: "Str" },
-          { name: "query",      type: "Bool" }
+          { name: "query",      type: "Bool" },
+          { name: "sign",       type: "Bool" }
         ]
       },
 
@@ -303,13 +331,16 @@ document(Condense-DB Core Schema): [
         ],
         optional: [
           { name: "in",      type: "Array", items: "Time", unique: true },
+          { name: "nin",     type: "Array", items: "Time", unique: true },
           { name: "const",   type: "Time" },
           { name: "min",     type: "Time" },
           { name: "max",     type: "Time" },
-          { name: "ex_max",  type: "Time" },
-          { name: "ex_min",  type: "Time" },
+          { name: "ex_min",  type: "Bool" },
+          { name: "ex_max",  type: "Bool" },
+					{ name: "default", type: "Time" },
           { name: "comment", type: "Str"  },
           { name: "query",   type: "Bool" },
+          { name: "sign",    type: "Bool" },
           { name: "ord",     type: "Bool" }
         ]
       },
@@ -322,13 +353,16 @@ document(Condense-DB Core Schema): [
           { name: "name", type: "Str" },
           { name: "type", type: "Str", const: "Multi" },
           { name: "any_of",   type: "Array", items: "Str", unique: true }
-        ]
+        ],
+				optional: [
+					{ name: "comment", type: "Str" }
+				]
       },
 
       {
         name: "OtherType",
         type: "Obj",
-        comment: "Type Definition used for complex types",
+        comment: "Type Definition used to reference complex types",
         required: [
           { name: "name", type: "Str" },
           { name: "type", type: "Str" }
@@ -340,8 +374,7 @@ document(Condense-DB Core Schema): [
         name: "StrArray",
         type: "Array",
         items: "Str",
-        unique: true,
-        comment: "Used for the items keyword in Array types"
+        comment: "Used for the items field in Array types"
       }
     ]
   }

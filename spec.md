@@ -149,7 +149,10 @@ and has not been modified since.
 Signatures are special in that they are always associated with another 
 MessagePack object: the object being signed. As such, a Signature *must* be part 
 of an array. The first element of this array is the MessagePack object that was 
-signed, and all other elements must be Signatures signing that object.
+signed, and all other elements must be Signatures signing that object. This 
+signed array is not directly accessed as an array in queries and schema 
+validation; instead, the array is treated as though it were the first element in 
+the array, but with the option to verify signatures on it.
 
 An encoded signature contains 4 elements in the following order: 
 
@@ -162,7 +165,23 @@ An encoded signature contains 4 elements in the following order:
 ### Lockbox ###
 
 A lockbox stores encrypted information. It can store one of 3 things: A private 
-key, a secret key, or a MessagePack object.
+key, a secret key, or a MessagePack object. It may be encrypted using either a 
+secret key or with an ephemeral secret key, generated from an Identity (public 
+key) and a randomly-generated public-private keypair.
+
+A lockbox contains the following information:
+1. The "type byte" of the Identity / secret key used for encryption.
+2. The "type byte" specifying if an Identity or a secret key was used for 
+	encryption. 1 indicates an Identity was used, 2 indicates a secret key was 
+	used.
+3. The keys used. If an Identity was used, the Identity's public signing key is 
+	attached followed by an ephemeral public encryption key. If a secret key was 
+	used, a cryptographic hash of the key is attached.
+4. A randomly-generated nonce used for the encryption payload.
+5. The encrypted data itself.
+
+The encrypted payload consists of a single byte indicating what type of data is 
+encrypted, followed by the data itself.
 
 ### Timestamps ###
 The timestamp type (-1) is supported, with caveats. Timestamps specifically use 

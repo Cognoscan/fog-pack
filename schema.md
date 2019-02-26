@@ -344,10 +344,24 @@ following optional fields:
 - `nin`: an array of hashes the described field must not be among.
 - `const`: a hash the described field  must be set to.
 - `default`: a default hash implementations may use if the field is not present.
-- `link`: allows `link` queries on this field if set to true.
+- `link`: allows `link` queries on this field if set to an array of Hashes. If 
+	this field is within an entry, the document referred to by the field's hash 
+	must use one of the schema documents in the `link` array. That is, the 
+	document must have the `$schema` field equal to a hash from the `link` array.
+- `ref`: allows `ref` queries on this field if set to a Hash. If this field is 
+	within an entry, the document referred to by the field's hash must be 
+	validated against the schema document the `ref` Hash refers to. If the Hash 
+	for `ref` refers to a non-schema document, validation always fails.
 
 Validation fails if the described field is not a hash or does not meet any of 
 the optional requirements listed.
+
+To expand on `link` and `ref`: if the described field is used within a document, 
+these are ignored, as the query language does not allow for `$link` or `$ref` 
+queries to be run against the fields in a document. If, however, the described 
+field is used within an entry, the Hash must refer to a document and that 
+document must be validated, either against its own schema or against the schema 
+specified by `ref`. 
 
 #### Ident
 
@@ -360,7 +374,7 @@ able to handle if a field normally containing a public key is not present.
 
 Lock types describe a field that contains encrypted data (a "Lockbox"), which 
 may be a private key, secret key, or an encrypted data payload. They have no 
-optional fields besides the basic `comment`, `sign`, and `query` fields. 
+optional fields besides the basic `comment`, `sign`, and `query` fields.
 `default` is not allowed; any implementation must always be able to handle if a 
 field normally containing a lockbox is not present.
 
@@ -371,7 +385,8 @@ optional fields:
 
 - `const`: a timestamp the described field must be set to.
 - `in`: an array of unique timestamps that the described field must be among.
-- `nin`: an array of unique timestamps that the described field must not be among.
+- `nin`: an array of unique timestamps that the described field must not be 
+	among.
 - `min`: A timestamp the described field must be equal to or greater than.
 - `max`: A timestamp the described field must be equal to or less than.
 - `ex_min`: A boolean that, if true, changes min to not allow equality.
@@ -669,6 +684,7 @@ document(Condense-DB Core Schema): [
           { name: "comment",    type: "Str" },
           { name: "query",      type: "Bool" },
           { name: "sign",       type: "Bool" },
+          { name: "ref",        type: "Hash" },
           { name: "link",       type: "Array", items: "Hash", unique: true }
         ]
       },

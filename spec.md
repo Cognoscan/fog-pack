@@ -105,7 +105,7 @@ additional short names. They may also be queried in different ways. See the
 | Binary    | Bin        | ord, bit             |
 | Array     | Array      | array                |
 | Object    | Obj        |                      |
-| Hash      | Hash       | link                 |
+| Hash      | Hash       | link, ref            |
 | Identity  | Ident      |                      |
 | Signature | Sign       |                      |
 | Lockbox   | Lock       |                      |
@@ -152,6 +152,10 @@ A595CFC3EFD3D2ADC97334DA732413F5CBF4751C362BA1D53862AC1E8DABEEE8
 Where `C7` indicates the `ext 8` type, `41` is the size (65 bytes), `02` 
 indicates this is a hash, and `01` indicates it is a BLAKE2B hash with a 64-byte 
 digest.
+
+If the first byte is set to 0, the hash has a special meaning and refers to the 
+current document it is within. There shall be no other bytes present in the hash 
+value, meaning it should be encoded as `D40200`.
 
 ### Identity ###
 

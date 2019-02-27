@@ -38,11 +38,14 @@ the query maker is encouraged to only use queries that meet the schema.
 Types
 -----
 
-All types can be queried with equivalence operaters if the `query` field is 
-set to true in the document schema. All types can be queried with the `$signed` 
-operator if the `sign` field is set to true in the document schema. Other query 
-operators can be enabled by setting the appropriate field in the document 
-schema.
+All types can be queried with equivalence and field operaters if the `query` 
+field is set to true in the document schema. All types can be queried with the 
+`$signed` operator if the `sign` field is set to true in the document schema. 
+Other query operators can be enabled by setting the appropriate field in the 
+document schema.
+
+The equivalence operators are also enabled if the `ord` field is set to true in 
+the document schema.
 
 ### Equivalence Operators ###
 

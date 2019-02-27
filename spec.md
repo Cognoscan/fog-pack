@@ -40,14 +40,18 @@ Condense-db databases. Permissions may be set on the database and each query to
 determine under what circumstances they are presented to other systems. See 
 the [permissions specification](permissions.md) for details.
 
+Throughout these specifications, MessagePack values are regularly referred to. 
+Rather than provide the serialized data, a human-readable format is used. See 
+[Human-Readable MessagePack](readable_msgpack.md) for details.
+
 Encoding Definitions
 --------------------
 
 Condense-db defines the following objects:
 
-- Document: A field-value map. Defined in [Document Format](#document-format).
-- Entry: A field-value pair with a parent document. Defined in [Document 
-	Format](#document-format)
+- Document: A field-value object. Defined in [Document Format](#document-format).
+- Entry: A field-value pair with a parent document. Defined in
+	[Document Format](#document-format)
 - Query: A query for retrieving documents and entries from a database. Defined 
 	in `query.md`.
 - Schema: A definition of what format is allowed for documents, entries, and 
@@ -69,9 +73,17 @@ Condense-db makes use of cryptographic hashes, an unambiguous encoding for
 MessagePack must be defined. In addition, various cryptographic primitives are 
 defined as MessagePack `ext` types.
 
-Finally, the MessagePack `map` type is not fully used. The only allowed `map` 
-values are ones whose keys (fields) are strings and are unique within the `map`. 
-This type is referred throughout the documentation as an "object".
+In addition, MessagePack normally supports `map` types with arbitrary keys and 
+leaves the decision of what to do with invalid UTF-8 strings up to the 
+application. Condense-db only allows `map` types whose keys (fields) are strings 
+and are unique within the `map`. This type is referred to as an "object" 
+throughout the documentation. As for UTF-8 strings, if they are not valid UTF-8, 
+decoding should fail and the MessagePack value should be marked as invalid.
+
+A human-readable version of MessagePack is used throughout these specifications. 
+It cannot be encoded back into MessagePack, but is useful for discussing 
+MessagePack structures. See [Human-Readable MessagePack](readable_msgpack.md) 
+for details.
 
 ### Extension Type ###
 
@@ -195,6 +207,9 @@ An encoded signature contains 4 elements in the following order:
 3. The Identity used in signing, except for the "type byte".
 4. The digital signature. Format is determined by the Identity type.
 
+Note: the signature signs only the first element of the array - this does not 
+include the MessagePack encoding byte
+
 ### Lockbox ###
 
 A lockbox stores encrypted information. It can store one of 3 things: A private 
@@ -241,7 +256,99 @@ If TAI (or another timescale) becomes a requirement for future implementations,
 it is recommended that a new `ext` type be reserved.
 
 
+Document Format
+---------------
 
+Documents are immutable objects that may be signed. A document is referred to by 
+its cryptographic hash, which is a hash of the object and any attached 
+signatures. It is expected that a document will be sent as an array containing 
+the object and the associated signatures. As an example, here is a simple 
+document that has been signed by two separate Identities:
+
+```json
+[
+  {
+    name: "Example document",
+    data: "Test data"
+  },
+  <Signature(ID Signer 0)>,
+  <Signature(ID Signer 1)>
+]
+```
+
+Documents may have "entries" attached to them, which consist of a hash of
+the parent document, a single field, and a value for that field. These are 
+stored in sequence in an array, which may be signed. The signature is for the 
+complete array of hash, field, and value.
+
+```json
+[
+  [
+    <Hash(parent document)>,
+    "field",
+    "test entry data"
+  ],
+  <Signature(ID Signer 0)>
+]
+```
+
+### Transmitting Entries
+
+When entries are transmitted as a group, the parent hash may be omitted, but 
+must be recoverable within the transmission in order to determine what the 
+parent document is and whether the signatures are valid. In general, the most 
+efficient alternate encoding will be a heterogeneous array whose first element 
+is the parent hash and whose subsequent elements are arrays containing the 
+field, value, and signatures in sequence. This creates a coding overhead of 1 
+byte per entry (the array marker), with a group overhead of 69 bytes if fewer 
+than 15 entries are sent. The group overhead increases by 2 bytes for fewer than 
+(2^16)-2 entries, and 4 bytes for all others (max 2^32-2).
+
+An example set of entries encoded for transmission is below.
+
+```json
+[
+  <Hash(parent document)>,
+  [
+    "field",
+    "test data 1",
+    <Signature(ID Signer 1)>
+  ],
+  [
+    "field",
+    "test data 2",
+    <Signature(ID Signer 2)>
+  ],
+  [
+    "field",
+    "test data 3",
+    <Signature(ID Signer 3)>
+  ]
+]
+```
+
+If all entries use the exact same field, the field may also be omitted from each 
+entry array and instead placed right after the parent document hash. The same 
+example as before is reproduced here:
+
+```json
+[
+  <Hash(parent document)>,
+  "field",
+  [
+    "test data 1",
+    <Signature(ID Signer 1)>
+  ],
+  [
+    "test data 2",
+    <Signature(ID Signer 2)>
+  ],
+  [
+    "test data 3",
+    <Signature(ID Signer 3)>
+  ]
+]
+```
 
 
 

@@ -13,8 +13,6 @@ mod ext_type;
 
 mod timestamp;
 mod integer;
-mod utf8string;
-mod index;
 
 pub mod value;
 

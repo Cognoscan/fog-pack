@@ -78,11 +78,10 @@ pub fn identity_from_id(version: u8, id: PublicSignKey) -> Identity {
 /// information of the FullKey used (i.e. the public signing key).
 ///
 /// It can be verified by providing the hash of the data. The signing identity can be determined 
-/// using the public signing key retrieved by `get_identity_version`.
+/// from checking against the Identity returned by `signed_by`.
 #[derive(Debug,PartialEq,Clone)]
 pub struct Signature {
-    id_version: u8,
-    id: PublicSignKey,
+    id: Identity,
     hash_version: u8,
     sig: Sign,
 }
@@ -93,26 +92,21 @@ impl Signature {
         self.hash_version
     }
 
-    /// Version of the `Identity` used in signature computation.
-    pub fn get_identity_version(&self) -> u8 {
-        self.id_version
-    }
-
-    /// Retrieve the Public Key of the signer.
-    pub fn signed_by(&self) -> &PublicSignKey {
+    /// Retrieve the Identity of the signer.
+    pub fn signed_by(&self) -> &Identity {
         &self.id
     }
 
     /// Verify the signature is authentic.
     pub fn verify(&self, hash: &Hash) -> bool {
-        verify_detached(&self.id, hash.as_bytes(), &self.sig)
+        verify_detached(&self.id.id, hash.as_bytes(), &self.sig)
     }
 
     /// Write the signature data out to a buffer.
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
-        wr.write_u8(self.id_version)?;
+        wr.write_u8(self.id.version)?;
         wr.write_u8(self.hash_version)?;
-        wr.write_all(&self.id.0)?;
+        wr.write_all(&self.id.id.0)?;
         wr.write_all(&self.sig.0)?;
         Ok(())
     }
@@ -127,8 +121,7 @@ impl Signature {
         rd.read_exact(&mut id.0).map_err(CryptoError::Io)?;
         rd.read_exact(&mut sig.0).map_err(CryptoError::Io)?;
         Ok(Signature {
-            id_version,
-            id,
+            id: Identity { version: id_version, id: id },
             hash_version,
             sig
         })
@@ -213,9 +206,8 @@ impl FullKey {
 
     pub fn sign(&self, hash: &Hash) -> Signature {
         Signature { 
-            id_version: self.version,
             hash_version: hash.get_version(),
-            id: self.get_id(),
+            id: Identity { version: self.version, id: self.get_id() },
             sig: sign_detached(&self.signing, hash.as_bytes())
         }
     }
@@ -393,9 +385,8 @@ mod tests {
         let (k, id) = FullKey::new_pair().unwrap();
         let sig = k.sign(&h);
         assert_eq!(sig.get_hash_version(), 1);
-        assert_eq!(sig.get_identity_version(), 1);
-        assert_eq!(*sig.signed_by(), k.get_id());
-        assert_eq!(*sig.signed_by(), id.get_id());
+        assert_eq!(*sig.signed_by(), Identity { version: k.get_version(), id: k.get_id() });
+        assert_eq!(*sig.signed_by(), id.get_identity_ref());
         assert!(sig.verify(&h));
         signature_enc_dec(sig);
     }

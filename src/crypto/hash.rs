@@ -5,14 +5,23 @@ use byteorder::{ReadBytesExt,WriteBytesExt};
 use std::hash;
 
 use crypto::error::CryptoError;
-use crypto::sodium::blake2b;
+use crypto::sodium::{blake2b, Blake2BState};
 
 /// Crytographically secure hash of data. Can be signed by a FullKey. It is impractical to generate an 
 /// identical hash from different data.
+///
+/// # Supported Versions
+/// - 0: Null hash. Used to refer to hash of parent document
+/// - 1: Blake2B hash with 64 bytes of digest
 #[derive(Clone)]
 pub struct Hash {
     version: u8,
     digest: [u8; 64],
+}
+
+pub struct HashState {
+    version: u8,
+    state: Blake2BState,
 }
 
 impl Eq for Hash { }
@@ -47,6 +56,10 @@ impl Hash {
         Ok(hash)
     }
 
+    pub fn new_empty() -> Hash {
+        Hash { version: 0, digest: [0; 64] }
+    }
+
     pub fn get_version(&self) -> u8 {
         self.version
     }
@@ -55,18 +68,59 @@ impl Hash {
         &self.digest
     }
 
+    pub fn len(&self) -> usize {
+        if self.version == 0 {
+            1
+        }
+        else {
+            65
+        }
+    }
+
     pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
         wr.write_u8(self.version).map_err(CryptoError::Io)?;
-        wr.write_all(&self.digest).map_err(CryptoError::Io)?;
+        if self.version != 0 {
+            wr.write_all(&self.digest).map_err(CryptoError::Io)?;
+        }
         Ok(())
     }
 
     pub fn read<R: Read>(rd: &mut R) -> Result<Hash, CryptoError> {
         let version = rd.read_u8().map_err(CryptoError::Io)?;
+        if version == 0 { return Ok(Hash { version, digest:[0;64] }); }
         if version != 1 { return Err(CryptoError::UnsupportedVersion); }
         let mut hash = Hash {version, digest:[0;64]};
         rd.read_exact(&mut hash.digest).map_err(CryptoError::Io)?;
         Ok(hash)
+    }
+}
+
+impl HashState {
+    pub fn new(version: u8) -> Result<HashState, CryptoError> {
+        if version != 1 { return Err(CryptoError::UnsupportedVersion); }
+        Ok(HashState { version, state: Blake2BState::new() })
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        self.state.update(data);
+    }
+
+    pub fn get_hash(&self) -> Hash {
+        let mut hash = Hash { version: self.version, digest: [0;64] };
+        self.state.get_hash(&mut hash.digest);
+        hash
+    }
+
+    pub fn finalize(mut self) -> Hash {
+        let mut hash = Hash { version: self.version, digest: [0;64] };
+        self.state.finalize(&mut hash.digest);
+        hash
+    }
+}
+
+impl fmt::Debug for HashState {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{} {{ version: {:?} }}", stringify!(HashState), &self.version)
     }
 }
 
@@ -93,8 +147,16 @@ mod tests {
             let ref_hash = hex::decode(&vector["out"].as_str().unwrap()).unwrap();
             let ref_input = hex::decode(&vector["input"].as_str().unwrap()).unwrap();
             let h = Hash::new(1, &ref_input[..]).unwrap();
+            let mut state: HashState = HashState::new(1).unwrap();
+            state.update(&ref_input[..]);
+            let h2 = state.get_hash();
+            let h3 = state.finalize();
             assert_eq!(h.version, 1u8);
             assert_eq!(h.digest[..], ref_hash[..]);
+            assert_eq!(h2.version, 1u8);
+            assert_eq!(h2.digest[..], ref_hash[..]);
+            assert_eq!(h3.version, 1u8);
+            assert_eq!(h3.digest[..], ref_hash[..]);
             enc_dec(h)
         }
     }
@@ -103,7 +165,11 @@ mod tests {
     fn edge_cases() {
         match Hash::new(0, &[1,2]).unwrap_err() {
             CryptoError::UnsupportedVersion => (),
-            _ => panic!("Hash should always fail on version 0"),
+            _ => panic!("New hash should always fail on version 0"),
+        };
+        match HashState::new(0).unwrap_err() {
+            CryptoError::UnsupportedVersion => (),
+            _ => panic!("HashState should always fail on version 0"),
         };
         let digest = hex::decode(
             "29102511d749db3cc9b4e335fa1f5e8faca8421d558f6a3f3321d50d044a248b\
@@ -111,5 +177,14 @@ mod tests {
         let h = Hash::new(1, &hex::decode("00010203040506070809").unwrap()).unwrap();
         assert_eq!(h.get_version(), 1);
         assert_eq!(h.as_bytes(), &digest[..]);
+    }
+
+    #[test]
+    fn empty() {
+        let h = Hash::new_empty();
+        let digest = [0u8; 64];
+        assert_eq!(h.get_version(), 0);
+        assert_eq!(h.as_bytes(), &digest[..]);
+        enc_dec(h);
     }
 }

@@ -1,9 +1,10 @@
 use std::ops;
 use std::borrow::Cow;
 use std::fmt::{self, Display};
+use std::collections::BTreeMap;
 
-use crypto::integer::Integer;
 use crypto::timestamp::Timestamp;
+use crypto::integer::Integer;
 use crypto::lock::{Lockbox,LockboxRef};
 use crypto::hash::Hash;
 use crypto::key::{Identity,Signature};
@@ -17,7 +18,7 @@ enum ValueType {
     F64(f64),
     Binary(Vec<u8>),
     Array(Vec<Value>),
-    Object(Vec<(String, Value)>),
+    Object(BTreeMap<String, Value>),
     Hash(Hash),
     Identity(Identity),
     Lockbox(Lockbox),
@@ -26,8 +27,8 @@ enum ValueType {
 
 pub struct Value {
     val: ValueType,
-    sign: Option<Vec<Signature>>,
-    id: Option<Vec<Identity>>,
+    sign: Vec<Signature>,
+    id: Vec<Identity>,
 }
 
 impl Value {
@@ -35,21 +36,33 @@ impl Value {
     fn new_from_value_type(v: ValueType) -> Value {
         Value {
             val: v,
-            sign: None,
-            id: None
+            sign: Vec::new(),
+            id: Vec::new()
         }
+    }
+
+    pub fn new_nil() -> Value {
+        Value::new_from_value_type(ValueType::Nil)
+    }
+
+    pub fn add_sign(&mut self, s: Signature) {
+        self.sign.push(s);
+    }
+
+    pub fn add_id_for_signing(&mut self, id: Identity) {
+        self.id.push(id);
     }
 
     pub fn is_signed(&self) -> bool {
-        self.sign.is_some()
+        !self.sign.is_empty()
+    }
+    
+    pub fn will_be_signed(&self) -> bool {
+        !self.id.is_empty()
     }
 
     pub fn signed_by(&self) -> Vec<&Identity> {
-        if let Some(ref signatures) = self.sign {
-            signatures.iter().map(|s| s.signed_by()).collect()
-        } else {
-            Vec::<&Identity>::new()
-        }
+        self.sign.iter().map(|s| s.signed_by()).collect()
     }
 
     pub fn is_null(&self) -> bool {
@@ -195,7 +208,7 @@ impl Value {
         }
     }
 
-    pub fn as_obj(&self) -> Option<&Vec<(String, Value)>> {
+    pub fn as_obj(&self) -> Option<&BTreeMap<String, Value>> {
         if let ValueType::Object(ref obj) = self.val {
             Some(obj)
         } else {
@@ -237,13 +250,29 @@ impl Value {
 
 }
 
-static NIL: Value = Value { val: ValueType::Nil, sign: None, id: None };
-
 impl ops::Index<usize> for Value {
     type Output = Value;
 
+    /// Index into an array if Value is one. 
+    ///
+    /// # Panics
+    ///
+    /// Will panic if not an array or if index is out of bounds.
     fn index(&self, index: usize) -> &Value {
-        self.as_array().and_then(|v| v.get(index)).unwrap_or(&NIL)
+        self.as_array().and_then(|v| v.get(index)).expect("Index out of bounds")
+    }
+}
+
+impl<'a>  ops::Index<&'a String> for Value {
+    type Output = Value;
+
+    /// Index into an object if Value is one. 
+    ///
+    /// # Panics
+    ///
+    /// Panics if key is not present, or if Value is not an object
+    fn index(&self, key: &String) -> &Value {
+        self.as_obj().and_then(|v| v.get(key)).expect("No entry for key")
     }
 }
 
@@ -251,8 +280,8 @@ impl From<bool> for Value {
     fn from(v: bool) -> Self {
         Value {
             val: ValueType::Boolean(v),
-            sign: None,
-            id: None,
+            sign: Vec::new(),
+            id: Vec::new(),
         }
     }
 }
@@ -377,8 +406,8 @@ impl From<Vec<Value>> for Value {
     }
 }
 
-impl From<Vec<(String, Value)>> for Value {
-    fn from(v: Vec<(String, Value)>) -> Self {
+impl From<BTreeMap<String, Value>> for Value {
+    fn from(v: BTreeMap<String, Value>) -> Self {
         Value::new_from_value_type(ValueType::Object(v))
     }
 }
@@ -404,6 +433,62 @@ impl From<Lockbox> for Value {
 impl From<Timestamp> for Value {
     fn from(v: Timestamp) -> Self {
         Value::new_from_value_type(ValueType::Timestamp(v))
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        //let mut ids = Vec::new();
+        //let mut hashes = Vec::new();
+        //let mut owners = Vec::new();
+        //let mut bin = Vec::new();
+
+        match self.val {
+            ValueType::Nil => Display::fmt("null", f),
+            ValueType::Boolean(val) => write!(f, "{}", val),
+            ValueType::Integer(ref val) => write!(f, "{}", val),
+            ValueType::F32(val) => write!(f, "{}", val),
+            ValueType::F64(val) => write!(f, "{}", val),
+            ValueType::String(ref val) => {
+                if val.starts_with("<") {
+                    write!(f, "\"<{}\"", val)
+                }
+                else {
+                    write!(f, "\"{}\"", val)
+                }
+            }
+            ValueType::Binary(ref _val) => write!(f, "\"<Bin>\""),
+            ValueType::Array(ref vec) => {
+                let res = vec.iter()
+                    .map(|val| format!("{}", val))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                write!(f, "[{}]", res)
+            }
+            ValueType::Object(ref obj) => {
+                write!(f, "{{")?;
+
+                match obj.iter().take(1).next() {
+                    Some((ref k, ref v)) => {
+                        write!(f, "{}: {}", k, v)?;
+                    }
+                    None => {
+                        write!(f, "")?;
+                    }
+                }
+
+                for (ref k, ref v) in obj.iter().skip(1) {
+                    write!(f, ", {}: {}", k, v)?;
+                }
+
+                write!(f, "}}")
+            }
+            ValueType::Timestamp(ref val) => write!(f, "{}", val),
+            ValueType::Hash(ref val) => write!(f, "\"<Hash>\""),
+            ValueType::Identity(ref val) => write!(f, "\"<Identity>\""),
+            ValueType::Lockbox(ref val) => write!(f, "\"<Lockbox>\""),
+        }
     }
 }
 

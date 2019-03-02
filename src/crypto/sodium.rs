@@ -48,6 +48,8 @@ pub struct Tag(pub [u8; TAG_BYTES]);
 pub struct StreamId(pub [u8; 32]);
 #[derive(Clone)]
 pub struct Sign(pub [u8; SIGN_BYTES]);
+#[derive(Clone)]
+pub struct Blake2BState(pub libsodium_sys::crypto_generichash_blake2b_state);
 
 impl Tag {
     pub fn len() -> usize {
@@ -159,6 +161,52 @@ impl PartialEq for SecretKey {
         constant_time_eq(&self.0, &other.0)
     }
 }
+
+// Blake2BState
+impl Blake2BState {
+    pub fn new() -> Blake2BState {
+        let mut state: libsodium_sys::crypto_generichash_blake2b_state;
+        // Below will only fail or return -1 if we have more than 64 bytes in input or tell it to use a 
+        // non-existant key
+        unsafe {
+            state = ::std::mem::uninitialized();
+            libsodium_sys::crypto_generichash_blake2b_init(&mut state, ::std::ptr::null(), 0, 64);
+        }
+        Blake2BState { 0: state }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        unsafe {
+            libsodium_sys::crypto_generichash_blake2b_update(
+                &mut self.0,
+                data.as_ptr(),
+                data.len() as c_ulonglong
+            );
+        }
+    }
+
+    pub fn get_hash(&self, hash: &mut [u8; 64]) {
+        let mut temp_state = self.0.clone();
+        unsafe {
+            libsodium_sys::crypto_generichash_blake2b_final(
+                &mut temp_state,
+                hash.as_mut_ptr(),
+                64
+            );
+        }
+    }
+
+    pub fn finalize(mut self, hash: &mut [u8; 64]) {
+        unsafe {
+            libsodium_sys::crypto_generichash_blake2b_final(
+                &mut self.0,
+                hash.as_mut_ptr(),
+                64
+            );
+        }
+    }
+}
+
 
 pub fn aead_keygen(key: &mut SecretKey) {
     unsafe { libsodium_sys::crypto_aead_xchacha20poly1305_ietf_keygen(key.0.as_mut_ptr()) };

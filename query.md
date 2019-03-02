@@ -33,7 +33,6 @@ the query maker is encouraged to only use queries that meet the schema.
 - array - Allow checking array contents
 - sign - Allow checking signatures
 - link - Allow following a hash and running a query on the matching document
-- ref - Allow following a hash and evaluating the matching document
 
 Types
 -----
@@ -204,7 +203,6 @@ The below operators are special and have a required field for each of them:
 | --        | --       | --                                                    |
 | `$signed` | sign     | Evaluate the digital signatures for a value           |
 | `$link`   | link     | Follow a Hash to a document and run a sub-query on it |
-| `$ref`    | ref      | Follow a Hash to a document and evaluate its fields   |
 | `$regex`  | regex    | Evaluate a regular expression against a string        |
 
 #### $signed ####
@@ -279,18 +277,12 @@ entry: [ <Hash>, "loc_status", { team: "Finance",     location: "Home"   }, <Sig
 
 #### $link ####
 
-Requires that the field be a Hash and have the "link" field set to an array of 
-hashes in the document schema. The contents of a `$link` operator is identical 
-to the content of the `query` field in a query, and is used exactly like a query 
-on the sub-document. This sub-query must be a valid query for a document that 
-matches *any* of the schema documents in the "link" field of the primary 
-document schema.
-
-#### $ref ####
-
-Requires that the field be a Hash and have the "ref" field set to true in the 
-document schema. The contents of a `$link` operator is an object with fields to 
-be queried in each sub-document. 
+Requires that the field be a Hash and have the "link" field set to either a 
+single Hash or an array of hashes in the document schema. The contents of a 
+`$link` operator are the fields to be queried within the sub-document. The 
+matching fields in the document schema must be marked with the appropriate 
+query field in each schema document referenced, otherwise this query is 
+considered invalid.
 
 #### $regex ####
 

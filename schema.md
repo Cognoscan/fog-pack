@@ -352,24 +352,17 @@ following optional fields:
 - `nin`: an array of hashes the described field must not be among.
 - `const`: a hash the described field  must be set to.
 - `default`: a default hash implementations may use if the field is not present.
-- `link`: allows `link` queries on this field if set to an array of Hashes. If 
-	this field is within an entry, the document referred to by the field's hash 
-	must use one of the schema documents in the `link` array. That is, the 
-	document must have the `$schema` field equal to a hash from the `link` array.
-- `ref`: allows `ref` queries on this field if set to a Hash. If this field is 
-	within an entry, the document referred to by the field's hash must be 
-	validated against the schema document the `ref` Hash refers to. If the Hash 
-	for `ref` refers to a non-schema document, validation always fails.
+- `link`: allows `$link` queries on this field if set to a Hash or array of 
+	hashes. If this field is within an entry, the document referred to by the 
+	field's hash must be validated against the schema document the `link` Hash 
+	refers to, or must have been validated against one of the schema in the array 
+	and have that match its `$schema` field. If the Hash for `link` refers to a 
+	non-schema document, validation always fails. This is ignored if used for 
+	anything that isn't in an entry, as `$link` queries can't be made within 
+	document fields.
 
 Validation fails if the described field is not a hash or does not meet any of 
 the optional requirements listed.
-
-To expand on `link` and `ref`: if the described field is used within a document, 
-these are ignored, as the query language does not allow for `$link` or `$ref` 
-queries to be run against the fields in a document. If, however, the described 
-field is used within an entry, the Hash must refer to a document and that 
-document must be validated, either against its own schema or against the schema 
-specified by `ref`. 
 
 #### Ident
 
@@ -693,8 +686,7 @@ below:
           { "name": "comment",    "type": "Str" },
           { "name": "query",      "type": "Bool" },
           { "name": "sign",       "type": "Bool" },
-          { "name": "ref",        "type": "Hash" },
-          { "name": "link",       "type": "Array", "items": "Hash", "unique": true }
+          { "name": "link",       "type": "Multi", "any_of": [ "Hash", "HashArray" ] }
         ]
       },
 
@@ -782,6 +774,13 @@ below:
         "type": "Array",
         "items": "Str",
         "comment": "Used for the items field in Array types"
+      },
+
+      {
+        "name": "HashArray",
+        "type": "Array",
+        "items": "Hash",
+        "comment": "Used for the link field in Hash types"
       }
     ]
   }]

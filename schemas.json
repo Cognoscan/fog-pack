@@ -280,8 +280,7 @@
           { "name": "comment",    "type": "Str" },
           { "name": "query",      "type": "Bool" },
           { "name": "sign",       "type": "Bool" },
-          { "name": "ref",        "type": "Hash" },
-          { "name": "link",       "type": "Array", "items": "Hash", "unique": true }
+          { "name": "link",       "type": "Multi", "any_of": [ "Hash", "HashArray" ] }
         ]
       },
 
@@ -369,6 +368,13 @@
         "type": "Array",
         "items": "Str",
         "comment": "Used for the items field in Array types"
+      },
+
+      {
+        "name": "HashArray",
+        "type": "Array",
+        "items": "Hash",
+        "comment": "Used for the link field in Hash types"
       }
     ]
   }]

@@ -117,7 +117,7 @@ additional short names. They may also be queried in different ways. See the
 | Binary    | Bin        | ord, bit             |
 | Array     | Array      | array                |
 | Object    | Obj        |                      |
-| Hash      | Hash       | link, ref            |
+| Hash      | Hash       | link                 |
 | Identity  | Ident      |                      |
 | Signature | Sign       |                      |
 | Lockbox   | Lock       |                      |

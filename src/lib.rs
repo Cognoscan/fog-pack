@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[cfg(test)]
 extern crate serde_json;
 #[cfg(test)]
@@ -14,4 +16,10 @@ extern crate libc;
 //use std::io::Write;
 
 pub mod crypto;
+
+pub use self::crypto::{Value,Integer,Timestamp,Hash,Identity,CryptoError};
+
+#[macro_use]
+mod macros;
+
 

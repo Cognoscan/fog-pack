@@ -15,13 +15,13 @@ or Base64 encoded data (using the RFC 2045 encoding). In these cases, the
 hex-encoded data is prefixed with `0x` and Base64-encoded data is prefixed with 
 `64x`.
 
-Allowed types are Nil, Boolean, Integer, String, Floating, Binary, Array, 
-Object, Hash, Identity, Signature, Lockbox, and Timestamp. The short name for 
-each type may also be used.
+Allowed types are Null, Boolean, Integer, String, Floating, Binary, Array, 
+Object, Hash, Identity, Lockbox, and Timestamp. The short name for each type may 
+also be used.
 
 If an actual value is to be written, the following rules should be observed:
 
-- Nil is always written as `null` for JSON-compatiblity
+- Null is always written lowercase as `null` for JSON-compatiblity
 - Boolean is always written as either `true` or `false`
 - Strings are always encapsulated in quotes. Quotes in the string are escaped 
 	with a backslash, backslashes are escaped with a double-backslash, and 
@@ -34,7 +34,7 @@ If an actual value is to be written, the following rules should be observed:
 	value given in parentheses after the human-readable version. As an example:
 	`"<-234.01234e4(0xC141_DA8D_B333_3333)>"` shows the value encoded as a 
 	double-precision floating-point word.
-- Binary, Hash, Identity, Signature, and Lockbox types are never written 
+- Binary, Hash, Identity, and Lockbox types are never written 
 	directly. They must always be written in the `<Type(name)>` form, with the 
 	option to embed the binary data instead of a name.
 - Arrays are displayed by enclosing the array of values in brackets and 
@@ -55,7 +55,9 @@ If an actual value is to be written, the following rules should be observed:
 
 Documents, entries, and queries may be shown by creating a JSON object whose 
 keys are of the form `document(id)`, `entry(id)`, or `query(id)`, with a unique 
-identifier for each
+identifier for each. The content of each is an array whose first element is the 
+document/entry/query, and whose remaining elements are signatures, signified by 
+using `<Signature(id)>` for each.
 
 ## Examples ##
 

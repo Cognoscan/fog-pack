@@ -91,10 +91,9 @@ MessagePack is extended with the following `ext` types:
 
 | Type | Name      | Description                                                  |
 | --   | --        | --                                                           |
-| 2    | Hash      | Cryptographic hash of some byte sequence                     |
-| 3    | Identity  | A public key, usable for encryption and signing verification |
-| 4    | Signature | A public key, and signature of some byte sequence            |
-| 5    | Lockbox   | Encrypted data and the ID of the key needed to decrypt it    |
+| 1    | Hash      | Cryptographic hash of some byte sequence                     |
+| 2    | Identity  | A public key, usable for encryption and signing verification |
+| 3    | Lockbox   | Encrypted data and the ID of the key needed to decrypt it    |
 
 All positive numbered types are reserved for future use. If a specific additional 
 primitive is desired, this specification or the MessagePack specification should 
@@ -108,7 +107,7 @@ additional short names. They may also be queried in different ways. See the
 
 | Type      | Short Name | Possible Query Types |
 | --        | --         | --                   |
-| Nil       | Nil        |                      |
+| Null      | Null       |                      |
 | Boolean   | Bool       | ord                  |
 | Integer   | Int        | ord, bit             |
 | String    | Str        | ord, regex           |
@@ -119,12 +118,8 @@ additional short names. They may also be queried in different ways. See the
 | Object    | Obj        |                      |
 | Hash      | Hash       | link                 |
 | Identity  | Ident      |                      |
-| Signature | Sign       |                      |
 | Lockbox   | Lock       |                      |
 | Timestamp | Time       | ord                  |
-
-Note: although the Signature type has a short name, it is never used in actual 
-queries or schema, as signatures are always indirectly interacted with.
 
 ### Unambiguous Encoding ###
 
@@ -185,31 +180,6 @@ byte is set to 1, and the Ed25519 public key is then attached.
 Each public key type has a matching private key type. See the description of 
 Lockbox for how private keys may be encoded.
 
-### Signature ###
-
-A signature encodes a digital signature: a structure verifying a particular 
-encoded MessagePack sequence has been seen & signed by a particular Identity, 
-and has not been modified since.
-
-Signatures are special in that they are always associated with another 
-MessagePack object: the object being signed. As such, a Signature *must* be part 
-of an array. The first element of this array is the MessagePack object that was 
-signed, and all other elements must be Signatures signing that object. This 
-signed array is not directly accessed as an array in queries and schema 
-validation; instead, the array is treated as though it were the first element in 
-the array, but with the option to verify signatures on it.
-
-An encoded signature contains 4 elements in the following order: 
-
-1. The "type byte" of the Identity that was used in the signature.
-2. A byte indicating what hashing method was used to create the digest that was 
-   signed.
-3. The Identity used in signing, except for the "type byte".
-4. The digital signature. Format is determined by the Identity type.
-
-Note: the signature signs only the first element of the array - this does not 
-include the MessagePack encoding byte
-
 ### Lockbox ###
 
 A lockbox stores encrypted information. It can store one of 3 things: A private 
@@ -261,8 +231,8 @@ Document Format
 
 Documents are immutable objects that may be signed. A document is referred to by 
 its cryptographic hash, which is a hash of the object and any attached 
-signatures. It is expected that a document will be sent as an array containing 
-the object and the associated signatures. As an example, here is a simple 
+signatures. It is expected that a document will be sent as the document object 
+followed by its associated signatures. As an example, here is a simple 
 document that has been signed by two separate Identities:
 
 ```json
@@ -278,8 +248,8 @@ document that has been signed by two separate Identities:
 
 Documents may have "entries" attached to them, which consist of a hash of
 the parent document, a single field, and a value for that field. These are 
-stored in sequence in an array, which may be signed. The signature is for the 
-complete array of hash, field, and value.
+stored in a single sequence, which may be signed. The signature is for the 
+complete data stream encoding the parent hash, then field, and finally value.
 
 ```json
 [
@@ -292,63 +262,37 @@ complete array of hash, field, and value.
 ]
 ```
 
-### Transmitting Entries
+### Transmitting Documents and Entries
 
-When entries are transmitted as a group, the parent hash may be omitted, but 
-must be recoverable within the transmission in order to determine what the 
-parent document is and whether the signatures are valid. In general, the most 
-efficient alternate encoding will be a heterogeneous array whose first element 
-is the parent hash and whose subsequent elements are arrays containing the 
-field, value, and signatures in sequence. This creates a coding overhead of 1 
-byte per entry (the array marker), with a group overhead of 69 bytes if fewer 
-than 15 entries are sent. The group overhead increases by 2 bytes for fewer than 
-(2^16)-2 entries, and 4 bytes for all others (max 2^32-2).
+When entries and documents are to be transmitted, there is a consistent encoding 
+they follow.
 
-An example set of entries encoded for transmission is below.
+First, a MessagePack unsigned integer is appended to the data stream, indicating 
+the number of entry groups to be transmitted. Any entry groups to be encoded are 
+then appended. Next, an unsigned integer indicating the number of documents
+to be transmitted is appended. Any documents to be encoded are then appended. If 
+no documents are to be encoded, the unsigned integer may be omitted.
 
-```json
-[
-  <Hash(parent document)>,
-  [
-    "field",
-    "test data 1",
-    <Signature(ID Signer 1)>
-  ],
-  [
-    "field",
-    "test data 2",
-    <Signature(ID Signer 2)>
-  ],
-  [
-    "field",
-    "test data 3",
-    <Signature(ID Signer 3)>
-  ]
-]
-```
+- # entry groups, as MessagePack integer
+- Entry groups
+	- Parent Hash (raw version + digest form)
+	- # Unique field entries
+	- Field entries
+		- Field common to these entries
+		- # entries
+		- Entry data + signatures
+			- # signatures
+			- data
+			- signatures
+- # documents
+- Documents
+	- # signatures
+	- document
+	- signatures
 
-If all entries use the exact same field, the field may also be omitted from each 
-entry array and instead placed right after the parent document hash. The same 
-example as before is reproduced here:
+The above arrangement yields a worst-case overhead of 69 bytes if only one entry 
+is sent. The worst-case overhead for documents is 3 bytes.
 
-```json
-[
-  <Hash(parent document)>,
-  "field",
-  [
-    "test data 1",
-    <Signature(ID Signer 1)>
-  ],
-  [
-    "test data 2",
-    <Signature(ID Signer 2)>
-  ],
-  [
-    "test data 3",
-    <Signature(ID Signer 3)>
-  ]
-]
-```
 
 
 

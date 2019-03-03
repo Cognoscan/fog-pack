@@ -111,7 +111,7 @@ impl HashState {
         hash
     }
 
-    pub fn finalize(mut self) -> Hash {
+    pub fn finalize(self) -> Hash {
         let mut hash = Hash { version: self.version, digest: [0;64] };
         self.state.finalize(&mut hash.digest);
         hash

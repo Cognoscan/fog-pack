@@ -20,6 +20,10 @@ impl Timestamp {
         }
     }
 
+    pub fn from_sec(sec: i64) -> Timestamp {
+        Timestamp { sec, nano: 0 }
+    }
+
     /// Return the UNIX timestamp (number of seconds since January 1, 1970 
     /// 0:00:00 UTC)
     pub fn timestamp(&self) -> i64 {

@@ -18,6 +18,19 @@ Given that they have unlimited lifetimes, queries can alternately be viewed as a
 sort of publish-subscribe system, where the query is a way of subscribing to a 
 document and narrowing the scope of the subscription.
 
+Query Format
+------------
+
+Queries are a special type of document that have the following fields:
+
+- `root` - An array of Hashes of the documents to run the query on
+- `query` - The set of entry fields to look for and what queries should be run 
+	on them. This is a MessagePack object.
+
+If `query` is not present, the documents referenced in `root` are directly sent 
+back in response to the query.
+
+
 Allowable Query Types
 ---------------------
 
@@ -31,17 +44,14 @@ the query maker is encouraged to only use queries that meet the schema.
 - bit - Allow bitwise checking of an Integer or Binary type.
 - regex - Allow regular expression queries on a String.
 - array - Allow checking array contents
-- sign - Allow checking signatures
 - link - Allow following a hash and running a query on the matching document
 
 Types
 -----
 
 All types can be queried with equivalence and field operaters if the `query` 
-field is set to true in the document schema. All types can be queried with the 
-`$signed` operator if the `sign` field is set to true in the document schema. 
-Other query operators can be enabled by setting the appropriate field in the 
-document schema.
+field is set to true in the document schema. Other query operators can be 
+enabled by setting the appropriate field in the document schema.
 
 The equivalence operators are also enabled if the `ord` field is set to true in 
 the document schema.
@@ -201,79 +211,8 @@ The below operators are special and have a required field for each of them:
 
 | Name      | Requires | Description                                           |
 | --        | --       | --                                                    |
-| `$signed` | sign     | Evaluate the digital signatures for a value           |
 | `$link`   | link     | Follow a Hash to a document and run a sub-query on it |
 | `$regex`  | regex    | Evaluate a regular expression against a string        |
-
-#### $signed ####
-
-Requires that the field has the "sign" field set to true in the document schema.
-
-`$signed` performs signature verification beyond simple matching. It checks the 
-certificate store based on the provided fields:
-
-- `name`: String that should exactly match for a certificate
-- `value`: Integer that can be compared against or matched exactly
-- `id`: Either a single Identity or an array of Identities
-- `$signed`: Chains to another `$signed` query
-- `exists`
-
-If both the `id` and `$signed` fields are present, this will evaluate as true if 
-either any of the provided Identities was the signer or if the `$signed` 
-sub-query evaluates to true.
-
-As an example, say the data on a node is as below:
-
-```
-document: [
-	{
-		$schema: <Hash - location record-keeping schema>,
-		name: "Team Work Locations",
-		root: <Identity - root>
-	},
-	<Signature - ID root>
-]
-
-entry: [ <Hash - document>, "loc_status", { team: "Finance",     location: "Home"   }, <Signature - ID user0>]
-entry: [ <Hash - document>, "loc_status", { team: "Accounting",  location: "Work"   }, <Signature - ID user1>]
-entry: [ <Hash - document>, "loc_status", { team: "Sales", 		   location: "Travel" }, <Signature - ID user2>]
-entry: [ <Hash - document>, "loc_status", { team: "Engineering", location: "Work"   }, <Signature - ID user3>]
-
-```
-
-The below will match on any array whose first element is an object with a team 
-field set to "Finance" and a location field with a string value. The array must 
-also contain a signature, as indicated by `$signed`. Any Identity with a valid 
-"user" certificate (name="user" and value>0) from another Identity with a valid 
-"admin" certificate (name="admin" and value>0) that was signed by a given 
-Identity will be accepted.
-
-```
-query: {
-	root: [ <Hash - document> ],
-	query: {
-		loc_status: {
-			team: "Finance",
-			location: { $type: "string" },
-			$signed: {
-				value: { $gt: 0 },
-				name: "user",
-				$signed: {
-					value: { $gt: 0 },
-					name: "admin"
-					id: <Identity>
-				}
-			}
-		}
-	}
-}
-```
-
-This will return a single entry:
-
-```
-entry: [ <Hash>, "loc_status", { team: "Finance",     location: "Home"   }, <Signature - ID user0>]
-```
 
 #### $link ####
 
@@ -289,6 +228,80 @@ considered invalid.
 Requires that the field be a String and have the "regex" field set to true in 
 the document schema. The contents of a `$regex` operator is a string with a 
 regular expression to be run against the field.
+
+Signature Checking
+------------------
+
+`$signed` performs signature verification beyond simple matching. It can only be 
+used on entries or on It checks the 
+certificate store based on the provided fields:
+
+- `name`: String that should exactly match for a certificate
+- `value`: Integer that can be compared against or matched exactly
+- `id`: Either a single Identity or an array of Identities
+- `$signed`: Chains to another `$signed` query
+- `exists`
+
+If both the `id` and `$signed` fields are present, this will evaluate as true if 
+either any of the provided Identities was the signer or if the `$signed` 
+sub-query evaluates to true.
+
+As an example, say the data on a node is as below:
+
+```json
+{
+  "document(location record)": [{
+    "$schema": "<Hash(location record-keeping schema)>",
+    "name": "Team Work Locations",
+    "root": "<Identity(root)>"
+  	},
+  	"<Signature(root)>"
+  ],
+  
+  "entry": [ "<Hash(location record)>", "loc_status", { "team": "Finance",     "location": "Home"   }, "<Signature(user0>"],
+  "entry": [ "<Hash(location record)>", "loc_status", { "team": "Accounting",  "location": "Work"   }, "<Signature(user1>"],
+  "entry": [ "<Hash(location record)>", "loc_status", { "team": "Sales",       "location": "Travel" }, "<Signature(user2>"],
+  "entry": [ "<Hash(location record)>", "loc_status", { "team": "Engineering", "location": "Work"   }, "<Signature(user3>"]
+}
+```
+
+The below will match on any array whose first element is an object with a team 
+field set to "Finance" and a location field with a string value. The array must 
+also contain a signature, as indicated by `$signed`. Any Identity with a valid 
+"user" certificate (name="user" and value>0) from another Identity with a valid 
+"admin" certificate (name="admin" and value>0) that was signed by a given 
+Identity will be accepted.
+
+```json
+{
+	"query": {
+		"root": [ "<Hash(location record)>" ],
+		"query": {
+			"loc_status": {
+				"team": "Finance",
+				"$signed": {
+					"value": { "$gt": 0 },
+					"name": "user",
+					"$signed": {
+						"value": { "$gt": 0 },
+						"name": "admin",
+						"id": "<Identity(admin)>"
+					}
+				}
+			}
+		}
+	}
+}
+```
+
+This will return a single entry:
+
+```
+{
+  "entry": [ "<Hash(location record)>", "loc_status", { "team": "Finance",     "location": "Home"   }, "<Signature(user0>"],
+}
+```
+
 
 Priority
 --------

@@ -7,10 +7,11 @@ use crypto::timestamp::Timestamp;
 use crypto::integer::Integer;
 use crypto::lock::{Lockbox,LockboxRef};
 use crypto::hash::Hash;
-use crypto::key::{Identity,Signature};
+use crypto::key::Identity;
 
-enum ValueType {
-    Nil,
+#[derive(Debug)]
+pub enum Value {
+    Null,
     Boolean(bool),
     Integer(Integer),
     String(String),
@@ -25,48 +26,10 @@ enum ValueType {
     Timestamp(Timestamp),
 }
 
-pub struct Value {
-    val: ValueType,
-    sign: Vec<Signature>,
-    id: Vec<Identity>,
-}
-
 impl Value {
 
-    fn new_from_value_type(v: ValueType) -> Value {
-        Value {
-            val: v,
-            sign: Vec::new(),
-            id: Vec::new()
-        }
-    }
-
-    pub fn new_nil() -> Value {
-        Value::new_from_value_type(ValueType::Nil)
-    }
-
-    pub fn add_sign(&mut self, s: Signature) {
-        self.sign.push(s);
-    }
-
-    pub fn add_id_for_signing(&mut self, id: Identity) {
-        self.id.push(id);
-    }
-
-    pub fn is_signed(&self) -> bool {
-        !self.sign.is_empty()
-    }
-    
-    pub fn will_be_signed(&self) -> bool {
-        !self.id.is_empty()
-    }
-
-    pub fn signed_by(&self) -> Vec<&Identity> {
-        self.sign.iter().map(|s| s.signed_by()).collect()
-    }
-
-    pub fn is_null(&self) -> bool {
-        if let ValueType::Nil = self.val {
+    pub fn is_nil(&self) -> bool {
+        if let Value::Null = *self {
             true
         } else {
             false
@@ -82,7 +45,7 @@ impl Value {
     }
 
     pub fn is_i64(&self) -> bool {
-        if let ValueType::Integer(ref v) = self.val {
+        if let Value::Integer(ref v) = *self {
             v.is_i64()
         } else {
             false
@@ -90,7 +53,7 @@ impl Value {
     }
 
     pub fn is_u64(&self) -> bool {
-        if let ValueType::Integer(ref v) = self.val {
+        if let Value::Integer(ref v) = *self {
             v.is_u64()
         } else {
             false
@@ -98,7 +61,7 @@ impl Value {
     }
 
     pub fn is_f32(&self) -> bool {
-        if let ValueType::F32(..) = self.val {
+        if let Value::F32(..) = *self {
             true
         } else {
             false
@@ -106,7 +69,7 @@ impl Value {
     }
 
     pub fn is_f64(&self) -> bool {
-        if let ValueType::F64(..) = self.val {
+        if let Value::F64(..) = *self {
             true
         } else {
             false
@@ -146,7 +109,7 @@ impl Value {
     }
 
     pub fn as_bool(&self) -> Option<bool> {
-        if let ValueType::Boolean(val) = self.val {
+        if let Value::Boolean(val) = *self {
             Some(val)
         } else {
             None
@@ -154,7 +117,7 @@ impl Value {
     }
 
     pub fn as_int(&self) -> Option<Integer> {
-        if let ValueType::Integer(val) = self.val {
+        if let Value::Integer(val) = *self {
             Some(val)
         } else {
             None
@@ -162,30 +125,30 @@ impl Value {
     }
 
     pub fn as_i64(&self) -> Option<i64> {
-        match self.val {
-            ValueType::Integer(ref n) => n.as_i64(),
+        match *self {
+            Value::Integer(ref n) => n.as_i64(),
             _ => None,
         }
     }
 
     pub fn as_u64(&self) -> Option<u64> {
-        match self.val {
-            ValueType::Integer(ref n) => n.as_u64(),
+        match *self {
+            Value::Integer(ref n) => n.as_u64(),
             _ => None,
         }
     }
 
     pub fn as_f64(&self) -> Option<f64> {
-        match self.val {
-            ValueType::Integer(ref n) => n.as_f64(),
-            ValueType::F32(n) => Some(From::from(n)),
-            ValueType::F64(n) => Some(n),
+        match *self {
+            Value::Integer(ref n) => n.as_f64(),
+            Value::F32(n) => Some(From::from(n)),
+            Value::F64(n) => Some(n),
             _ => None,
         }
     }
 
     pub fn as_str(&self) -> Option<&str> {
-        if let ValueType::String(ref val) = self.val {
+        if let Value::String(ref val) = *self {
             Some(val.as_str())
         } else {
             None
@@ -193,7 +156,7 @@ impl Value {
     }
 
     pub fn as_slice(&self) -> Option<&[u8]> {
-        if let ValueType::Binary(ref val) = self.val {
+        if let Value::Binary(ref val) = *self {
             Some(val)
         } else {
             None
@@ -201,7 +164,7 @@ impl Value {
     }
 
     pub fn as_array(&self) -> Option<&Vec<Value>> {
-        if let ValueType::Array(ref array) = self.val {
+        if let Value::Array(ref array) = *self {
             Some(&*array)
         } else {
             None
@@ -209,7 +172,7 @@ impl Value {
     }
 
     pub fn as_obj(&self) -> Option<&BTreeMap<String, Value>> {
-        if let ValueType::Object(ref obj) = self.val {
+        if let Value::Object(ref obj) = *self {
             Some(obj)
         } else {
             None
@@ -217,7 +180,7 @@ impl Value {
     }
 
     pub fn as_hash(&self) -> Option<&Hash> {
-        if let ValueType::Hash(ref hash) = self.val {
+        if let Value::Hash(ref hash) = *self {
             Some(hash)
         } else {
             None
@@ -225,7 +188,7 @@ impl Value {
     }
 
     pub fn as_id(&self) -> Option<&Identity> {
-        if let ValueType::Identity(ref id) = self.val {
+        if let Value::Identity(ref id) = *self {
             Some(id)
         } else {
             None
@@ -233,7 +196,7 @@ impl Value {
     }
 
     pub fn as_lockbox(&self) -> Option<&Lockbox> {
-        if let ValueType::Lockbox(ref lock) = self.val {
+        if let Value::Lockbox(ref lock) = *self {
             Some(lock)
         } else {
             None
@@ -241,10 +204,93 @@ impl Value {
     }
 
     pub fn as_timestamp(&self) -> Option<Timestamp> {
-        if let ValueType::Timestamp(time) = self.val {
+        if let Value::Timestamp(time) = *self {
             Some(time)
         } else {
             None
+        }
+    }
+
+    fn indent(f: &mut fmt::Formatter, n: usize) -> Result<(), fmt::Error> {
+        for _ in 0..n {
+            write!(f, "  ")?;
+        }
+        Ok(())
+    }
+
+    pub fn pretty_print(&self, cur_indent: usize, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        //let mut ids = Vec::new();
+        //let mut hashes = Vec::new();
+        //let mut owners = Vec::new();
+        //let mut bin = Vec::new();
+
+        match *self {
+            Value::Null => Display::fmt("null", f),
+            Value::Boolean(val) => write!(f, "{}", val),
+            Value::Integer(ref val) => write!(f, "{}", val),
+            Value::F32(val) => write!(f, "{}", val),
+            Value::F64(val) => write!(f, "{}", val),
+            Value::String(ref val) => {
+                format_str(val, f)
+            }
+            Value::Binary(ref _val) => write!(f, "\"<Bin>\""),
+            Value::Array(ref vec) => {
+                write!(f, "[\n")?;
+                match vec.iter().take(1).next() {
+                    Some(ref v) => {
+                        Value::indent(f, cur_indent+1)?;
+                        v.pretty_print(cur_indent+1, f)?;
+                    }
+                    None => {
+                        write!(f, "")?;
+                    }
+                }
+                for val in vec.iter().skip(1) {
+                    write!(f, ",\n")?;
+                    Value::indent(f, cur_indent+1)?;
+                    val.pretty_print(cur_indent+1, f)?;
+                }
+                write!(f, "\n")?;
+                Value::indent(f, cur_indent)?;
+                write!(f, "]")
+            }
+            Value::Object(ref obj) => {
+                write!(f, "{{\n")?;
+
+                match obj.iter().take(1).next() {
+                    Some((ref k, ref v)) => {
+                        Value::indent(f, cur_indent+1)?;
+                        format_str(k, f)?;
+                        write!(f, ": ")?;
+                        v.pretty_print(cur_indent+1, f)?;
+                    }
+                    None => {
+                        write!(f, "")?;
+                    }
+                }
+
+                for (ref k, ref v) in obj.iter().skip(1) {
+                    write!(f, ",\n")?;
+                    Value::indent(f, cur_indent+1)?;
+                    format_str(k, f)?;
+                    write!(f, ": ")?;
+                    v.pretty_print(cur_indent+1, f)?;
+                }
+                write!(f, "\n")?;
+                Value::indent(f, cur_indent)?;
+                write!(f, "}}")
+            }
+            Value::Timestamp(ref val) => write!(f, "{}", val),
+            Value::Hash(ref val) => {
+                if val.get_version() == 0 {
+                    write!(f, "\"<Hash(Null)>\"")
+                }
+                else {
+                    write!(f, "\"<Hash>\"")
+                }
+            }
+            Value::Identity(ref val) => write!(f, "\"<Identity>\""),
+            Value::Lockbox(ref val) => write!(f, "\"<Lockbox>\""),
         }
     }
 
@@ -278,217 +324,172 @@ impl<'a>  ops::Index<&'a String> for Value {
 
 impl From<bool> for Value {
     fn from(v: bool) -> Self {
-        Value {
-            val: ValueType::Boolean(v),
-            sign: Vec::new(),
-            id: Vec::new(),
-        }
+        Value::Boolean(v)
     }
 }
 
 impl From<Integer> for Value {
     fn from(v: Integer) -> Self {
-        Value::new_from_value_type(ValueType::Integer(v))
+        Value::Integer(v)
     }
 }
 
 impl From<u8> for Value {
     fn from(v: u8) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<u16> for Value {
     fn from(v: u16) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<u32> for Value {
     fn from(v: u32) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<u64> for Value {
     fn from(v: u64) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<usize> for Value {
     fn from(v: usize) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<i8> for Value {
     fn from(v: i8) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<i16> for Value {
     fn from(v: i16) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<i32> for Value {
     fn from(v: i32) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<i64> for Value {
     fn from(v: i64) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<isize> for Value {
     fn from(v: isize) -> Self {
-        Value::new_from_value_type(ValueType::Integer(From::from(v)))
+        Value::Integer(From::from(v))
     }
 }
 
 impl From<f32> for Value {
     fn from(v: f32) -> Self {
-        Value::new_from_value_type(ValueType::F32(v))
+        Value::F32(v)
     }
 }
 
 impl From<f64> for Value {
     fn from(v: f64) -> Self {
-        Value::new_from_value_type(ValueType::F64(v))
+        Value::F64(v)
     }
 }
 
 impl From<String> for Value {
     fn from(v: String) -> Self {
-        Value::new_from_value_type(ValueType::String(v))
+        Value::String(v)
     }
 }
 
 impl<'a> From<&'a str> for Value {
     fn from(v: &str) -> Self {
-        Value::new_from_value_type(ValueType::String(v.to_string()))
+        Value::String(v.to_string())
     }
 }
 
 impl<'a> From<Cow<'a, str>> for Value {
     fn from(v: Cow<'a, str>) -> Self {
-        Value::new_from_value_type(ValueType::String(v.to_string()))
+        Value::String(v.to_string())
     }
 }
 
 impl From<Vec<u8>> for Value {
     fn from(v: Vec<u8>) -> Self {
-        Value::new_from_value_type(ValueType::Binary(v))
+        Value::Binary(v)
     }
 }
 
 impl<'a> From<&'a [u8]> for Value {
     fn from(v: &[u8]) -> Self {
-        Value::new_from_value_type(ValueType::Binary(v.into()))
+        Value::Binary(v.into())
     }
 }
 
 impl<'a> From<Cow<'a, [u8]>> for Value {
     fn from(v: Cow<'a, [u8]>) -> Self {
-        Value::new_from_value_type(ValueType::Binary(v.into_owned()))
+        Value::Binary(v.into_owned())
     }
 }
 
 impl From<Vec<Value>> for Value {
     fn from(v: Vec<Value>) -> Self {
-        Value::new_from_value_type(ValueType::Array(v))
+        Value::Array(v)
     }
 }
 
 impl From<BTreeMap<String, Value>> for Value {
     fn from(v: BTreeMap<String, Value>) -> Self {
-        Value::new_from_value_type(ValueType::Object(v))
+        Value::Object(v)
     }
 }
 
 impl From<Hash> for Value {
     fn from(v: Hash) -> Self {
-        Value::new_from_value_type(ValueType::Hash(v))
+        Value::Hash(v)
     }
 }
 
 impl From<Identity> for Value {
     fn from(v: Identity) -> Self {
-        Value::new_from_value_type(ValueType::Identity(v))
+        Value::Identity(v)
     }
 }
 
 impl From<Lockbox> for Value {
     fn from(v: Lockbox) -> Self {
-        Value::new_from_value_type(ValueType::Lockbox(v))
+        Value::Lockbox(v)
     }
 }
 
 impl From<Timestamp> for Value {
     fn from(v: Timestamp) -> Self {
-        Value::new_from_value_type(ValueType::Timestamp(v))
+        Value::Timestamp(v)
+    }
+}
+
+fn format_str(val: &String, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    if val.starts_with("<") {
+        write!(f, "\"<{}\"", val)
+    }
+    else {
+        write!(f, "\"{}\"", val)
     }
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        //let mut ids = Vec::new();
-        //let mut hashes = Vec::new();
-        //let mut owners = Vec::new();
-        //let mut bin = Vec::new();
-
-        match self.val {
-            ValueType::Nil => Display::fmt("null", f),
-            ValueType::Boolean(val) => write!(f, "{}", val),
-            ValueType::Integer(ref val) => write!(f, "{}", val),
-            ValueType::F32(val) => write!(f, "{}", val),
-            ValueType::F64(val) => write!(f, "{}", val),
-            ValueType::String(ref val) => {
-                if val.starts_with("<") {
-                    write!(f, "\"<{}\"", val)
-                }
-                else {
-                    write!(f, "\"{}\"", val)
-                }
-            }
-            ValueType::Binary(ref _val) => write!(f, "\"<Bin>\""),
-            ValueType::Array(ref vec) => {
-                let res = vec.iter()
-                    .map(|val| format!("{}", val))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-
-                write!(f, "[{}]", res)
-            }
-            ValueType::Object(ref obj) => {
-                write!(f, "{{")?;
-
-                match obj.iter().take(1).next() {
-                    Some((ref k, ref v)) => {
-                        write!(f, "{}: {}", k, v)?;
-                    }
-                    None => {
-                        write!(f, "")?;
-                    }
-                }
-
-                for (ref k, ref v) in obj.iter().skip(1) {
-                    write!(f, ", {}: {}", k, v)?;
-                }
-
-                write!(f, "}}")
-            }
-            ValueType::Timestamp(ref val) => write!(f, "{}", val),
-            ValueType::Hash(ref val) => write!(f, "\"<Hash>\""),
-            ValueType::Identity(ref val) => write!(f, "\"<Identity>\""),
-            ValueType::Lockbox(ref val) => write!(f, "\"<Lockbox>\""),
-        }
+        self.pretty_print(0, f)
     }
 }
 

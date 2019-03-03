@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use rmpv::Value;
-use rmpv;
 use byteorder::ReadBytesExt;
 
 mod sodium;
@@ -25,6 +23,9 @@ pub use self::error::CryptoError;
 pub use self::hash::Hash;
 pub use self::key::{Key, Identity};
 pub use self::stream::StreamKey;
+pub use self::integer::Integer;
+pub use self::timestamp::Timestamp;
+pub use self::value::Value;
 
 
 /// Initializes the underlying crypto library and makes all random number generation functions 
@@ -209,7 +210,7 @@ impl Vault {
         match data {
             LockboxContents::Value(v) => {
                 plaintext.push(LockboxType::Value.to_u8());
-                rmpv::encode::write_value(&mut plaintext, &v).or(Err(CryptoError::BadFormat))?;
+                //rmpv::encode::write_value(&mut plaintext, &v).or(Err(CryptoError::BadFormat))?;
             },
             LockboxContents::Key(k) => {
                 plaintext.push(LockboxType::Key.to_u8());
@@ -229,12 +230,16 @@ impl Vault {
         let mut crypt: Vec<u8> = Vec::with_capacity(lock.len()+lock.encrypt_len(data.len()));
         lock.write(&mut crypt)?;
         lock.encrypt(data, &[], &mut crypt)?;
-        Ok(Value::Ext(ExtType::Lockbox.to_i8(), crypt))
+        // FIXME: Should actually encode as a Lockbox
+        Ok(Value::Null)
+        //Ok(Value::Ext(ExtType::Lockbox.to_i8(), crypt))
     }
 
     /// Decrypt a msgpack Value using stored keys, returning the decrypted Value and keys needed 
     /// for it. If the StreamKey used is new, it will be stored for temporary use
     pub fn decrypt(&mut self, crypt: Value) -> Result<(Option<Key>, StreamKey, LockboxContents), CryptoError> {
+        Err(CryptoError::BadFormat)
+        /*
         // Unpack the Value and check it
         let (ext_type, crypt_data) = crypt.as_ext().ok_or(CryptoError::BadFormat)?;
         let mut crypt_data = &crypt_data[..];
@@ -292,6 +297,7 @@ impl Vault {
             },
         };
         Ok((key_ref, stream_ref, content))
+            */
     }
 
     fn get_key(&self, k: &Key) -> Result<&FullKey, CryptoError> {

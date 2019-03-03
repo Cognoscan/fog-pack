@@ -137,7 +137,7 @@ and can be queried for signature conditions. If it is not true or does not
 exist, signatures are not permitted for that field.  See the 
 [query specification](query.md) for more detail.
 
-Base types are: Nil, Bool, Int, Str, F32, F64, Bin, Array, Obj, Hash, Ident, 
+Base types are: Null, Bool, Int, Str, F32, F64, Bin, Array, Obj, Hash, Ident, 
 Lock, Time, and Multi.
 
 As a note: some type descriptions may specify a `const` value or `default` value 
@@ -145,12 +145,12 @@ that doesn't meet the other requirements specified. If this is the case, the
 validation should always fail if `const`, or always fail if the `default` value 
 is used.
 
-#### Nil
+#### Null
 
-Nil types describe a field with a Nil data. They have no fields besides the 
+Null types describe a field with a Null data. They have no fields besides the 
 basic ones.
 
-If the data for the described field is Nil, validation passes.
+If the data for the described field is Null, validation passes.
 
 #### Bool
 
@@ -458,20 +458,20 @@ below:
         "name": "Type",
         "type": "Multi",
         "any_of": [
-          "NilType",  "BoolType", "IntType",   "StrType",
-          "F32Type",  "F64Type",  "BinType",   "ArrayType",
-          "ObjType",  "HashType", "IdentType", "LockType",
+          "NullType", "BoolType",  "IntType",   "StrType",
+          "F32Type",  "F64Type",   "BinType",   "ArrayType",
+          "ObjType",  "HashType",  "IdentType", "LockType",
           "TimeType", "MultiType", "OtherType"
         ]
       },
 
       {
-        "name": "NilType",
+        "name": "NullType",
         "type": "Obj",
-        "comment": "Nil type, can only be nil, but can be queried",
+        "comment": "Null type, can only be null, but can be queried",
         "required": [
           { "name": "name", "type": "Str" },
-          { "name": "type", "type": "Str", "const": "Nil" }
+          { "name": "type", "type": "Str", "const": "Null" }
         ],
         "optional": [
           { "name": "comment", "type": "Str"  },

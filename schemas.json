@@ -64,7 +64,7 @@
         "type": "Obj",
         "comment": "Null type, can only be null, but can be queried",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Null" }
         ],
         "optional": [
@@ -78,7 +78,7 @@
         "type": "Obj",
         "comment": "Boolean type, can be true or false",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Bool" }
         ],
         "optional": [
@@ -95,7 +95,7 @@
         "type": "Obj",
         "comment": "Integer type, can range from -2^63 to 2^64-1",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Int" }
         ],
         "optional": [
@@ -119,7 +119,7 @@
         "type": "Obj",
         "comment": "String type, can hold arbitrary byte string",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Str" }
         ],
         "optional": [
@@ -142,7 +142,7 @@
         "type": "Obj",
         "comment": "32-bit floating type",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "F32" }
         ],
         "optional": [
@@ -165,7 +165,7 @@
         "type": "Obj",
         "comment": "64-bit floating type",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "F64" }
         ],
         "optional": [
@@ -188,7 +188,7 @@
         "type": "Obj",
         "comment": "Binary type, can hold arbitrary byte sequence",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Bin" }
         ],
         "optional": [
@@ -210,16 +210,16 @@
         "type": "Obj",
         "comment": "Array type, can hold arrays of values",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Array" }
         ],
         "optional": [
           { "name": "in",            "type": "Array", "items": "Array", "unique": true },
           { "name": "nin",           "type": "Array", "items": "Array", "unique": true },
           { "name": "const",         "type": "Array" },
-          { "name": "items",         "type": "Multi", "any_of": ["Str", "StrArray"] },
-          { "name": "extra_items",   "type": "Str"   },
-          { "name": "contains",      "type": "Multi", "any_of": ["Str", "StrArray"] },
+          { "name": "items",         "type": "Multi", "any_of": ["StrName", "StrArray"] },
+          { "name": "extra_items",   "type": "StrName"   },
+          { "name": "contains",      "type": "Multi", "any_of": ["StrName", "StrArray"] },
           { "name": "unique_fields", "type": "Array", "items": "Str", "unique": true },
           { "name": "min_len",       "type": "Int", "min": 0 },
           { "name": "max_len",       "type": "Int", "min": 0 },
@@ -236,22 +236,22 @@
         "type": "Obj",
         "comment": "Object type: any key-value map",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Obj" }
         ],
         "optional": [
           { "name": "in",         "type": "Array", "items": "Obj", "unique": true },
           { "name": "nin",        "type": "Array", "items": "Obj", "unique": true },
-          { "name": "const",      "type": "Obj"  },
+          { "name": "const",      "type": "Obj"     },
           { "name": "required",   "type": "Array", "items": "Type", "unique_fields": ["name"] },
           { "name": "optional",   "type": "Array", "items": "Type", "unique_fields": ["name"] },
           { "name": "min_fields", "type": "Int", "min": 0 },
           { "name": "max_fields", "type": "Int", "min": 0 },
-          { "name": "field_type", "type": "Str"  },
-          { "name": "default",    "type": "Obj"  },
-          { "name": "comment",    "type": "Str"  },
-          { "name": "query",      "type": "Bool" },
-          { "name": "unknown_ok", "type": "Bool" }
+          { "name": "field_type", "type": "StrName" },
+          { "name": "default",    "type": "Obj"     },
+          { "name": "comment",    "type": "Str"     },
+          { "name": "query",      "type": "Bool"    },
+          { "name": "unknown_ok", "type": "Bool"    }
         ]
       },
 
@@ -260,7 +260,7 @@
         "type": "Obj",
         "comment": "Hash type: any cryptographihc hash",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Hash" }
         ],
         "optional": [
@@ -279,7 +279,7 @@
         "type": "Obj",
         "comment": "Identity type: any cryptographic public key",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Ident" }
         ],
         "optional": [
@@ -293,7 +293,7 @@
         "type": "Obj",
         "comment": "Lockbox type: Encrypted data, either secret/private keys or an encrypted value",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Lock" }
         ],
         "optional": [
@@ -307,7 +307,7 @@
         "type": "Obj",
         "comment": "Timestamp type",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Time" }
         ],
         "optional": [
@@ -330,9 +330,9 @@
         "type": "Obj",
         "comment": "Type that can be one of multiple types",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Multi" },
-          { "name": "any_of",   "type": "Array", "items": "Str", "unique": true }
+          { "name": "any_of",   "type": "Array", "items": "StrName", "unique": true }
         ],
         "optional": [
           { "name": "comment", "type": "Str" }
@@ -344,16 +344,23 @@
         "type": "Obj",
         "comment": "Type Definition used to reference complex types",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str" }
         ],
         "optional": [ { "name": "comment", "type": "Str" } ]
       },
 
       {
+        "name": "StrName",
+        "type": "Str",
+        "comment": "Used to validate type names",
+        "matches": "[^$].*"
+      },
+
+      {
         "name": "StrArray",
         "type": "Array",
-        "items": "Str",
+        "items": "StrName",
         "comment": "Used for the items field in Array types"
       },
 

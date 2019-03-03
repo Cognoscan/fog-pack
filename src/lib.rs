@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![recursion_limit="500"]
 
 #[cfg(test)]
 extern crate serde_json;
@@ -17,7 +18,7 @@ extern crate libc;
 
 pub mod crypto;
 
-pub use self::crypto::{Value,Integer,Timestamp,Hash,Identity,CryptoError};
+pub use self::crypto::{Value,Index,Integer,Timestamp,Hash,Identity,CryptoError};
 
 #[macro_use]
 mod macros;

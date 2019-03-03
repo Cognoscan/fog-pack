@@ -9,6 +9,8 @@ use crypto::lock::{Lockbox,LockboxRef};
 use crypto::hash::Hash;
 use crypto::key::Identity;
 
+use crypto::index::Index;
+
 #[derive(Debug)]
 pub enum Value {
     Null,
@@ -171,11 +173,25 @@ impl Value {
         }
     }
 
+    pub fn as_array_mut(&mut self) -> Option<&mut Vec<Value>> {
+        match *self {
+            Value::Array(ref mut array) => Some(array),
+            _ => None
+        }
+    }
+
     pub fn as_obj(&self) -> Option<&BTreeMap<String, Value>> {
         if let Value::Object(ref obj) = *self {
             Some(obj)
         } else {
             None
+        }
+    }
+
+    pub fn as_obj_mut(&mut self) -> Option<&mut BTreeMap<String, Value>> {
+        match *self {
+            Value::Object(ref mut obj) => Some(obj),
+            _ => None
         }
     }
 
@@ -294,8 +310,17 @@ impl Value {
         }
     }
 
+    pub fn get<I: Index>(&self, index: I) -> Option<&Value> {
+        index.index_into(self)
+    }
+
+    pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Value> {
+        index.index_into_mut(self)
+    }
+
 }
 
+/*
 impl ops::Index<usize> for Value {
     type Output = Value;
 
@@ -309,7 +334,7 @@ impl ops::Index<usize> for Value {
     }
 }
 
-impl<'a>  ops::Index<&'a String> for Value {
+impl<'a>  ops::Index<&'a str> for Value {
     type Output = Value;
 
     /// Index into an object if Value is one. 
@@ -317,10 +342,11 @@ impl<'a>  ops::Index<&'a String> for Value {
     /// # Panics
     ///
     /// Panics if key is not present, or if Value is not an object
-    fn index(&self, key: &String) -> &Value {
+    fn index(&self, key: &str) -> &Value {
         self.as_obj().and_then(|v| v.get(key)).expect("No entry for key")
     }
 }
+*/
 
 impl From<bool> for Value {
     fn from(v: bool) -> Self {

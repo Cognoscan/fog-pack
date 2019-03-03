@@ -12,6 +12,10 @@ mod ext_type;
 mod timestamp;
 mod integer;
 
+mod index;
+
+pub use self::index::Index;
+
 pub mod value;
 
 use self::key::{FullKey,FullIdentity};

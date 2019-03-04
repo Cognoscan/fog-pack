@@ -9,16 +9,22 @@ extern crate hex;
 extern crate colored;
 extern crate num_traits;
 extern crate constant_time_eq;
-extern crate rmp;
-extern crate rmpv;
 extern crate byteorder;
 extern crate libsodium_sys;
 extern crate libc;
 //use std::io::Write;
 
 pub mod crypto;
+mod index;
+mod value;
+mod timestamp;
+mod integer;
 
-pub use self::crypto::{Value,Index,Integer,Timestamp,Hash,Identity,CryptoError};
+pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
+pub use self::index::Index;
+pub use self::value::Value;
+pub use self::integer::Integer;
+pub use self::timestamp::Timestamp;
 
 #[macro_use]
 mod macros;

@@ -1,15 +1,10 @@
-use std::ops;
 use std::borrow::Cow;
 use std::fmt::{self, Display};
 use std::collections::BTreeMap;
 
-use crypto::timestamp::Timestamp;
-use crypto::integer::Integer;
-use crypto::lock::{Lockbox,LockboxRef};
-use crypto::hash::Hash;
-use crypto::key::Identity;
+use super::{Integer, Hash, Identity, Lockbox, Timestamp};
 
-use crypto::index::Index;
+use super::Index;
 
 #[derive(Debug)]
 pub enum Value {
@@ -305,8 +300,8 @@ impl Value {
                     write!(f, "\"<Hash>\"")
                 }
             }
-            Value::Identity(ref val) => write!(f, "\"<Identity>\""),
-            Value::Lockbox(ref val) => write!(f, "\"<Lockbox>\""),
+            Value::Identity(_) => write!(f, "\"<Identity>\""),
+            Value::Lockbox(_) => write!(f, "\"<Lockbox>\""),
         }
     }
 

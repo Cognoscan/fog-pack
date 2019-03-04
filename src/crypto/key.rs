@@ -1,18 +1,21 @@
 use std::fmt;
 use std::io::{Write,Read};
 use byteorder::{ReadBytesExt,WriteBytesExt};
-use rmpv::Value;
 
 use crypto::sodium::*;
 use crypto::error::CryptoError;
 use crypto::hash::Hash;
-use crypto::ext_type::ExtType;
 
+/// A cryptographic private key, used to decrypt and sign as a particular 
+/// Identity. Requires accessing a Vault in order to use it.
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Key {
     version: u8,
     id: PublicSignKey,
 }
+
+/// A Condense-db Identity, which may be used for signature verification and 
+/// encryption of data. This is really a cryptographic public key.
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Identity {
     version: u8,
@@ -20,35 +23,20 @@ pub struct Identity {
 }
 
 impl Key {
+    /// Get the version of encryption used by this Key.
+    pub fn get_version(&self) -> u8 {
+        self.version
+    }
+    /// Get the Identity corresponding to this Key.
     pub fn get_identity(&self) -> Identity {
         Identity { version: self.version, id: self.id.clone() }
     }
 }
 
 impl Identity {
+    /// Get the version of encryption used by this Identity.
     pub fn get_version(&self) -> u8 {
         self.version
-    }
-
-    pub fn get_key(&self) -> Key {
-        Key { version: self.version, id: self.id.clone() }
-    }
-
-    pub fn get_value(&self) -> Value {
-        let mut v: Vec<u8> = Vec::with_capacity(1+self.id.0.len());
-        v.push(self.version);
-        v.extend_from_slice(&self.id.0);
-        Value::Ext(ExtType::Identity.to_i8(), v)
-    }
-
-    pub fn from_value(v: &Value) -> Option<Identity> {
-        let (ty, buf) = v.as_ext()?;
-        if ty != ExtType::Identity.to_i8() { return None; }
-        let mut id = Identity { version: 0, id: Default::default() };
-        let mut reader = &buf[..];
-        id.version = reader.read_u8().ok()?;
-        reader.read_exact(&mut id.id.0).ok()?;
-        Some(id)
     }
 }
 
@@ -71,7 +59,6 @@ pub fn key_from_id(version: u8, id: PublicSignKey) -> Key {
 pub fn identity_from_id(version: u8, id: PublicSignKey) -> Identity {
     Identity { version, id }
 }
-
 
 /// Signatures are used to authenticate a piece of data based on its hash. One can be generated 
 /// from a [`FullKey`] and a [`Hash`]. The versions of each are stored, along with the identifying 
@@ -99,7 +86,7 @@ impl Signature {
 
     /// Verify the signature is authentic.
     pub fn verify(&self, hash: &Hash) -> bool {
-        verify_detached(&self.id.id, hash.as_bytes(), &self.sig)
+        verify_detached(&self.id.id, hash.digest(), &self.sig)
     }
 
     /// Write the signature data out to a buffer.
@@ -208,7 +195,7 @@ impl FullKey {
         Signature { 
             hash_version: hash.get_version(),
             id: Identity { version: self.version, id: self.get_id() },
-            sig: sign_detached(&self.signing, hash.as_bytes())
+            sig: sign_detached(&self.signing, hash.digest())
         }
     }
 
@@ -260,6 +247,12 @@ impl FullIdentity {
         ed25519_pk_to_curve25519_pk(&mut self.encrypting, &self.signing)
     }
 
+    pub fn from_identity(id: &Identity) -> Result<FullIdentity, CryptoError> {
+        if id.version != 1 { return Err(CryptoError::UnsupportedVersion); }
+        FullIdentity::from_public_key(id.id.clone())
+    }
+
+
     pub fn from_public_key(pk: PublicSignKey) -> Result<FullIdentity,CryptoError> {
         let mut id = FullIdentity {
             version: 1,
@@ -308,7 +301,6 @@ impl FullIdentity {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

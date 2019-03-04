@@ -35,7 +35,7 @@ impl PartialEq for Hash {
 
 impl fmt::Debug for Hash {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "{} {{ version: {:?}, digest: {:?} }}", stringify!(Hash), &self.version, &self.digest[..])
+        write!(formatter, "{} {{ version: {:?}, digest: {:x?} }}", stringify!(Hash), &self.version, &self.digest[..])
     }
 }
 
@@ -64,7 +64,7 @@ impl Hash {
         self.version
     }
 
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn digest(&self) -> &[u8] {
         &self.digest
     }
 
@@ -176,7 +176,7 @@ mod tests {
              a595cfc3efd3d2adc97334da732413f5cbf4751c362ba1d53862ac1e8dabeee8").unwrap();
         let h = Hash::new(1, &hex::decode("00010203040506070809").unwrap()).unwrap();
         assert_eq!(h.get_version(), 1);
-        assert_eq!(h.as_bytes(), &digest[..]);
+        assert_eq!(h.digest(), &digest[..]);
     }
 
     #[test]
@@ -184,7 +184,7 @@ mod tests {
         let h = Hash::new_empty();
         let digest = [0u8; 64];
         assert_eq!(h.get_version(), 0);
-        assert_eq!(h.as_bytes(), &digest[..]);
+        assert_eq!(h.digest(), &digest[..]);
         enc_dec(h);
     }
 }

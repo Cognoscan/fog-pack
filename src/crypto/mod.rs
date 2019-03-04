@@ -7,30 +7,15 @@ mod hash;
 mod key;
 mod stream;
 mod lock;
-mod ext_type;
 
-mod timestamp;
-mod integer;
-
-mod index;
-
-pub use self::index::Index;
-
-pub mod value;
-
-use self::key::{FullKey,FullIdentity};
+use self::key::FullKey;
 use self::stream::FullStreamKey;
-use self::lock::{Lock,LockType};
 
-pub use self::ext_type::ExtType;
 pub use self::error::CryptoError;
 pub use self::hash::Hash;
 pub use self::key::{Key, Identity};
 pub use self::stream::StreamKey;
-pub use self::integer::Integer;
-pub use self::timestamp::Timestamp;
-pub use self::value::Value;
-
+pub use self::lock::Lockbox;
 
 /// Initializes the underlying crypto library and makes all random number generation functions 
 /// thread-safe. *Must* be called successfully before using the rest of this library.
@@ -38,17 +23,18 @@ pub fn init() -> Result<(), ()> {
     sodium::init()
 }
 
+/// Contains either the Key, StreamKey or data that was in the Lockbox
 #[derive(Debug)]
 pub enum LockboxContents {
     Key(Key),
     StreamKey(StreamKey),
-    Value(Value),
+    Data(Vec<u8>),
 }
 
 enum LockboxType {
     Key,
     StreamKey,
-    Value,
+    Data,
 }
 
 impl LockboxType {
@@ -56,7 +42,7 @@ impl LockboxType {
         match i {
             1 => Some(LockboxType::Key),
             2 => Some(LockboxType::StreamKey),
-            3 => Some(LockboxType::Value),
+            3 => Some(LockboxType::Data),
             _ => None
         }
     }
@@ -64,17 +50,16 @@ impl LockboxType {
         match self {
             LockboxType::Key       => 1,
             LockboxType::StreamKey => 2,
-            LockboxType::Value     => 3,
+            LockboxType::Data      => 3,
         }
     }
 }
 
+
 pub struct Vault {
     perm_keys: HashMap <Key, FullKey>,
-    perm_ids: HashMap <Identity, FullIdentity>,
     perm_streams: HashMap <StreamKey, FullStreamKey>,
     temp_keys: HashMap <Key, FullKey>,
-    temp_ids: HashMap <Identity, FullIdentity>,
     temp_streams: HashMap <StreamKey, FullStreamKey>,
 }
 
@@ -84,21 +69,17 @@ impl Vault {
     pub fn new() -> Vault {
         Vault {
             perm_keys: Default::default(),
-            perm_ids: Default::default(),
             perm_streams: Default::default(),
             temp_keys: Default::default(),
-            temp_ids: Default::default(),
             temp_streams: Default::default(),
         }
     }
 
     /// Create a new key and add to permanent store.
     pub fn new_key(&mut self) -> Key {
-        let (k, id) = FullKey::new_pair().unwrap();
+        let (k, _id) = FullKey::new_pair().unwrap();
         let key_ref = k.get_key_ref();
-        let id_ref = id.get_identity_ref();
         self.perm_keys.insert(key_ref.clone(),k);
-        self.perm_ids.insert(id_ref, id);
         key_ref
     }
 
@@ -121,34 +102,9 @@ impl Vault {
             None => self.perm_keys.get(&k),
         };
         // Halt now if we don't actually have the key
-        let key = match key {
-            Some(v) => v,
-            None => { return false; },
-        };
-        // Since we have the key, we can make sure it ends up in the identity store
-        let id_ref = k.get_identity();
-        match self.temp_ids.remove(&id_ref) {
-            Some(id) => {
-                self.perm_ids.insert(id_ref,id);
-            },
-            None => {
-                // The below code shouldn't need to run unless there's a logic error elsewhere
-                if !self.perm_ids.contains_key(&id_ref) {
-                    // Panic occurs only if a bad key made it into the store. This is panic-worthy.
-                    let id = key.get_identity()
-                        .expect("Bad Key was unexpectedly found in crypto vault!");
-                    self.perm_ids.insert(id_ref,id);
-                }
-            },
-        }
-        true
-    }
-
-    /// Moves the given Identity to the permanent store.
-    pub fn identity_to_perm(&mut self, id: &Identity) -> bool {
-        match self.temp_ids.remove(&id) {
-            Some(full_id) => {self.perm_ids.insert(id.clone(),full_id); true},
-            None => self.perm_ids.contains_key(&id),
+        match key {
+            Some(_) => true,
+            None => false,
         }
     }
 
@@ -160,17 +116,10 @@ impl Vault {
         }
     }
 
-    /// Drops just the given key from every store.
+    /// Drops the given key from every store.
     pub fn drop_key(&mut self, k: Key) {
         self.perm_keys.remove(&k);
         self.temp_keys.remove(&k);
-    }
-
-    /// Drops the given identity from every store. Also drops the key if we have it.
-    pub fn drop_identity(&mut self, id: Identity) {
-        self.perm_ids.remove(&id);
-        self.temp_ids.remove(&id);
-        self.drop_key(id.get_key());
     }
 
     /// Drops the given stream from every store.
@@ -179,11 +128,12 @@ impl Vault {
         self.temp_streams.remove(&stream);
     }
 
+    /*
     /// Encrypt something for a given Identity, returning the StreamKey used and an encrypted Value
     pub fn encrypt_for(&mut self, data: LockboxContents, id: &Identity) -> Result<(StreamKey, Value), CryptoError> {
         // Construct lock
         let (lock, full_stream) = {
-            let full_id = self.get_id(id)?;
+            let full_id = FullIdentity::from_identity(id)?;
             Lock::from_identity(full_id)?
         };
         let stream_ref = full_stream.get_stream_ref();
@@ -303,6 +253,7 @@ impl Vault {
         Ok((key_ref, stream_ref, content))
             */
     }
+    */
 
     fn get_key(&self, k: &Key) -> Result<&FullKey, CryptoError> {
         self.perm_keys.get(k).or(self.temp_keys.get(k)).ok_or(CryptoError::NotInStorage)
@@ -310,10 +261,6 @@ impl Vault {
 
     fn get_stream(&self, s: &StreamKey) -> Result<&FullStreamKey, CryptoError> {
         self.perm_streams.get(s).or(self.temp_streams.get(s)).ok_or(CryptoError::NotInStorage)
-    }
-
-    fn get_id(&self, id: &Identity) -> Result<&FullIdentity, CryptoError> {
-        self.perm_ids.get(id).or(self.temp_ids.get(id)).ok_or(CryptoError::NotInStorage)
     }
 
 }

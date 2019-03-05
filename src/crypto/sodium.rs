@@ -12,6 +12,8 @@ use std::ffi::CString;
 use libc::c_ulonglong;
 use libsodium_sys;
 use constant_time_eq::constant_time_eq;
+use byteorder::{WriteBytesExt, BigEndian, ReadBytesExt};
+use std::io::{Read, Write};
 
 use crypto::error::CryptoError;
 
@@ -24,6 +26,7 @@ const SK_CRYPT_KEY_BYTES: usize = libsodium_sys::crypto_scalarmult_curve25519_BY
 const PK_SIGN_KEY_BYTES:  usize = libsodium_sys::crypto_sign_ed25519_PUBLICKEYBYTES as usize;
 const PK_CRYPT_KEY_BYTES: usize = libsodium_sys::crypto_scalarmult_curve25519_BYTES as usize;
 const SIGN_BYTES:         usize = libsodium_sys::crypto_sign_ed25519_BYTES as usize;
+const SALT_BYTES:         usize = libsodium_sys::crypto_pwhash_SALTBYTES as usize;
 
 // Secret Structs
 #[derive(Clone,Default)]
@@ -34,6 +37,14 @@ pub struct SecretSignKey([u8; SK_SIGN_KEY_BYTES]);
 pub struct SecretCryptKey([u8; SK_CRYPT_KEY_BYTES]);
 #[derive(Clone,Default)]
 pub struct SecretKey(pub [u8; SECRET_KEY_BYTES]);
+
+#[derive(Clone,Default)]
+pub struct PasswordConfig {
+    ops_limit: u64,
+    mem_limit: usize,
+    alg: i32,
+    salt: [u8; SALT_BYTES],
+}
 
 // Public Structs
 #[derive(Clone,PartialEq,Eq,Hash,Default)]
@@ -50,6 +61,14 @@ pub struct StreamId(pub [u8; 32]);
 pub struct Sign(pub [u8; SIGN_BYTES]);
 #[derive(Clone)]
 pub struct Blake2BState(pub libsodium_sys::crypto_generichash_blake2b_state);
+
+impl Nonce {
+    pub fn new() -> Nonce {
+        let mut nonce = Nonce([0;NONCE_BYTES]);
+        randombytes(&mut nonce.0);
+        nonce
+    }
+}
 
 impl Tag {
     pub fn len() -> usize {
@@ -85,7 +104,68 @@ impl fmt::Debug for PublicCryptKey {
     }
 }
 
+impl PasswordConfig {
+    pub fn interactive() -> PasswordConfig {
+        let mut pw = PasswordConfig {
+            ops_limit: libsodium_sys::crypto_pwhash_OPSLIMIT_INTERACTIVE as u64,
+            mem_limit: libsodium_sys::crypto_pwhash_MEMLIMIT_INTERACTIVE as usize,
+            alg: libsodium_sys::crypto_pwhash_ALG_DEFAULT as i32,
+            salt: [0; SALT_BYTES],
+        };
+        randombytes(&mut pw.salt);
+        pw
+    }
+    pub fn moderate() -> PasswordConfig {
+        let mut pw = PasswordConfig {
+            ops_limit: libsodium_sys::crypto_pwhash_OPSLIMIT_MODERATE as u64,
+            mem_limit: libsodium_sys::crypto_pwhash_MEMLIMIT_MODERATE as usize,
+            alg: libsodium_sys::crypto_pwhash_ALG_DEFAULT as i32,
+            salt: [0; SALT_BYTES],
+        };
+        randombytes(&mut pw.salt);
+        pw
+    }
+    pub fn sensitive() -> PasswordConfig {
+        let mut pw = PasswordConfig {
+            ops_limit: libsodium_sys::crypto_pwhash_OPSLIMIT_SENSITIVE as u64,
+            mem_limit: libsodium_sys::crypto_pwhash_MEMLIMIT_SENSITIVE as usize,
+            alg: libsodium_sys::crypto_pwhash_ALG_DEFAULT as i32,
+            salt: [0; SALT_BYTES],
+        };
+        randombytes(&mut pw.salt);
+        pw
+    }
+
+    pub fn max_len() -> usize {
+        8+8+4+SALT_BYTES
+    }
+
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(PasswordConfig::max_len());
+        buf.write_u64::<BigEndian>(self.ops_limit).unwrap();
+        buf.write_u64::<BigEndian>(self.mem_limit as u64).unwrap();
+        buf.write_i32::<BigEndian>(self.alg).unwrap();
+        buf.write_all(&self.salt).unwrap();
+    }
+
+    pub fn decode(buf: &mut &[u8]) -> Result<PasswordConfig, std::io::Error> {
+        // No need to check for if these are valid. The pwhash function will do that and fail if 
+        // they're invalid parameters.
+        let mut pw = PasswordConfig { ops_limit: 0, mem_limit: 0, alg: 0, salt: [0;SALT_BYTES] };
+        pw.ops_limit = buf.read_u64::<BigEndian>()?;
+        pw.mem_limit = buf.read_u64::<BigEndian>()? as usize;
+        pw.alg = buf.read_i32::<BigEndian>()?;
+        buf.read_exact(&mut pw.salt)?;
+        Ok(pw)
+    }
+}
+
 // Seed
+impl Seed {
+    pub fn len() -> usize {
+        SEED_KEY_BYTES
+    }
+}
 impl Drop for Seed {
     fn drop(&mut self) {
         memzero(&mut self.0);
@@ -145,6 +225,11 @@ impl PartialEq for SecretCryptKey {
 }
 
 // SecretKey
+impl SecretKey {
+    pub fn len() -> usize {
+        SECRET_KEY_BYTES
+    }
+}
 impl Drop for SecretKey {
     fn drop(&mut self) {
         memzero(&mut self.0);
@@ -207,6 +292,25 @@ impl Blake2BState {
     }
 }
 
+pub fn password_to_key(password: &str, config: &PasswordConfig) -> Result<SecretKey, ()> {
+    let mut key: SecretKey = Default::default();
+    if unsafe {
+        libsodium_sys::crypto_pwhash(
+            key.0.as_mut_ptr(),
+            key.0.len() as c_ulonglong,
+            password.as_ptr() as *const _,
+            password.len() as c_ulonglong,
+            config.salt.as_ptr(),
+            config.ops_limit as c_ulonglong,
+            config.mem_limit,
+            config.alg
+        )
+    } >= 0 {
+        Ok(key)
+    } else {
+        Err(())
+    }
+}
 
 pub fn aead_keygen(key: &mut SecretKey) {
     unsafe { libsodium_sys::crypto_aead_xchacha20poly1305_ietf_keygen(key.0.as_mut_ptr()) };

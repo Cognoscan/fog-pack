@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use byteorder::ReadBytesExt;
+use std::fs::File;
+use std::io::Write;
 
 mod sodium;
 mod error;
@@ -8,7 +9,7 @@ mod key;
 mod stream;
 mod lock;
 
-use self::key::FullKey;
+use self::key::{FullKey, FullIdentity};
 use self::stream::FullStreamKey;
 
 pub use self::error::CryptoError;
@@ -16,6 +17,8 @@ pub use self::hash::Hash;
 pub use self::key::{Key, Identity};
 pub use self::stream::StreamKey;
 pub use self::lock::Lockbox;
+
+use self::sodium::{Nonce, PasswordConfig, SecretKey};
 
 /// Initializes the underlying crypto library and makes all random number generation functions 
 /// thread-safe. *Must* be called successfully before using the rest of this library.
@@ -25,7 +28,7 @@ pub fn init() -> Result<(), ()> {
 
 /// Contains either the Key, StreamKey or data that was in the Lockbox
 #[derive(Debug)]
-pub enum LockboxContents {
+pub enum LockboxContent {
     Key(Key),
     StreamKey(StreamKey),
     Data(Vec<u8>),
@@ -57,6 +60,8 @@ impl LockboxType {
 
 
 pub struct Vault {
+    config: PasswordConfig,
+    root_key: SecretKey,
     perm_keys: HashMap <Key, FullKey>,
     perm_streams: HashMap <StreamKey, FullStreamKey>,
     temp_keys: HashMap <Key, FullKey>,
@@ -65,14 +70,47 @@ pub struct Vault {
 
 impl Vault {
 
-    /// Create a brand-new empty Vault
-    pub fn new() -> Vault {
-        Vault {
+    /// Create a brand-new empty Vault. Can fail if the OS doesn't let us allocate enough memory 
+    /// for the password hashing algorithm.
+    pub fn new_from_password(password: &str) -> Result<Vault, ()> {
+        let config = PasswordConfig::interactive();
+        let root_key = sodium::password_to_key(password, &config)?;
+        Ok(Vault {
+            config,
+            root_key,
             perm_keys: Default::default(),
             perm_streams: Default::default(),
             temp_keys: Default::default(),
             temp_streams: Default::default(),
+        })
+    }
+
+    pub fn write_to_file(&self, f: &mut File) -> std::io::Result<()> {
+        // Write the PasswordConfig, then all perm_keys, then all perm_streams
+        let mut data = Vec::with_capacity(
+            PasswordConfig::max_len() +
+            self.perm_keys.len() * (1+FullKey::max_len()) +
+            self.perm_streams.len() * (1+FullStreamKey::max_len())
+            );
+        self.config.encode(&mut data);
+        let start_of_keys = data.len();
+        for key in self.perm_keys.values() {
+            data.push(1u8);
+            key.encode(&mut data);
         }
+        for key in self.perm_streams.values() {
+            data.push(2u8);
+            key.encode(&mut data);
+        }
+        let nonce = Nonce::new();
+        let tag = {
+            let (pre_data, mut key_data) = data.split_at_mut(start_of_keys);
+            sodium::aead_encrypt(&mut key_data, &pre_data, &nonce, &self.root_key)
+        };
+        data.extend_from_slice(&tag.0);
+        f.write_all(&data[..])?;
+        f.sync_data()?;
+        Ok(())
     }
 
     /// Create a new key and add to permanent store.
@@ -126,6 +164,86 @@ impl Vault {
     pub fn drop_stream(&mut self, stream: StreamKey) {
         self.perm_streams.remove(&stream);
         self.temp_streams.remove(&stream);
+    }
+
+    fn data_from_lockbox_content(&self, data: LockboxContent) -> Result<Vec<u8>, CryptoError> {
+        let m = match data {
+            LockboxContent::Key(k) => {
+                let mut m = vec![LockboxType::Key.to_u8()];
+                self.get_key(&k)?.encode(&mut m);
+                m
+            },
+            LockboxContent::StreamKey(sk) => {
+                let mut m = vec![LockboxType::StreamKey.to_u8()];
+                self.get_stream(&sk)?.encode(&mut m);
+                m
+            },
+            LockboxContent::Data(mut d) => {
+                d.insert(0, LockboxType::Data.to_u8());
+                d
+            },
+        };
+        Ok(m)
+    }
+
+    /// Create a Lockbox using a StreamKey.
+    pub fn encrypt_using_stream(&self, data: LockboxContent, stream: &StreamKey) -> Result<Lockbox, CryptoError> {
+        let message = self.data_from_lockbox_content(data)?;
+        let stream_key = self.get_stream(stream)?;
+        lock::lockbox_from_stream(stream_key, message)
+    }
+
+    /// Create a Lockbox using an Identity.
+    pub fn encrypt_using_identity(&self, data: LockboxContent, id: &Identity) -> Result<Lockbox, CryptoError> {
+        let message = self.data_from_lockbox_content(data)?;
+        let full_id = FullIdentity::from_identity(id)?;
+        let (lock, _) = lock::lockbox_from_identity(&full_id, message)?;
+        Ok(lock)
+    }
+
+    /// Create a Lockbox using an Identity and keep the StreamKey used for it.
+    pub fn encrypt_using_identity_keep_key(&mut self, data: LockboxContent, id: &Identity) -> Result<(Lockbox, StreamKey), CryptoError> {
+        let message = self.data_from_lockbox_content(data)?;
+        let full_id = FullIdentity::from_identity(id)?;
+        let (lock, stream_key) = lock::lockbox_from_identity(&full_id, message)?;
+        let stream_key_ref = stream_key.get_stream_ref();
+        self.perm_streams.insert(stream_key_ref.clone(), stream_key);
+        Ok((lock, stream_key_ref))
+    }
+
+    /// Attempt to open a Lockbox and return the contents
+    pub fn decrypt(&mut self, lock: Lockbox) -> Result<LockboxContent, CryptoError> {
+        let mut data = if lock.uses_stream() {
+            let stream = lock.get_stream().expect("Lockbox claimed to have stream, but didn't");
+            let key = self.get_stream(&stream)?;
+            lock::decrypt_lockbox(key, lock)?
+        }
+        else {
+            let key = lock::get_key(&lock).expect("Lockbox claimed to have identity, but didn't");
+            let key = self.get_key(&key)?;
+            let key = lock::stream_key_from_lockbox(&key, &lock)?;
+            lock::decrypt_lockbox(&key, lock)?
+        };
+        if data.len() < 2 { return Err(CryptoError::BadFormat); }
+        match LockboxType::from_u8(data[0]) {
+            Some(LockboxType::Key) => {
+                let (full_key, _) = FullKey::decode(&mut &data[1..])?;
+                let key = full_key.get_key_ref();
+                self.temp_keys.insert(key.clone(), full_key);
+                Ok(LockboxContent::Key(key))
+            }
+            Some(LockboxType::StreamKey) => {
+                let full_stream = FullStreamKey::decode(&mut &data[1..])?;
+                let stream = full_stream.get_stream_ref();
+                self.temp_streams.insert(stream.clone(), full_stream);
+                Ok(LockboxContent::StreamKey(stream))
+            }
+            Some(LockboxType::Data) => {
+                data.remove(0);
+                Ok(LockboxContent::Data(data))
+            }
+            None => Err(CryptoError::BadFormat)
+        }
     }
 
     /*

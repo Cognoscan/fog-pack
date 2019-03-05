@@ -1,7 +1,7 @@
 use constant_time_eq::constant_time_eq;
 use std::fmt;
-use std::io::{Write,Read};
-use byteorder::{ReadBytesExt,WriteBytesExt};
+use std::io::Read;
+use byteorder::ReadBytesExt;
 use std::hash;
 
 use crypto::error::CryptoError;
@@ -77,20 +77,20 @@ impl Hash {
         }
     }
 
-    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
-        wr.write_u8(self.version).map_err(CryptoError::Io)?;
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(self.len());
+        buf.push(self.version);
         if self.version != 0 {
-            wr.write_all(&self.digest).map_err(CryptoError::Io)?;
+            buf.extend_from_slice(&self.digest);
         }
-        Ok(())
     }
 
-    pub fn read<R: Read>(rd: &mut R) -> Result<Hash, CryptoError> {
-        let version = rd.read_u8().map_err(CryptoError::Io)?;
+    pub fn decode(buf: &mut &[u8]) -> Result<Hash, CryptoError> {
+        let version = buf.read_u8().map_err(CryptoError::Io)?;
         if version == 0 { return Ok(Hash { version, digest:[0;64] }); }
         if version != 1 { return Err(CryptoError::UnsupportedVersion); }
         let mut hash = Hash {version, digest:[0;64]};
-        rd.read_exact(&mut hash.digest).map_err(CryptoError::Io)?;
+        buf.read_exact(&mut hash.digest).map_err(CryptoError::Io)?;
         Ok(hash)
     }
 }

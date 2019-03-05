@@ -1,6 +1,6 @@
 use std::fmt;
-use std::io::{Write,Read};
-use byteorder::{ReadBytesExt,WriteBytesExt};
+use std::io::Read;
+use byteorder::ReadBytesExt;
 
 use crypto::sodium::*;
 use crypto::error::CryptoError;
@@ -37,6 +37,24 @@ impl Identity {
     /// Get the version of encryption used by this Identity.
     pub fn get_version(&self) -> u8 {
         self.version
+    }
+
+    pub fn len(&self) -> usize {
+        1 + self.id.0.len()
+    }
+
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(self.len());
+        buf.push(self.version);
+        buf.extend_from_slice(&self.id.0);
+    }
+
+    pub fn decode(buf: &mut &[u8]) -> Result<Identity, CryptoError> {
+        let mut id = Identity { version: 0, id: Default::default() };
+        id.version = buf.read_u8().map_err(CryptoError::Io)?;
+        if id.version != 1 { return Err(CryptoError::UnsupportedVersion); }
+        buf.read_exact(&mut id.id.0).map_err(CryptoError::Io)?;
+        Ok(id)
     }
 }
 
@@ -89,24 +107,28 @@ impl Signature {
         verify_detached(&self.id.id, hash.digest(), &self.sig)
     }
 
-    /// Write the signature data out to a buffer.
-    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
-        wr.write_u8(self.id.version)?;
-        wr.write_u8(self.hash_version)?;
-        wr.write_all(&self.id.id.0)?;
-        wr.write_all(&self.sig.0)?;
-        Ok(())
+    pub fn len(&self) -> usize {
+        2 + self.id.id.0.len() + self.sig.0.len()
     }
 
-    /// Read a buffer to reconstruct a signature.
-    pub fn read<R: Read>(rd: &mut R) -> Result<Signature, CryptoError> {
-        let id_version = rd.read_u8().map_err(CryptoError::Io)?;
-        let hash_version = rd.read_u8().map_err(CryptoError::Io)?;
+    /// Write the signature data out to a byte stream.
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(self.len());
+        buf.push(self.id.version);
+        buf.push(self.hash_version);
+        buf.extend_from_slice(&self.id.id.0);
+        buf.extend_from_slice(&self.sig.0);
+    }
+
+    /// Read the signature data out of a byte stream.
+    pub fn decode(&self, buf: &mut &[u8]) -> Result<Signature, CryptoError> {
+        let id_version = buf.read_u8().map_err(CryptoError::Io)?;
+        let hash_version = buf.read_u8().map_err(CryptoError::Io)?;
         if id_version != 1 || hash_version != 1 { return Err(CryptoError::UnsupportedVersion); }
         let mut id: PublicSignKey = Default::default();
         let mut sig: Sign = Default::default();
-        rd.read_exact(&mut id.0).map_err(CryptoError::Io)?;
-        rd.read_exact(&mut sig.0).map_err(CryptoError::Io)?;
+        buf.read_exact(&mut id.0).map_err(CryptoError::Io)?;
+        buf.read_exact(&mut sig.0).map_err(CryptoError::Io)?;
         Ok(Signature {
             id: Identity { version: id_version, id: id },
             hash_version,
@@ -199,20 +221,28 @@ impl FullKey {
         }
     }
 
-    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
-        wr.write_u8(self.version).map_err(CryptoError::Io)?;
-        let mut seed = Default::default();
-        ed25519_sk_to_seed(&mut seed, &self.signing);
-        wr.write_all(&seed.0).map_err(CryptoError::Io)?;
-        Ok(())
+    pub fn len(&self) -> usize {
+        1 + Seed::len()
     }
 
-    pub fn read<R: Read>(rd: &mut R) -> Result<(FullKey,FullIdentity), CryptoError> {
+    pub fn max_len() -> usize {
+        1 + Seed::len()
+    }
+
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(self.len());
+        buf.push(self.version);
+        let mut seed = Default::default();
+        ed25519_sk_to_seed(&mut seed, &self.signing);
+        buf.extend_from_slice(&seed.0);
+    }
+
+    pub fn decode(buf: &mut &[u8]) -> Result<(FullKey, FullIdentity), CryptoError> {
         let mut seed: Seed = Default::default();
-        let version = rd.read_u8().map_err(CryptoError::Io)?;
+        let version = buf.read_u8().map_err(CryptoError::Io)?;
         match version {
             1 => {
-                rd.read_exact(&mut seed.0).map_err(CryptoError::Io)?;
+                buf.read_exact(&mut seed.0).map_err(CryptoError::Io)?;
                 FullKey::from_seed(seed)
             },
             _ => Err(CryptoError::UnsupportedVersion),
@@ -282,18 +312,22 @@ impl FullIdentity {
         calc_secret(&self.encrypting, sk)
     }
 
-    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
-        wr.write_u8(self.version).map_err(CryptoError::Io)?;
-        wr.write_all(&self.signing.0).map_err(CryptoError::Io)?;
-        Ok(())
+    pub fn len(&self) -> usize {
+        1 + self.signing.0.len()
     }
 
-    pub fn read<R: Read>(rd: &mut R) -> Result<FullIdentity, CryptoError> {
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(self.len());
+        buf.push(self.version);
+        buf.extend_from_slice(&self.signing.0);
+    }
+
+    pub fn decode(buf: &mut &[u8]) -> Result<FullIdentity, CryptoError> {
         let mut id = FullIdentity::blank();
-        id.version = rd.read_u8().map_err(CryptoError::Io)?;
+        id.version = buf.read_u8().map_err(CryptoError::Io)?;
         match id.version {
             1 => {
-                rd.read_exact(&mut id.signing.0).map_err(CryptoError::Io)?;
+                buf.read_exact(&mut id.signing.0).map_err(CryptoError::Io)?;
                 id.complete()?;
                 Ok(id)
             },

@@ -1,5 +1,5 @@
-use std::io::{Write,Read};
-use byteorder::{ReadBytesExt,WriteBytesExt};
+use std::io::Read;
+use byteorder::ReadBytesExt;
 use std::fmt;
 
 use crypto::error::CryptoError;
@@ -78,17 +78,24 @@ impl FullStreamKey {
         derive_id(&self.key, &mut self.id)
     }
 
-    pub fn write<W: Write>(&self, wr: &mut W) -> Result<(), CryptoError> {
-        wr.write_u8(self.version).map_err(CryptoError::Io)?;
-        wr.write_all(&self.key.0).map_err(CryptoError::Io)?;
-        Ok(())
+    pub fn len(&self) -> usize {
+        1 + self.key.0.len()
     }
 
-    pub fn read<R: Read>(rd: &mut R) -> Result<FullStreamKey, CryptoError> {
+    pub fn max_len() -> usize {
+        1 + SecretKey::len()
+    }
+
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.push(self.version);
+        buf.extend_from_slice(&self.key.0);
+    }
+
+    pub fn decode(buf: &mut &[u8]) -> Result<FullStreamKey, CryptoError> {
         let mut k = FullStreamKey::blank();
-        k.version = rd.read_u8().map_err(CryptoError::Io)?;
+        k.version = buf.read_u8().map_err(CryptoError::Io)?;
         if k.version != 1 { return Err(CryptoError::UnsupportedVersion); }
-        rd.read_exact(&mut k.key.0).map_err(CryptoError::Io)?;
+        buf.read_exact(&mut k.key.0).map_err(CryptoError::Io)?;
         k.complete();
         Ok(k)
     }

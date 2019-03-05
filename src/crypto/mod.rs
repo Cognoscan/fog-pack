@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Write,BufReader, Read};
 
 mod sodium;
 mod error;
@@ -58,6 +58,16 @@ impl LockboxType {
     }
 }
 
+/// The level of security to be provided by a password hashing function.
+pub enum PasswordLevel {
+    /// For online, reasonably fast password unlock. Requires 64 MiB of RAM.
+    Interactive,
+    /// Longer password unlock. Requires 256 MiB of RAM.
+    Moderate,
+    /// For sensitive, non-interactive operations. Requires 1024 MiB of RAM.
+    Sensitive,
+}
+
 
 pub struct Vault {
     config: PasswordConfig,
@@ -71,9 +81,15 @@ pub struct Vault {
 impl Vault {
 
     /// Create a brand-new empty Vault. Can fail if the OS doesn't let us allocate enough memory 
-    /// for the password hashing algorithm.
-    pub fn new_from_password(password: &str) -> Result<Vault, ()> {
-        let config = PasswordConfig::interactive();
+    /// for the password hashing algorithm, or if the password is too short or too long.
+    /// 
+    /// Consumes the password string in the process and zeroes it out before dropping it.
+    pub fn new_from_password(security: PasswordLevel, password: String) -> Result<Vault, ()> {
+        let config = match security {
+            PasswordLevel::Interactive => PasswordConfig::interactive(),
+            PasswordLevel::Moderate => PasswordConfig::moderate(),
+            PasswordLevel::Sensitive => PasswordConfig::sensitive(),
+        };
         let root_key = sodium::password_to_key(password, &config)?;
         Ok(Vault {
             config,
@@ -85,6 +101,7 @@ impl Vault {
         })
     }
 
+    /// Write the entire keystore out to a file.
     pub fn write_to_file(&self, f: &mut File) -> std::io::Result<()> {
         // Write the PasswordConfig, then all perm_keys, then all perm_streams
         let mut data = Vec::with_capacity(
@@ -111,6 +128,28 @@ impl Vault {
         f.write_all(&data[..])?;
         f.sync_data()?;
         Ok(())
+    }
+
+    /// Read the entire keystore from a file, returning a Vault.
+    /// 
+    /// Consumes the password string in the process and zeroes it out before dropping it.
+    pub fn read_from_file(f: &mut File, password: String) -> std::io::Result<Vault> {
+        let mut buf_reader = BufReader::new(f);
+        let mut content = Vec::new();
+        buf_reader.read_to_end(&mut content)?;
+        let mut rd: &[u8] = &content[..];
+        let config = sodium::PasswordConfig::decode(&mut rd)?;
+        let root_key = sodium::password_to_key(password, &config)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Password hashing failed"))?;
+        let mut vault = Vault {
+            config,
+            root_key,
+            perm_keys: Default::default(),
+            perm_streams: Default::default(),
+            temp_keys: Default::default(),
+            temp_streams: Default::default(),
+        };
+        Ok(vault)
     }
 
     /// Create a new key and add to permanent store.

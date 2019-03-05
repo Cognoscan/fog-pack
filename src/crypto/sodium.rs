@@ -292,9 +292,11 @@ impl Blake2BState {
     }
 }
 
-pub fn password_to_key(password: &str, config: &PasswordConfig) -> Result<SecretKey, ()> {
+/// Hashes a password according to a given PasswordConfig, returning a usable SecretKey.
+/// The password string is zeroed out no matter what.
+pub fn password_to_key(mut password: String, config: &PasswordConfig) -> Result<SecretKey, ()> {
     let mut key: SecretKey = Default::default();
-    if unsafe {
+    let result = unsafe {
         libsodium_sys::crypto_pwhash(
             key.0.as_mut_ptr(),
             key.0.len() as c_ulonglong,
@@ -305,7 +307,12 @@ pub fn password_to_key(password: &str, config: &PasswordConfig) -> Result<Secret
             config.mem_limit,
             config.alg
         )
-    } >= 0 {
+    };
+    unsafe { 
+        let mut pw = password.as_bytes_mut();
+        memzero(&mut pw);
+    };
+    if result >= 0 {
         Ok(key)
     } else {
         Err(())

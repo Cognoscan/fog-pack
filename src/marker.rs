@@ -31,7 +31,7 @@ pub enum Marker {
     FixExt8,
     FixExt16,
     Str8,
-    Str16
+    Str16,
     Str32,
     Array16,
     Array32,
@@ -61,14 +61,14 @@ impl Marker {
             0xc9 => Marker::Ext32,
             0xca => Marker::F32,
             0xcb => Marker::F64,
-            0xcc => Marker::U8,
-            0xcd => Marker::U16,
-            0xce => Marker::U32,
-            0xcf => Marker::U64,
-            0xd0 => Marker::I8,
-            0xd1 => Marker::I16,
-            0xd2 => Marker::I32,
-            0xd3 => Marker::I64,
+            0xcc => Marker::UInt8,
+            0xcd => Marker::UInt16,
+            0xce => Marker::UInt32,
+            0xcf => Marker::UInt64,
+            0xd0 => Marker::Int8,
+            0xd1 => Marker::Int16,
+            0xd2 => Marker::Int32,
+            0xd3 => Marker::Int64,
             0xd4 => Marker::FixExt1,
             0xd5 => Marker::FixExt2,
             0xd6 => Marker::FixExt4,
@@ -93,7 +93,7 @@ impl Marker {
             Marker::FixMap(len)    => 0x80 | len,
             Marker::FixArray(len)  => 0x90 | len,
             Marker::FixStr(len)    => 0xa0 | len,
-            Marker::Null           => 0xc0,
+            Marker::Nil            => 0xc0,
             Marker::Reserved       => 0xc1,
             Marker::False          => 0xc2,
             Marker::True           => 0xc3,
@@ -105,14 +105,14 @@ impl Marker {
             Marker::Ext32          => 0xc9,
             Marker::F32            => 0xca,
             Marker::F64            => 0xcb,
-            Marker::U8             => 0xcc,
-            Marker::U16            => 0xcd,
-            Marker::U32            => 0xce,
-            Marker::U64            => 0xcf,
-            Marker::I8             => 0xd0,
-            Marker::I16            => 0xd1,
-            Marker::I32            => 0xd2,
-            Marker::I64            => 0xd3,
+            Marker::UInt8          => 0xcc,
+            Marker::UInt16         => 0xcd,
+            Marker::UInt32         => 0xce,
+            Marker::UInt64         => 0xcf,
+            Marker::Int8           => 0xd0,
+            Marker::Int16          => 0xd1,
+            Marker::Int32          => 0xd2,
+            Marker::Int64          => 0xd3,
             Marker::FixExt1        => 0xd4,
             Marker::FixExt2        => 0xd5,
             Marker::FixExt4        => 0xd6,
@@ -136,11 +136,12 @@ impl From<u8> for Marker {
     }
 }
 
-impl Into<u8> for Marker {
-    fn into(self) -> u8 {
-        self.to_u8()
+impl From<Marker> for u8 {
+    fn from(val: Marker) -> u8 {
+        val.to_u8()
     }
 }
+
 /// Defines the known Ext Types that this library relies on.
 ///
 /// `Timestamp` is defined in the msgpack standard. The remainder are types used by this library 
@@ -176,8 +177,14 @@ impl ExtType {
     }
 }
 
-impl Into<i8> for ExtType {
-    fn into(self) -> i8 {
-        self.to_i8()
+impl From<ExtType> for i8 {
+    fn from(val: ExtType) -> i8 {
+        val.to_i8()
+    }
+}
+
+impl From<ExtType> for u8 {
+    fn from(val: ExtType) -> u8 {
+        val.to_i8() as u8
     }
 }

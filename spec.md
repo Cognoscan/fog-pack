@@ -129,13 +129,12 @@ byte sequence:
 
 1. The shortest available encoding is always used. This covers the `int`, `str`, 
 `bin`, `array`, `map`, and `ext` encodings.
+2. When encoding an integer, the unsigned encoding is used if the number is 
+positive, while the signed encoding is used if the number is negative.
 2. IEEE single-precision and double-precision floating points are not 
 	interchangeable. Each is considered a unique type.
-3. The `map` format family has a specific order for its field-value pairs:
-	1. For each pair, encode both and concatenate them together as a field-value 
-		set.
-	2. Sort the pairs by byte order, appending the pair with the smallest value 
-	first.
+3. For the `map` format family, Condense-db supports only unique, valid 
+	UTF-8 Strings as keys. These keys shall be ordered in lexicographical order
 
 ### Hash ###
 
@@ -204,7 +203,7 @@ encrypted, followed by the data itself.
 ### Timestamps ###
 The timestamp type (-1) is supported, with caveats. Timestamps specifically use 
 UTC time, as seconds elapsed since 1970-01-01T00:00:00Z. How leap seconds are 
-handled is not defined, but it is hoped that one two methods will be used:
+handled is not defined, but it is hoped that one of two methods will be used:
 
 - Leap seconds will be "smeared" out by skewing the clock over a 24-hour period, 
 	centered around the leap second time. No special handling is required.

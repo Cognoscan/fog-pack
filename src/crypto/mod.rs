@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Write,BufReader, Read};
+use byteorder::ReadBytesExt;
 
 mod sodium;
 mod error;
@@ -140,7 +141,7 @@ impl Vault {
         let mut rd: &[u8] = &content[..];
         let config = sodium::PasswordConfig::decode(&mut rd)?;
         let root_key = sodium::password_to_key(password, &config)
-            .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Password hashing failed"))?;
+            .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidData, "Password hashing failed"))?;
         let mut vault = Vault {
             config,
             root_key,
@@ -149,9 +150,23 @@ impl Vault {
             temp_keys: Default::default(),
             temp_streams: Default::default(),
         };
-        let mut bool done = false;
-        while !done {
-            record_type = rd.read_u8(
+        while rd.len() > 0 {
+            let record_type = rd.read_u8()?;
+            match record_type {
+                1u8 => {
+                    let (key, _) = FullKey::decode(&mut rd)
+                        .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to read key"))?;
+                    let key_ref = key.get_key_ref();
+                    vault.perm_keys.insert(key_ref, key);
+                },
+                2u8 => {
+                    let stream = FullStreamKey::decode(&mut rd)
+                        .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to read key"))?;
+                    let stream_ref = stream.get_stream_ref();
+                    vault.perm_streams.insert(stream_ref, stream);
+                }
+                _ => { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid record in keystore")); }
+            };
         }
         Ok(vault)
     }

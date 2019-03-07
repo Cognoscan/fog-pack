@@ -65,6 +65,10 @@ impl Integer {
     }
 }
 
+pub fn get_int_internal(val: &Integer) -> IntPriv {
+    val.n
+}
+
 impl Debug for Integer {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         Debug::fmt(&self.n, fmt)

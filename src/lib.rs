@@ -20,6 +20,7 @@ mod value;
 mod timestamp;
 mod integer;
 mod marker;
+pub mod encode;
 
 use marker::{Marker, ExtType};
 

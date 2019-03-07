@@ -13,7 +13,7 @@ use self::key::{FullKey, FullIdentity};
 use self::stream::FullStreamKey;
 
 pub use self::error::CryptoError;
-pub use self::hash::Hash;
+pub use self::hash::{Hash, HashState};
 pub use self::key::{Key, Identity};
 pub use self::stream::StreamKey;
 pub use self::lock::Lockbox;
@@ -140,7 +140,7 @@ impl Vault {
         let mut rd: &[u8] = &content[..];
         let config = sodium::PasswordConfig::decode(&mut rd)?;
         let root_key = sodium::password_to_key(password, &config)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Password hashing failed"))?;
+            .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Password hashing failed"))?;
         let mut vault = Vault {
             config,
             root_key,
@@ -149,6 +149,10 @@ impl Vault {
             temp_keys: Default::default(),
             temp_streams: Default::default(),
         };
+        let mut bool done = false;
+        while !done {
+            record_type = rd.read_u8(
+        }
         Ok(vault)
     }
 

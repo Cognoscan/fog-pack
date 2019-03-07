@@ -87,6 +87,7 @@ impl FullStreamKey {
     }
 
     pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.reserve(self.len());
         buf.push(self.version);
         buf.extend_from_slice(&self.key.0);
     }

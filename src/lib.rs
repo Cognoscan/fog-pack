@@ -19,6 +19,9 @@ mod index;
 mod value;
 mod timestamp;
 mod integer;
+mod marker;
+
+use marker::{Marker, ExtType};
 
 pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
 pub use self::index::Index;

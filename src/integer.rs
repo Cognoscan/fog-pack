@@ -3,7 +3,7 @@ use std::fmt::{self, Debug, Display};
 use num_traits::NumCast;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-enum IntPriv {
+pub enum IntPriv {
     /// Always non-less than zero.
     PosInt(u64),
     /// Always less than zero.

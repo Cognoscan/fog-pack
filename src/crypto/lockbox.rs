@@ -122,7 +122,7 @@ impl Lockbox {
 
     /// Get the length of the Lockbox when it is binary-encoded
     pub fn len(&self) -> usize {
-        1 + self.type_id.len() + self.nonce.0.len() + self.ciphertext.len()
+        1 + self.type_id.len() + Nonce::len() + self.ciphertext.len()
     }
 
     /// Encode a Lockbox into a byte stream. Does not encode length data itself
@@ -252,79 +252,74 @@ mod tests {
     use super::*;
     use super::super::init;
 
-    fn enc_dec_identity(lk: Lock, k: &FullKey) {
+    /// Encode & Decode a lockbox, and make sure the decoded one is equal, as 
+    /// well as verifying the plaintext isn't in the encoded stream.
+    fn enc_dec(lock: Lockbox, plain: Vec<u8>) -> Lockbox {
         let mut v = Vec::new();
-        lk.write(&mut v).unwrap();
-        let mut lkd = Lock::read(&mut &v[..]).unwrap();
-        match lkd.needs().unwrap() {
-            LockType::Identity(v) => assert_eq!(v.0, k.get_id()),
-            LockType::Stream(_) => panic!("Shouldn't be a stream lock"),
-        };
-        lkd.decode_identity(k).unwrap();
-        assert_eq!(lk, lkd);
+        lock.encode(&mut v);
+        // Walk through the stream looking for the plaintext
+        for i in 0..(v.len()-plain.len()+1) {
+            assert!(!v[i..].starts_with(&plain[..]), "Encrypted data included plaintext");
+        }
+        let lock_dec = Lockbox::decode(v.len(), &mut &v[..]).unwrap();
+        assert_eq!(lock, lock_dec);
+        lock_dec
     }
 
-    fn enc_dec_stream(lk: Lock, stream: &FullStreamKey) {
-        let mut v = Vec::new();
-        lk.write(&mut v).unwrap();
-        let mut lkd = Lock::read(&mut &v[..]).unwrap();
-        match lkd.needs().unwrap() {
-            LockType::Identity(_) => panic!("Shouldn't be a identity lock"),
-            LockType::Stream(i) => assert_eq!(*i, stream.get_id()),
-        };
-        lkd.decode_stream(stream).unwrap();
-        assert_eq!(lk, lkd);
-    }
-
+    /// Test the creation of a stream-based lockbox. Verify each function on it, 
+    /// encode it, verify through decoding, then 
+    /// Also 
     #[test]
-    fn lock_types() {
-        init().unwrap();
-        let (k, id) = FullKey::new_pair().unwrap();
-        let (lock, stream) = Lock::from_identity(&id).unwrap();
-        enc_dec_identity(lock, &k);
-        let lock = Lock::from_stream(&stream).unwrap();
-        enc_dec_stream(lock, &stream);
-    }
-
-    #[test]
-    fn stream_encrypt() {
+    fn stream_lockbox() {
         init().unwrap();
         let stream = FullStreamKey::new();
-        let lock = Lock::from_stream(&stream).unwrap();
-        let (data, a_data) = (vec![], vec![]);
-        encrypt_decrypt(&lock, data, a_data);
-        let (data, a_data) = (vec![0], vec![]);
-        encrypt_decrypt(&lock, data, a_data);
-        let (data, a_data) = (vec![], vec![0]);
-        encrypt_decrypt(&lock, data, a_data);
-        let (data, a_data) = (vec![0,1,2], vec![0,1,2]);
-        encrypt_decrypt(&lock, data, a_data);
+        let stream_other = FullStreamKey::new();
+        let stream_ref = stream.get_stream_ref();
+        let plain: Vec<u8> = b"This is a test".to_vec();
+        let lockbox = lockbox_from_stream(&stream, plain.clone()).unwrap();
+        assert_eq!(lockbox.get_version(), 1u8);
+        assert_eq!(lockbox.uses_stream(), true);
+        assert_eq!(lockbox.uses_identity(), false);
+        assert_eq!(lockbox.get_stream(), Some(stream_ref));
+        assert_eq!(lockbox.get_id(), None);
+        assert_eq!(get_key(&lockbox), None);
+        // Lockbox is version byte, type byte, StreamId, Nonce, encrypted data, 
+        // and encryption tag 
+        assert_eq!(lockbox.len(), 2 + stream.get_id().0.len() + Nonce::len() + 
+                   plain.len() + Tag::len());
+        let lockbox = enc_dec(lockbox, plain.clone());
+        let data = decrypt_lockbox(&stream, lockbox.clone()).unwrap();
+        let data_other = decrypt_lockbox(&stream_other, lockbox.clone());
+        assert_eq!(data, plain);
+        assert!(data_other.is_err());
     }
 
+    /// Test the creation of an identity-based lockbox. Verify each function on it.
     #[test]
-    fn identity_encrypt() {
+    fn identity_lockbox() {
         init().unwrap();
-        let (_, id) = FullKey::new_pair().unwrap();
-        let (lock, _) = Lock::from_identity(&id).unwrap();
-        let (data, a_data) = (vec![], vec![]);
-        encrypt_decrypt(&lock, data, a_data);
-        let (data, a_data) = (vec![0], vec![]);
-        encrypt_decrypt(&lock, data, a_data);
-        let (data, a_data) = (vec![], vec![0]);
-        encrypt_decrypt(&lock, data, a_data);
-        let (data, a_data) = (vec![0,1,2], vec![0,1,2]);
-        encrypt_decrypt(&lock, data, a_data);
+        let (key, id) = FullKey::new_pair().unwrap();
+        let id_ref = id.get_identity_ref();
+        let plain: Vec<u8> = b"This is a test".to_vec();
+        let (lockbox, stream) = lockbox_from_identity(&id, plain.clone()).unwrap();
+        let stream_other = FullStreamKey::new();
+        assert_eq!(lockbox.get_version(), 1u8);
+        assert_eq!(lockbox.uses_stream(), false);
+        assert_eq!(lockbox.uses_identity(), true);
+        assert_eq!(lockbox.get_stream(), None);
+        assert_eq!(lockbox.get_id(), Some(id_ref));
+        assert_eq!(get_key(&lockbox), Some(key.get_key_ref()));
+        // Lockbox is version byte, type byte, public key, ephemeral public key, 
+        // Nonce, encrypted data, and encryption tag 
+        //assert_eq!(lockbox.len(), 2 + id_ref.get_id().0.len() + Nonce::len() + 
+                   //plain.len() + Tag::len());
+        let lockbox = enc_dec(lockbox, plain.clone());
+        let decrypt_key = stream_key_from_lockbox(&key, &lockbox).unwrap();
+        assert_eq!(decrypt_key.get_stream_ref(), stream.get_stream_ref());
+        let data = decrypt_lockbox(&stream, lockbox.clone()).unwrap();
+        let data_other = decrypt_lockbox(&stream_other, lockbox.clone());
+        assert_eq!(data, plain);
+        assert!(data_other.is_err());
     }
 
-    fn encrypt_decrypt(lk: &Lock, d: Vec<u8>, ad: Vec<u8>) {
-        let mut ciphertext: Vec<u8> = Vec::new();
-        let mut plaintext: Vec<u8> = Vec::new();
-        lk.encrypt(&d[..], &ad[..], &mut ciphertext).unwrap();
-        assert_eq!(ciphertext.len(), lk.encrypt_len(d.len()));
-        if d.len() > 0 {
-            assert_ne!(ciphertext[..d.len()], d[..]);
-        }
-        lk.decrypt(&ciphertext[..], &ad[..], &mut plaintext).unwrap();
-        assert_eq!(d, plaintext);
-    }
 }

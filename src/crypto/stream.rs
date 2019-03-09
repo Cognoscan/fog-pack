@@ -105,6 +105,7 @@ impl FullStreamKey {
 
 #[cfg(test)]
 mod tests {
+    /*
     use super::*;
 
     fn example_key() -> FullStreamKey {
@@ -141,5 +142,6 @@ mod tests {
         let k = example_key();
         enc_dec(k);
     }
+    */
 
 }

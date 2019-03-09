@@ -12,8 +12,8 @@ use std::ffi::CString;
 use libc::c_ulonglong;
 use libsodium_sys;
 use constant_time_eq::constant_time_eq;
-use byteorder::{WriteBytesExt, BigEndian, ReadBytesExt};
-use std::io::{Read, Write};
+use byteorder::{BigEndian, ReadBytesExt};
+use std::io::Read;
 
 use crypto::error::CryptoError;
 
@@ -67,6 +67,9 @@ impl Nonce {
         let mut nonce = Nonce([0;NONCE_BYTES]);
         randombytes(&mut nonce.0);
         nonce
+    }
+    pub fn len() -> usize {
+        NONCE_BYTES
     }
 }
 
@@ -142,10 +145,10 @@ impl PasswordConfig {
 
     pub fn encode(&self, buf: &mut Vec<u8>) {
         buf.reserve(PasswordConfig::max_len());
-        buf.write_u64::<BigEndian>(self.ops_limit).unwrap();
-        buf.write_u64::<BigEndian>(self.mem_limit as u64).unwrap();
-        buf.write_i32::<BigEndian>(self.alg).unwrap();
-        buf.write_all(&self.salt).unwrap();
+        buf.extend_from_slice(&self.ops_limit.to_be_bytes());
+        buf.extend_from_slice(&(self.mem_limit as u64).to_be_bytes());
+        buf.extend_from_slice(&self.alg.to_be_bytes());
+        buf.extend_from_slice(&self.salt);
     }
 
     pub fn decode(buf: &mut &[u8]) -> Result<PasswordConfig, std::io::Error> {

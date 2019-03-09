@@ -121,7 +121,7 @@ impl Signature {
     }
 
     /// Read the signature data out of a byte stream.
-    pub fn decode(&self, buf: &mut &[u8]) -> Result<Signature, CryptoError> {
+    pub fn decode(buf: &mut &[u8]) -> Result<Signature, CryptoError> {
         let id_version = buf.read_u8().map_err(CryptoError::Io)?;
         let hash_version = buf.read_u8().map_err(CryptoError::Io)?;
         if id_version != 1 || hash_version != 1 { return Err(CryptoError::UnsupportedVersion); }
@@ -341,26 +341,27 @@ mod tests {
     use super::*;
     use super::super::init;
 
+
     fn key_enc_dec(k: FullKey) {
         let mut v = Vec::new();
-        k.write(&mut v).unwrap();
+        k.encode(&mut v);
         let id = k.get_identity().unwrap();
-        let (kd,idd) = FullKey::read(&mut &v[..]).unwrap();
+        let (kd,idd) = FullKey::decode(&mut &v[..]).unwrap();
         assert_eq!(k, kd);
         assert_eq!(id,idd);
     }
 
     fn identity_enc_dec(id: FullIdentity) {
         let mut v = Vec::new();
-        id.write(&mut v).unwrap();
-        let idd = FullIdentity::read(&mut &v[..]).unwrap();
+        id.encode(&mut v);
+        let idd = FullIdentity::decode(&mut &v[..]).unwrap();
         assert_eq!(id,idd);
     }
 
     fn signature_enc_dec(sig: Signature) {
         let mut v = Vec::new();
-        sig.write(&mut v).unwrap();
-        let sigd = Signature::read(&mut &v[..]).unwrap();
+        sig.encode(&mut v);
+        let sigd = Signature::decode(&mut &v[..]).unwrap();
         assert_eq!(sig,sigd);
     }
 
@@ -395,36 +396,30 @@ mod tests {
 
     #[test]
     fn key_edge_cases() {
-        let v = vec![0_u8];
-        let err = FullKey::read(&mut &v[..]).unwrap_err();
+        let v = vec![0u8];
+        let err = FullKey::decode(&mut &v[..]).unwrap_err();
         match err {
             CryptoError::UnsupportedVersion => (),
             _ => panic!("FullKey should never decode if version is 0"),
         };
     }
 
+    /// Take raw data, sign it, and verify the signature. Verify it fails if provided with a 
+    /// different hash.
     #[test]
     fn signing() {
         init().unwrap();
         let v: Vec<u8> = b"This is a test".to_vec();
         let h = Hash::new(1, &v[..]).unwrap();
+        let h2 = Hash::new(1, &v[1..]).unwrap();
         let (k, id) = FullKey::new_pair().unwrap();
         let sig = k.sign(&h);
         assert_eq!(sig.get_hash_version(), 1);
         assert_eq!(*sig.signed_by(), Identity { version: k.get_version(), id: k.get_id() });
         assert_eq!(*sig.signed_by(), id.get_identity_ref());
         assert!(sig.verify(&h));
+        assert!(!sig.verify(&h2));
         signature_enc_dec(sig);
-    }
-
-    #[test]
-    fn identity_value() {
-        init().unwrap();
-        let (k, id) = FullKey::new_pair().unwrap();
-        let id_ref = id.get_identity_ref();
-        let val = id_ref.get_value();
-        let id_ref_decoded = Identity::from_value(&val).expect("Didn't decode as a valid Identity");;
-        assert_eq!(id_ref, id_ref_decoded);
     }
 
 }

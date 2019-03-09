@@ -1,3 +1,10 @@
+//! Provides basic cryptographic functionality. Key management, encryption, and signing are all 
+//! done via a Vault. A Vault is created using a password, or can be read in from a file. Once 
+//! created, the Vault stores "permenant" keys and "temporary" keys. The only difference is that 
+//! temporary keys are not saved when the Vault is written to a file.
+
+
+
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Write,BufReader, Read};
@@ -8,7 +15,7 @@ mod error;
 mod hash;
 mod key;
 mod stream;
-mod lock;
+mod lockbox;
 
 use self::key::{FullKey, FullIdentity};
 use self::stream::FullStreamKey;
@@ -17,7 +24,7 @@ pub use self::error::CryptoError;
 pub use self::hash::{Hash, HashState};
 pub use self::key::{Key, Identity};
 pub use self::stream::StreamKey;
-pub use self::lock::Lockbox;
+pub use self::lockbox::Lockbox;
 
 use self::sodium::{Nonce, PasswordConfig, SecretKey};
 
@@ -112,6 +119,9 @@ impl Vault {
             );
         self.config.encode(&mut data);
         let start_of_keys = data.len();
+        // Data encoded here is all in plaintext. From here through the end of 
+        // sodium::aead_encrypt, nothing must be allowed to fail or panic unless 
+        // it zeroes out the data using sodium::memzero beforehand.
         for key in self.perm_keys.values() {
             data.push(1u8);
             key.encode(&mut data);
@@ -248,14 +258,14 @@ impl Vault {
     pub fn encrypt_using_stream(&self, data: LockboxContent, stream: &StreamKey) -> Result<Lockbox, CryptoError> {
         let message = self.data_from_lockbox_content(data)?;
         let stream_key = self.get_stream(stream)?;
-        lock::lockbox_from_stream(stream_key, message)
+        lockbox::lockbox_from_stream(stream_key, message)
     }
 
     /// Create a Lockbox using an Identity.
     pub fn encrypt_using_identity(&self, data: LockboxContent, id: &Identity) -> Result<Lockbox, CryptoError> {
         let message = self.data_from_lockbox_content(data)?;
         let full_id = FullIdentity::from_identity(id)?;
-        let (lock, _) = lock::lockbox_from_identity(&full_id, message)?;
+        let (lock, _) = lockbox::lockbox_from_identity(&full_id, message)?;
         Ok(lock)
     }
 
@@ -263,7 +273,7 @@ impl Vault {
     pub fn encrypt_using_identity_keep_key(&mut self, data: LockboxContent, id: &Identity) -> Result<(Lockbox, StreamKey), CryptoError> {
         let message = self.data_from_lockbox_content(data)?;
         let full_id = FullIdentity::from_identity(id)?;
-        let (lock, stream_key) = lock::lockbox_from_identity(&full_id, message)?;
+        let (lock, stream_key) = lockbox::lockbox_from_identity(&full_id, message)?;
         let stream_key_ref = stream_key.get_stream_ref();
         self.perm_streams.insert(stream_key_ref.clone(), stream_key);
         Ok((lock, stream_key_ref))
@@ -274,13 +284,13 @@ impl Vault {
         let mut data = if lock.uses_stream() {
             let stream = lock.get_stream().expect("Lockbox claimed to have stream, but didn't");
             let key = self.get_stream(&stream)?;
-            lock::decrypt_lockbox(key, lock)?
+            lockbox::decrypt_lockbox(key, lock)?
         }
         else {
-            let key = lock::get_key(&lock).expect("Lockbox claimed to have identity, but didn't");
+            let key = lockbox::get_key(&lock).expect("Lockbox claimed to have identity, but didn't");
             let key = self.get_key(&key)?;
-            let key = lock::stream_key_from_lockbox(&key, &lock)?;
-            lock::decrypt_lockbox(&key, lock)?
+            let key = lockbox::stream_key_from_lockbox(&key, &lock)?;
+            lockbox::decrypt_lockbox(&key, lock)?
         };
         if data.len() < 2 { return Err(CryptoError::BadFormat); }
         match LockboxType::from_u8(data[0]) {
@@ -304,133 +314,6 @@ impl Vault {
         }
     }
 
-    /*
-    /// Encrypt something for a given Identity, returning the StreamKey used and an encrypted Value
-    pub fn encrypt_for(&mut self, data: LockboxContents, id: &Identity) -> Result<(StreamKey, Value), CryptoError> {
-        // Construct lock
-        let (lock, full_stream) = {
-            let full_id = FullIdentity::from_identity(id)?;
-            Lock::from_identity(full_id)?
-        };
-        let stream_ref = full_stream.get_stream_ref();
-        self.temp_streams.insert(stream_ref.clone(), full_stream);
-        // Encode & encrypt data
-        let mut plaintext = self.encode_data(data)?;
-        let crypt = Vault::encrypt_raw(&plaintext, lock)?;
-        // Zero out plaintext
-        sodium::memzero(&mut plaintext);
-        Ok((stream_ref, crypt))
-    }
-
-    /// Encrypt something using a given StreamKey, returning an encrypted Value
-    pub fn encrypt_stream(&self, data: LockboxContents, stream: &StreamKey) -> Result<Value, CryptoError> {
-        // Construct lock
-        let full_stream = self.get_stream(stream)?;
-        let lock = Lock::from_stream(full_stream)?;
-        // Encode & encrypt data
-        let mut plaintext = self.encode_data(data)?;
-        let crypt = Vault::encrypt_raw(&plaintext, lock)?;
-        // Zero out plaintext
-        sodium::memzero(&mut plaintext);
-        Ok(crypt)
-    }
-
-    fn encode_data(&self, data: LockboxContents) -> Result<Vec<u8>, CryptoError> {
-        let mut plaintext: Vec<u8> = Vec::new();
-        match data {
-            LockboxContents::Value(v) => {
-                plaintext.push(LockboxType::Value.to_u8());
-                //rmpv::encode::write_value(&mut plaintext, &v).or(Err(CryptoError::BadFormat))?;
-            },
-            LockboxContents::Key(k) => {
-                plaintext.push(LockboxType::Key.to_u8());
-                let full_key = self.get_key(&k)?;
-                full_key.write(&mut plaintext)?;
-            },
-            LockboxContents::StreamKey(s) => {
-                plaintext.push(LockboxType::StreamKey.to_u8());
-                let full_stream = self.get_stream(&s)?;
-                full_stream.write(&mut plaintext)?;
-            },
-        };
-        Ok(plaintext)
-    }
-
-    fn encrypt_raw(data: &[u8], lock: Lock) -> Result<Value, CryptoError> {
-        let mut crypt: Vec<u8> = Vec::with_capacity(lock.len()+lock.encrypt_len(data.len()));
-        lock.write(&mut crypt)?;
-        lock.encrypt(data, &[], &mut crypt)?;
-        // FIXME: Should actually encode as a Lockbox
-        Ok(Value::Null)
-        //Ok(Value::Ext(ExtType::Lockbox.to_i8(), crypt))
-    }
-
-    /// Decrypt a msgpack Value using stored keys, returning the decrypted Value and keys needed 
-    /// for it. If the StreamKey used is new, it will be stored for temporary use
-    pub fn decrypt(&mut self, crypt: Value) -> Result<(Option<Key>, StreamKey, LockboxContents), CryptoError> {
-        Err(CryptoError::BadFormat)
-        /*
-        // Unpack the Value and check it
-        let (ext_type, crypt_data) = crypt.as_ext().ok_or(CryptoError::BadFormat)?;
-        let mut crypt_data = &crypt_data[..];
-        if ext_type != ExtType::Lockbox.to_i8() { return Err(CryptoError::BadFormat); }
-
-        // Extract the Lock used for encryption and determine what is needed for decryption
-        let mut lock = Lock::read(&mut crypt_data)?;
-        let need = lock.needs().ok_or(CryptoError::BadFormat)?.clone(); // Error should never occur
-
-        // Decrypt depending on lock type
-        let (key_ref, stream_ref) = match need {
-            LockType::Identity(id_raw) => {
-                // Fetch key and prepare lock for decoding
-                let key_ref = self::key::key_from_id(lock.get_version(), id_raw.0.clone());
-                lock.decode_identity(
-                    self.get_key(&key_ref)?
-                )?;
-                let stream = lock.get_stream().ok_or(CryptoError::BadKey)?;
-                let stream_ref = stream.get_stream_ref();
-                self.temp_streams.insert(stream_ref.clone(),stream);
-                (Some(key_ref), stream_ref)
-            },
-            LockType::Stream(stream_raw) => {
-                let stream_ref = self::stream::stream_from_id(lock.get_version(), stream_raw.clone());
-                let stream = self.get_stream(&stream_ref)?;
-                let stream_ref = stream.get_stream_ref();
-                lock.decode_stream(&stream)?;
-                (None, stream_ref)
-            },
-        };
-        // Decode raw data
-        let mut plaintext: Vec<u8> = Vec::new();
-        lock.decrypt(&crypt_data, &[], &mut plaintext)?;
-        let mut plaintext_data = &plaintext[..];
-        let content_type = plaintext_data.read_u8().or(Err(CryptoError::BadFormat))?;
-        let content_type = LockboxType::from_u8(content_type).ok_or(CryptoError::BadFormat)?;
-        let content = match content_type {
-            LockboxType::Value => {
-                let value = rmpv::decode::read_value(&mut plaintext_data).or(Err(CryptoError::BadFormat))?;
-                LockboxContents::Value(value)
-            },
-            LockboxType::Key => {
-                // Read out the key and put it in the temp store
-                let (key, id) = FullKey::read(&mut plaintext_data)?;
-                let key_ref = key.get_key_ref();
-                self.temp_keys.insert(key_ref.clone(), key);
-                self.temp_ids.insert(id.get_identity_ref(), id);
-                LockboxContents::Key(key_ref)
-            },
-            LockboxType::StreamKey => {
-                let stream = FullStreamKey::read(&mut plaintext_data)?;
-                let stream_ref = stream.get_stream_ref();
-                self.temp_streams.insert(stream_ref.clone(), stream);
-                LockboxContents::StreamKey(stream_ref)
-            },
-        };
-        Ok((key_ref, stream_ref, content))
-            */
-    }
-    */
-
     fn get_key(&self, k: &Key) -> Result<&FullKey, CryptoError> {
         self.perm_keys.get(k).or(self.temp_keys.get(k)).ok_or(CryptoError::NotInStorage)
     }
@@ -443,6 +326,7 @@ impl Vault {
 
 #[cfg(test)]
 mod tests {
+    /*
     use super::*;
 
     #[test]
@@ -563,4 +447,5 @@ mod tests {
         assert_eq!(data, data_d);
         assert_eq!(key_option, Some(key));
     }
+    */
 }

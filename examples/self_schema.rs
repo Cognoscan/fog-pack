@@ -1,14 +1,12 @@
 
 extern crate condense_db;
 
-use std::collections::BTreeMap;
-
 use condense_db::*;
 use condense_db::msgpack;
 
 fn main() {
 
-    let schema = msgpack!({
+    let _cert_schema = msgpack!({
         "$schema": Hash::new_empty(),
         "name": "Condense-db Certificate List Schema",
         "required": [

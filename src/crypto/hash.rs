@@ -133,8 +133,8 @@ mod tests {
 
     fn enc_dec(h: Hash) {
         let mut v = Vec::new();
-        h.write(&mut v).unwrap();
-        let hd = Hash::read(&mut &v[..]).unwrap();
+        h.encode(&mut v);
+        let hd = Hash::decode(&mut &v[..]).unwrap();
         assert_eq!(h, hd);
     }
 

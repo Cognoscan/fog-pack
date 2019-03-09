@@ -53,7 +53,7 @@ pub struct PublicSignKey(pub [u8; PK_SIGN_KEY_BYTES]);
 pub struct PublicCryptKey(pub [u8; PK_CRYPT_KEY_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default,Debug)]
 pub struct Nonce(pub [u8; NONCE_BYTES]);
-#[derive(Clone,PartialEq,Eq,Hash,Default)]
+#[derive(Clone,PartialEq,Eq,Hash,Default,Debug)]
 pub struct Tag(pub [u8; TAG_BYTES]);
 #[derive(Clone,PartialEq,Eq,Hash,Default,Debug)]
 pub struct StreamId(pub [u8; 32]);
@@ -139,12 +139,12 @@ impl PasswordConfig {
         pw
     }
 
-    pub fn max_len() -> usize {
+    pub fn len() -> usize {
         8+8+4+SALT_BYTES
     }
 
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.reserve(PasswordConfig::max_len());
+        buf.reserve(PasswordConfig::len());
         buf.extend_from_slice(&self.ops_limit.to_be_bytes());
         buf.extend_from_slice(&(self.mem_limit as u64).to_be_bytes());
         buf.extend_from_slice(&self.alg.to_be_bytes());

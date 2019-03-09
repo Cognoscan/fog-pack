@@ -105,7 +105,6 @@ impl FullStreamKey {
 
 #[cfg(test)]
 mod tests {
-    /*
     use super::*;
 
     fn example_key() -> FullStreamKey {
@@ -130,8 +129,8 @@ mod tests {
 
     fn enc_dec(k: FullStreamKey) {
         let mut v = Vec::new();
-        k.write(&mut v).unwrap();
-        let kd = FullStreamKey::read(&mut &v[..]).unwrap();
+        k.encode(&mut v);
+        let kd = FullStreamKey::decode(&mut &v[..]).unwrap();
         assert_eq!(k.version, kd.version);
         assert_eq!(k.key.0, kd.key.0);
         assert_eq!(k.id.0, kd.id.0);
@@ -142,6 +141,4 @@ mod tests {
         let k = example_key();
         enc_dec(k);
     }
-    */
-
 }

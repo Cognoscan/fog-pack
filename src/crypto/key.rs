@@ -74,6 +74,10 @@ pub fn key_from_id(version: u8, id: PublicSignKey) -> Key {
     Key { version, id }
 }
 
+pub fn key_from_identity(id: &Identity) -> Key {
+    Key { version: id.version, id: id.id.clone() }
+}
+
 pub fn identity_from_id(version: u8, id: PublicSignKey) -> Identity {
     Identity { version, id }
 }

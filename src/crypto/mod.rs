@@ -7,8 +7,9 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Write,BufReader, Read};
+use std::io::{Write,BufReader, Read, ErrorKind};
 use byteorder::ReadBytesExt;
+use std::io;
 
 mod sodium;
 mod error;
@@ -26,7 +27,7 @@ pub use self::key::{Key, Identity};
 pub use self::stream::StreamKey;
 pub use self::lockbox::Lockbox;
 
-use self::sodium::{Nonce, PasswordConfig, SecretKey};
+use self::sodium::{Tag, Nonce, PasswordConfig, SecretKey};
 
 /// Initializes the underlying crypto library and makes all random number generation functions 
 /// thread-safe. *Must* be called successfully before using the rest of this library.
@@ -113,11 +114,13 @@ impl Vault {
     pub fn write_to_file(&self, f: &mut File) -> std::io::Result<()> {
         // Write the PasswordConfig, then all perm_keys, then all perm_streams
         let mut data = Vec::with_capacity(
-            PasswordConfig::max_len() +
+            PasswordConfig::len() +
             self.perm_keys.len() * (1+FullKey::max_len()) +
             self.perm_streams.len() * (1+FullStreamKey::max_len())
             );
         self.config.encode(&mut data);
+        let nonce = Nonce::new();
+        data.extend_from_slice(&nonce.0);
         let start_of_keys = data.len();
         // Data encoded here is all in plaintext. From here through the end of 
         // sodium::aead_encrypt, nothing must be allowed to fail or panic unless 
@@ -130,10 +133,10 @@ impl Vault {
             data.push(2u8);
             key.encode(&mut data);
         }
-        let nonce = Nonce::new();
         let tag = {
             let (pre_data, mut key_data) = data.split_at_mut(start_of_keys);
-            sodium::aead_encrypt(&mut key_data, &pre_data, &nonce, &self.root_key)
+            let res = sodium::aead_encrypt(&mut key_data, &pre_data, &nonce, &self.root_key);
+            res
         };
         data.extend_from_slice(&tag.0);
         f.write_all(&data[..])?;
@@ -144,41 +147,79 @@ impl Vault {
     /// Read the entire keystore from a file, returning a Vault.
     /// 
     /// Consumes the password string in the process and zeroes it out before dropping it.
-    pub fn read_from_file(f: &mut File, password: String) -> std::io::Result<Vault> {
+    pub fn read_from_file(f: &mut File, password: String) -> io::Result<Vault> {
         let mut buf_reader = BufReader::new(f);
         let mut content = Vec::new();
         buf_reader.read_to_end(&mut content)?;
-        let mut rd: &[u8] = &content[..];
-        let config = sodium::PasswordConfig::decode(&mut rd)?;
+        if content.len() < (PasswordConfig::len() + Nonce::len() + Tag::len()) {
+            return Err(io::Error::new(ErrorKind::UnexpectedEof, "Password file does not contain any encryption info"));
+        }
+        let (rd, key_list) = content.split_at_mut(PasswordConfig::len() + Nonce::len());
+        let mut rd = &*rd;
+        let rd_start = rd;
+        let config = PasswordConfig::decode(&mut rd)?;
         let root_key = sodium::password_to_key(password, &config)
-            .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidData, "Password hashing failed"))?;
+            .map_err(|_e| io::Error::new(ErrorKind::InvalidData, "Password hashing failed"))?;
+        let mut nonce: Nonce = Default::default();
+        rd.read_exact(&mut nonce.0)?;
         let mut vault = Vault {
             config,
-            root_key,
+            root_key: root_key.clone(),
             perm_keys: Default::default(),
             perm_streams: Default::default(),
             temp_keys: Default::default(),
             temp_streams: Default::default(),
         };
-        while rd.len() > 0 {
-            let record_type = rd.read_u8()?;
-            match record_type {
-                1u8 => {
-                    let (key, _) = FullKey::decode(&mut rd)
-                        .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to read key"))?;
-                    let key_ref = key.get_key_ref();
-                    vault.perm_keys.insert(key_ref, key);
-                },
-                2u8 => {
-                    let stream = FullStreamKey::decode(&mut rd)
-                        .map_err(|_e| std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to read key"))?;
-                    let stream_ref = stream.get_stream_ref();
-                    vault.perm_streams.insert(stream_ref, stream);
-                }
-                _ => { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid record in keystore")); }
-            };
+        let m_len = key_list.len() - Tag::len();
+        let (mut key_list, tag) = key_list.split_at_mut(m_len);
+        let success = sodium::aead_decrypt(
+            &mut key_list,
+            &rd_start,
+            &tag,
+            &nonce,
+            &root_key
+        );
+        if !success {
+            sodium::memzero(key_list);
+            return Err(io::Error::new(ErrorKind::InvalidInput, "Bad password or corrupted file"));
         }
-        Ok(vault)
+        let mut success = true;
+        {
+            let mut rd = &*key_list;
+            while rd.len() > 0 && success {
+                let record_type = rd.read_u8()?;
+                success = match record_type {
+                    1u8 => {
+                        if let Ok((key, _)) = FullKey::decode(&mut rd) {
+                            let key_ref = key.get_key_ref();
+                            vault.perm_keys.insert(key_ref, key);
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    2u8 => {
+                        if let Ok(stream) = FullStreamKey::decode(&mut rd) {
+                            let stream_ref = stream.get_stream_ref();
+                            vault.perm_streams.insert(stream_ref, stream);
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    _ => false,
+                };
+            }
+        }
+        sodium::memzero(key_list);
+        if success {
+            Ok(vault)
+        }
+        else {
+            Err(io::Error::new(ErrorKind::InvalidData, "Failed to read key"))
+        }
     }
 
     /// Create a new key and add to permanent store.
@@ -220,6 +261,22 @@ impl Vault {
             Some(full_stream) => {self.perm_streams.insert(stream.clone(),full_stream); true},
             None => self.perm_streams.contains_key(&stream),
         }
+    }
+
+    /// Checks to see if we have the given Stream.
+    pub fn has_stream(&self, stream: &StreamKey) -> bool {
+        self.perm_streams.contains_key(stream) || self.temp_streams.contains_key(stream)
+    }
+
+    /// Checks to see if we know the Key for the given Identity.
+    pub fn owns_identity(&self, id: &Identity) -> bool {
+        let key = key::key_from_identity(id);
+        self.perm_keys.contains_key(&key) || self.temp_keys.contains_key(&key)
+    }
+
+    /// Checks to see if we have the given Key.
+    pub fn has_key(&self, key: &Key) -> bool {
+        self.perm_keys.contains_key(key) || self.temp_keys.contains_key(key)
     }
 
     /// Drops the given key from every store.
@@ -326,9 +383,31 @@ impl Vault {
 
 #[cfg(test)]
 mod tests {
-    /*
     use super::*;
+    use std::io::{Seek, SeekFrom};
 
+    #[test]
+    fn file_setup() {
+        init().unwrap();
+        let password = "mySuperGoodPassword";
+        let mut vault = Vault::new_from_password(PasswordLevel::Interactive, String::from(password)).unwrap();
+        let key = vault.new_key();
+        let stream = vault.new_stream();
+        {
+            let mut f = std::fs::OpenOptions::new().write(true).read(true).create(true)
+                .open("crypto_file_setup_test.pwfile").unwrap();
+            vault.write_to_file(&mut f).unwrap();
+            f.sync_data().unwrap();
+            f.seek(SeekFrom::Start(0)).unwrap();
+            let vault2 = Vault::read_from_file(&mut f, String::from(password)).unwrap();
+            assert!(vault2.has_stream(&stream));
+            assert!(vault2.has_key(&key));
+            assert!(vault2.owns_identity(&key.get_identity()));
+        }
+        std::fs::remove_file("crypto_file_setup_test.pwfile").unwrap();
+    }
+
+    /*
     #[test]
     fn stream_encrypt_value() {
         // Setup keys

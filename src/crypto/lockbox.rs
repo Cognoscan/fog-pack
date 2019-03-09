@@ -240,7 +240,7 @@ pub fn decrypt_lockbox(k: &FullStreamKey, mut lock: Lockbox) -> Result<Vec<u8>, 
     };
     if success {
         lock.ciphertext.truncate(m_len);
-        Ok(lock.ciphertext)
+        Ok(lock.ciphertext) // Value is moved, so plaintext is only in the Result
     }
     else {
         Err(CryptoError::DecryptFailed)

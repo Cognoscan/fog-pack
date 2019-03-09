@@ -47,7 +47,7 @@ pub fn write_value(buf: &mut Vec<u8>, val: &Value) {
                     if u >= -32 {
                         buf.push(Marker::NegFixInt(u as i8).into());
                     }
-                    else if u >= 255 {
+                    else if u >= -128 {
                         buf.push(Marker::Int8.into());
                         buf.push(u as u8);
                     }
@@ -227,3 +227,127 @@ fn write_ext_marker(buf: &mut Vec<u8>, len: u32) {
         },
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_null_and_bool() {
+        let mut v = Vec::new();
+        write_value(&mut v, &Value::Null);
+        write_value(&mut v, &Value::Boolean(true));
+        write_value(&mut v, &Value::Boolean(false));
+        assert_eq!(v, vec![0xc0, 0xc3, 0xc2]);
+    }
+
+    #[test]
+    fn encode_integer() {
+        // PosFixInt
+        let mut v = Vec::new();
+        write_value(&mut v, &Value::Integer(0.into()));
+        write_value(&mut v, &Value::Integer(127.into()));
+        assert_eq!(v, vec![0, 127]);
+        // UInt8
+        v.clear();
+        write_value(&mut v, &Value::Integer(128.into()));
+        write_value(&mut v, &Value::Integer(200.into()));
+        write_value(&mut v, &Value::Integer(255.into()));
+        assert_eq!(v, vec![0xcc, 128, 0xcc, 200, 0xcc, 255]);
+        // UInt16
+        v.clear();
+        write_value(&mut v, &Value::Integer(256.into()));
+        write_value(&mut v, &Value::Integer(32768.into()));
+        write_value(&mut v, &Value::Integer(65535.into()));
+        assert_eq!(v, vec![0xcd, 1, 0, 0xcd, 128, 0, 0xcd, 0xff, 0xff]);
+        // UInt32
+        v.clear();
+        write_value(&mut v, &Value::Integer(65536.into()));
+        write_value(&mut v, &Value::Integer(400000.into()));
+        write_value(&mut v, &Value::Integer(4294967295u32.into()));
+        assert_eq!(v, vec![0xce, 0,1,0,0, 0xce, 0, 0x6,0x1a,0x80, 0xce, 0xff,0xff,0xff,0xff]);
+        // UInt64
+        v.clear();
+        write_value(&mut v, &Value::Integer(4294967296u64.into()));
+        assert_eq!(v, vec![0xcf, 0,0,0,1,0,0,0,0]);
+        v.clear();
+        write_value(&mut v, &Value::Integer(10000000000u64.into()));
+        assert_eq!(v, vec![0xcf, 0,0,0,2,84,11,228,0]);
+        v.clear();
+        write_value(&mut v, &Value::Integer(std::u64::MAX.into()));
+        assert_eq!(v, vec![0xcf, 255,255,255,255,255,255,255,255]);
+        // NegFixInt
+        v.clear();
+        write_value(&mut v, &Value::Integer((-1).into()));
+        write_value(&mut v, &Value::Integer((-16).into()));
+        write_value(&mut v, &Value::Integer((-32).into()));
+        assert_eq!(v, vec![0xff, 0xf0, 0xe0]);
+        // Int8
+        v.clear();
+        write_value(&mut v, &Value::Integer((-33).into()));
+        write_value(&mut v, &Value::Integer((-120).into()));
+        write_value(&mut v, &Value::Integer((-128).into()));
+        assert_eq!(v, vec![0xd0, 223, 0xd0, 136, 0xd0, 0x80]);
+        // Int16
+        v.clear();
+        write_value(&mut v, &Value::Integer((-129).into()));
+        write_value(&mut v, &Value::Integer((-2000).into()));
+        write_value(&mut v, &Value::Integer((-32768).into()));
+        assert_eq!(v, vec![0xd1, 0xff,0x7f, 0xd1, 248,48, 0xd1, 0x80,0]);
+        // Int32
+        v.clear();
+        write_value(&mut v, &Value::Integer((-32769).into()));
+        write_value(&mut v, &Value::Integer((-400000).into()));
+        write_value(&mut v, &Value::Integer((-2147483648).into()));
+        assert_eq!(v, vec![0xd2, 0xff,0xff,0x7f,0xff, 0xd2, 255,249,229,128, 0xd2, 0x80,0,0,0]);
+        // Int64
+        v.clear();
+        write_value(&mut v, &Value::Integer((-2147483649i64).into()));
+        assert_eq!(v, vec![0xd3, 0xff,0xff,0xff,0xff,0x7f,0xff,0xff,0xff]);
+        v.clear();
+        write_value(&mut v, &Value::Integer((-10000000000i64).into()));
+        assert_eq!(v, vec![0xd3, 0xff,0xff,0xff,253,171,244,28,0]);
+        v.clear();
+        write_value(&mut v, &Value::Integer(std::i64::MIN.into()));
+        assert_eq!(v, vec![0xd3, 0x80,0,0,0,0,0,0,0]);
+    }
+
+    #[test]
+    fn encode_string() {
+        let mut v = Vec::new();
+        write_value(&mut v, &Value::String("".into()));
+        assert_eq!(v, vec![0xA0]);
+        // Short Strings
+        v.clear();
+        let test = "Greg Rulz OK";
+        write_value(&mut v, &Value::String(test.into()));
+        let mut comp = Vec::new();
+        comp.push(0xAC);
+        comp.extend_from_slice(test.as_bytes());
+        assert_eq!(v, comp);
+        v.clear();
+        let test = "This is a string that is 31 byt";
+        write_value(&mut v, &Value::String(test.into()));
+        let mut comp = Vec::new();
+        comp.push(0xBF);
+        comp.extend_from_slice(test.as_bytes());
+        assert_eq!(v, comp);
+        // Longer string
+        v.clear();
+        let test = "This is a string that is more than bytes in size";
+        write_value(&mut v, &Value::String(test.into()));
+        let mut comp = Vec::new();
+        comp.extend_from_slice(&[0xd9,0x30]);
+        comp.extend_from_slice(test.as_bytes());
+        assert_eq!(v, comp);
+    }
+
+}
+
+
+
+
+
+
+
+

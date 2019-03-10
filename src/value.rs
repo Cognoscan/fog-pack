@@ -222,6 +222,14 @@ impl Value {
         }
     }
 
+    pub fn to_string(self) -> Option<String> {
+        if let Value::String(val) = self {
+            Some(val)
+        } else {
+            None
+        }
+    }
+
     fn indent(f: &mut fmt::Formatter, n: usize) -> Result<(), fmt::Error> {
         for _ in 0..n {
             write!(f, "  ")?;

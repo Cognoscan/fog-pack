@@ -23,7 +23,7 @@ use self::stream::FullStreamKey;
 
 pub use self::error::CryptoError;
 pub use self::hash::{Hash, HashState};
-pub use self::key::{Key, Identity};
+pub use self::key::{Signature, Key, Identity};
 pub use self::stream::StreamKey;
 pub use self::lockbox::Lockbox;
 
@@ -289,6 +289,11 @@ impl Vault {
     pub fn drop_stream(&mut self, stream: StreamKey) {
         self.perm_streams.remove(&stream);
         self.temp_streams.remove(&stream);
+    }
+
+    pub fn sign(&self, hash: &Hash, key: &Key) -> Result<Signature, CryptoError> {
+        let key = self.get_key(key)?;
+        Ok(key.sign(hash))
     }
 
     fn data_from_lockbox_content(&self, data: LockboxContent) -> Result<Vec<u8>, CryptoError> {

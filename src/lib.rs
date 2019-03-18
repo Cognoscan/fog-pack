@@ -14,12 +14,15 @@ extern crate libsodium_sys;
 extern crate libc;
 //use std::io::Write;
 
-pub mod crypto;
 mod index;
 mod value;
 mod timestamp;
 mod integer;
 mod marker;
+mod error;
+
+pub mod database;
+pub mod crypto;
 pub mod encode;
 pub mod decode;
 
@@ -30,6 +33,7 @@ pub use self::index::Index;
 pub use self::value::Value;
 pub use self::integer::Integer;
 pub use self::timestamp::Timestamp;
+pub use self::error::DbError;
 
 #[macro_use]
 mod macros;

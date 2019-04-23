@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 use crossbeam_channel::{Sender, Receiver, unbounded, bounded, Select};
 
-use super::Hash;
-use super::Document;
+use super::{Hash, Document, Entry};
 
 /// Database for holding documents and associated entries. Tracks schema, handles queries.
 pub struct Db {
@@ -155,13 +154,6 @@ fn db_loop(control: Receiver<DbControl>, change: Receiver<(ChangeRequest, Sender
             break;
         }
     };
-}
-
-#[derive(Clone)]
-pub struct Entry {
-    pub doc: Hash,
-    pub entry: Hash,
-    pub content: Vec<u8>,
 }
 
 #[derive(Clone)]

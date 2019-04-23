@@ -23,6 +23,7 @@ mod integer;
 mod marker;
 mod error;
 mod document;
+mod entry;
 
 pub mod database;
 pub mod crypto;
@@ -38,6 +39,7 @@ pub use self::integer::Integer;
 pub use self::timestamp::Timestamp;
 pub use self::error::DbError;
 pub use self::document::Document;
+pub use self::entry::Entry;
 
 #[macro_use]
 mod macros;

@@ -3,6 +3,8 @@ use std::fmt;
 use std::io::Read;
 use byteorder::ReadBytesExt;
 use std::hash;
+use std::cmp;
+use std::cmp::Ordering;
 
 use crypto::error::CryptoError;
 use crypto::sodium::{blake2b, Blake2BState};
@@ -30,6 +32,34 @@ impl PartialEq for Hash {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.version == other.version && constant_time_eq(&self.digest, &other.digest)
+    }
+}
+
+// Not constant time, as no cryptographic operation requires Ord. This is solely for ordering in a 
+// BTree
+impl cmp::Ord for Hash {
+    fn cmp(&self, other: &Hash) -> Ordering {
+        if self.version > other.version {
+            return Ordering::Greater;
+        }
+        else if self.version < other.version {
+            return Ordering::Less;
+        }
+        for i in 0..64 {
+            if self.digest[i] > other.digest[i] {
+                return Ordering::Greater;
+            }
+            else if self.digest[i] < other.digest[i] {
+                return Ordering::Less;
+            }
+        }
+        Ordering::Equal
+    }
+}
+
+impl cmp::PartialOrd for Hash {
+    fn partial_cmp(&self, other: &Hash) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

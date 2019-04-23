@@ -6,6 +6,8 @@ extern crate serde_json;
 #[cfg(test)]
 extern crate hex;
 
+extern crate crossbeam_channel;
+extern crate crossbeam_utils;
 extern crate colored;
 extern crate num_traits;
 extern crate constant_time_eq;
@@ -20,6 +22,7 @@ mod timestamp;
 mod integer;
 mod marker;
 mod error;
+mod document;
 
 pub mod database;
 pub mod crypto;
@@ -34,6 +37,7 @@ pub use self::value::Value;
 pub use self::integer::Integer;
 pub use self::timestamp::Timestamp;
 pub use self::error::DbError;
+pub use self::document::Document;
 
 #[macro_use]
 mod macros;

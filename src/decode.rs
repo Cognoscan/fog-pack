@@ -271,6 +271,18 @@ fn read_to_bin(buf: &mut &[u8], len: usize) -> io::Result<Value> {
     }
 }
 
+/// General function for verifying binary data in buffer is at least the size of the buffer.
+fn verify_bin(buf: &mut &[u8], len: usize) -> io::Result<usize> {
+    if buf.len() >= len {
+        let (data, rem) = buf.split_at(len);
+        *buf = rem;
+        Ok(len)
+    }
+    else {
+        Err(io::Error::new(UnexpectedEof, "Binary length larger than amount of data"))
+    }
+}
+
 /// General function for reading a UTF-8 string from a buffer. Checks for if the 
 /// length is greater than remaining bytes in the buffer, or if the bytes 
 /// received are not valid UTF-8.
@@ -288,6 +300,23 @@ fn read_to_str(buf: &mut &[u8], len: usize) -> io::Result<Value> {
     }
 }
 
+/// General function for verifying a UTF-8 string in a buffer. Checks for if the 
+/// length is greater than remaining bytes in the buffer, or if the bytes 
+/// received are not valid UTF-8.
+fn verify_str(buf: &mut &[u8], len: usize) -> io::Result<usize> {
+    if buf.len() >= len {
+        let (data, rem) = buf.split_at(len);
+        *buf = rem;
+        let data = str::from_utf8(data)
+            .map_err(|_e| io::Error::new(InvalidData, "String decoded is not valid UTF-8"))?;
+        Ok(len)
+    }
+    else {
+        Err(io::Error::new(UnexpectedEof, "String length larger than amount of data"))
+    }
+}
+
+
 /// General function for reading a field-value map from a buffer. Checks to make 
 /// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
 fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<Value> {
@@ -299,6 +328,77 @@ fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<Value> {
     let mut old_key = read_value(buf)?.to_string()
         .ok_or(io::Error::new(InvalidData, "Object field was not a String"))?;
     let val = read_value(buf)?;
+    map.insert(old_key.clone(), val);
+    // Iterate to get remaining field-value pairs
+    for _i in 1..len {
+        let key = read_value(buf)?.to_string()
+            .ok_or(io::Error::new(InvalidData, "Object field was not a String"))?;
+        match old_key.cmp(&key) {
+            Ordering::Less => {
+                // old_key is lower in order. This is correct
+                let val = read_value(buf)?;
+                map.insert(key.clone(), val);
+            },
+            Ordering::Equal => {
+                return Err(io::Error::new(InvalidData, format!("Found object with non-unique field \"{}\"", key)));
+            },
+            Ordering::Greater => {
+                return Err(io::Error::new(InvalidData, "Fields in object are not in lexicographic order"));
+            }
+        };
+        old_key = key;
+    }
+    Err(io::Error::new(InvalidData, "Fields in object are not unique or in lexicographic order"))
+}
+
+/// Attempt to read a string and return a reference to it. Fails if length is greater than 
+/// remaining bytes in the buffer, or if the bytes received are not valid UTF-8.
+fn read_str(buf: &mut &[u8]) -> io::Result<(&str, usize)> {
+    let marker = Marker::from_u8(buf.read_u8()?);
+    let (len, read_len) = match marker {
+        Marker::Str8 => {
+            let len = buf.read_u8()? as usize;
+            if len <= 31 { return Err(not_shortest()); }
+            (len, len+2)
+        }
+        Marker::Str16 => {
+            let len = buf.read_u16::<BigEndian>()? as usize;
+            if len <= (std::u8::MAX as usize) { return Err(not_shortest()); }
+            (len, len+3)
+        }
+        Marker::Str32 => {
+            let len = buf.read_u32::<BigEndian>()? as usize;
+            if len <= (std::u16::MAX as usize) { return Err(not_shortest()); }
+            (len, len+5)
+        }
+        _ => {
+            return Err(io::Error::new(InvalidData, "Field was not a String"));
+        }
+    };
+
+    if buf.len() >= len {
+        let (data, rem) = buf.split_at(len);
+        *buf = rem;
+        let data = str::from_utf8(data)
+            .map_err(|_e| io::Error::new(InvalidData, "String decoded is not valid UTF-8"))?;
+        Ok((data, read_len))
+    }
+    else {
+        Err(io::Error::new(UnexpectedEof, "String length larger than amount of data"))
+    }
+}
+
+/// General function for verifying a field-value map in a buffer. Checks to make 
+/// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
+fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<Value> {
+
+    if len == 0 { return Ok(0); }
+
+    // Extract the first field-value pair
+    let mut (old_field, field_len) = read_str(buf)?;
+        .ok_or(io::Error::new(InvalidData, "Object field was not a String"))?;
+    let mut count = verify_value(buf)?;
+    count += field_len;
     map.insert(old_key.clone(), val);
     // Iterate to get remaining field-value pairs
     for _i in 1..len {
@@ -372,6 +472,246 @@ fn read_ext(buf: &mut &[u8], len: usize, ty: i8) -> io::Result<Value> {
             let lock = Lockbox::decode(len, buf).map_err(|_e| io::Error::new(InvalidData, "Lockbox not recognized"))?;
             Ok(Value::from(lock))
         }
+    }
+}
+
+/// Read a buffer and verify it contains a valid MessagePack value. Verification will fail if the value 
+/// isn't in condense-db canonical form. That is:
+/// - All types are encoded in as few bytes as possible
+/// - Positive integers are always encoded using UInt types
+/// - Map types always have unique strings as keys
+/// - Maps are ordered lexicographically
+/// - Strings are valid UTF-8
+pub fn verify_value(buf: &mut &[u8]) -> io::Result<usize> {
+    let marker = Marker::from_u8(buf.read_u8()?);
+    match marker {
+        Marker::PosFixInt(val) => Ok(1),
+        Marker::FixMap(len) => {
+            verify_map(buf, len as usize)
+        },
+        Marker::FixStr(len) => {
+            verify_str(buf, len as usize)
+        },
+        Marker::FixArray(len) => {
+            let mut size: usize = 0;
+            for _i in 0..len {
+                v += read_value(buf)?;
+            }
+            Ok(size)
+        },
+
+        Marker::Nil => Ok(1),
+        Marker::False => Ok(1),
+        Marker::True => Ok(1),
+
+        Marker::Bin8 => {
+            let len = buf.read_u8()? as usize;
+            verify_bin(buf, len)
+        },
+        Marker::Bin16 => {
+            let len = buf.read_u16::<BigEndian>()? as usize;
+            if len <= (std::u8::MAX as usize) { return Err(not_shortest()); }
+            read_to_bin(buf, len)
+        },
+        Marker::Bin32 => {
+            let len = buf.read_u32::<BigEndian>()? as usize;
+            if len <= (std::u16::MAX as usize) { return Err(not_shortest()); }
+            read_to_bin(buf, len)
+        },
+
+        Marker::Ext8 => {
+            let len = buf.read_u8()? as usize;
+            match len {
+                1  => Err(not_shortest()),
+                2  => Err(not_shortest()),
+                4  => Err(not_shortest()),
+                8  => Err(not_shortest()),
+                16 => Err(not_shortest()),
+                _  => {
+                    let ty = buf.read_i8()?;
+                    read_ext(buf, len, ty)
+                }
+            }
+        },
+        Marker::Ext16 => {
+            let len = buf.read_u16::<BigEndian>()? as usize;
+            if len <= (std::u8::MAX as usize) { return Err(not_shortest()); }
+            let ty = buf.read_i8()?;
+            read_ext(buf, len, ty)
+        },
+        Marker::Ext32 => {
+            let len = buf.read_u32::<BigEndian>()? as usize;
+            if len <= (std::u16::MAX as usize) { return Err(not_shortest()); }
+            let ty = buf.read_i8()?;
+            read_ext(buf, len, ty)
+        },
+
+        Marker::F32 => {
+            Ok(Value::F32(buf.read_f32::<BigEndian>()?))
+        },
+
+        Marker::F64 => {
+            Ok(Value::F64(buf.read_f64::<BigEndian>()?))
+        },
+
+        Marker::UInt8 => {
+            let val = buf.read_u8()?;
+            if val > 127 {
+                Ok(Value::Integer(val.into()))
+            }
+            else {
+                Err(not_shortest())
+            }
+        },
+        Marker::UInt16 => {
+            let val = buf.read_u16::<BigEndian>()?;
+            if val > (std::u8::MAX as u16) {
+                Ok(Value::Integer(val.into()))
+            }
+            else {
+                Err(not_shortest())
+            }
+        },
+        Marker::UInt32 => {
+            let val = buf.read_u32::<BigEndian>()?;
+            if val > (std::u16::MAX as u32) {
+                Ok(Value::Integer(val.into()))
+            }
+            else {
+                Err(not_shortest())
+            }
+        },
+        Marker::UInt64 => {
+            let val = buf.read_u64::<BigEndian>()?;
+            if val > (std::u32::MAX as u64) {
+                Ok(Value::Integer(val.into()))
+            }
+            else {
+                Err(not_shortest())
+            }
+        },
+
+        Marker::Int8 => {
+            let val = buf.read_i8()?;
+            if val < -32 {
+                Ok(Value::Integer(val.into()))
+            }
+            else if val >= 0 {
+                Err(not_negative())
+            }
+            else {
+                Err(not_shortest())
+            }
+        },
+        Marker::Int16 => {
+            let val = buf.read_i16::<BigEndian>()?;
+            if val < (std::i8::MIN as i16) {
+                Ok(Value::Integer(val.into()))
+            }
+            else if val >= 0 {
+                Err(not_negative())
+            }
+            else {
+                Err(not_shortest())
+            }
+        },
+        Marker::Int32 => {
+            let val = buf.read_i32::<BigEndian>()?;
+            if val < (std::i16::MIN as i32) {
+                Ok(Value::Integer(val.into()))
+            }
+            else if val >= 0 {
+                Err(not_negative())
+            }
+            else {
+                Err(not_shortest())
+            }
+        },
+        Marker::Int64 => {
+            let val = buf.read_i64::<BigEndian>()?;
+            if val < (std::i32::MIN as i64) {
+                Ok(Value::Integer(val.into()))
+            }
+            else if val >= 0 {
+                Err(not_negative())
+            }
+            else {
+                Err(not_shortest())
+            }
+        }
+
+        Marker::FixExt1 => {
+            let ty = buf.read_i8()?;
+            read_ext(buf, 1, ty)
+        },
+        Marker::FixExt2 => {
+            let ty = buf.read_i8()?;
+            read_ext(buf, 2, ty)
+        },
+        Marker::FixExt4 => {
+            let ty = buf.read_i8()?;
+            read_ext(buf, 4, ty)
+        },
+        Marker::FixExt8 => {
+            let ty = buf.read_i8()?;
+            read_ext(buf, 8, ty)
+        },
+        Marker::FixExt16 => {
+            let ty = buf.read_i8()?;
+            read_ext(buf, 16, ty)
+        },
+
+        Marker::Str8 => {
+            let len = buf.read_u8()? as usize;
+            if len <= 31 { return Err(not_shortest()); }
+            read_to_str(buf, len)
+        }
+        Marker::Str16 => {
+            let len = buf.read_u16::<BigEndian>()? as usize;
+            if len <= (std::u8::MAX as usize) { return Err(not_shortest()); }
+            read_to_str(buf, len)
+        }
+        Marker::Str32 => {
+            let len = buf.read_u32::<BigEndian>()? as usize;
+            if len <= (std::u16::MAX as usize) { return Err(not_shortest()); }
+            read_to_str(buf, len)
+        }
+
+        Marker::Array16 => {
+            let len = buf.read_u16::<BigEndian>()?;
+            if len <= 15 { return Err(not_shortest()); }
+            let mut v = Vec::new();
+            for _i in 0..len {
+                v.push(read_value(buf)?);
+            }
+            Ok(Value::from(v))
+        }
+        Marker::Array32 => {
+            let len = buf.read_u32::<BigEndian>()?;
+            if len <= (std::u16::MAX as u32) { return Err(not_shortest()); }
+            let mut v = Vec::new();
+            for _i in 0..len {
+                v.push(read_value(buf)?);
+            }
+            Ok(Value::from(v))
+        }
+
+        Marker::Map16 => {
+            let len = buf.read_u16::<BigEndian>()?;
+            if len <= 15 { return Err(not_shortest()); }
+            read_to_map(buf, len as usize)
+        },
+        Marker::Map32 => {
+            let len = buf.read_u32::<BigEndian>()?;
+            if len <= (std::u16::MAX as u32) { return Err(not_shortest()); }
+            read_to_map(buf, len as usize)
+        },
+
+        Marker::NegFixInt(val) => {
+            Ok(Value::Integer(val.into()))
+        }
+
+        Marker::Reserved => Err(io::Error::new(InvalidData, "Unsupported value type")),
     }
 }
 

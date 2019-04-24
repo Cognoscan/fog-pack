@@ -17,6 +17,7 @@ extern crate libc;
 //use std::io::Write;
 
 mod index;
+//mod index_ref;
 mod value;
 mod timestamp;
 mod integer;
@@ -24,6 +25,7 @@ mod marker;
 mod error;
 mod document;
 mod entry;
+mod schema;
 
 pub mod database;
 pub mod crypto;
@@ -34,7 +36,8 @@ use marker::{Marker, ExtType};
 
 pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
 pub use self::index::Index;
-pub use self::value::Value;
+//pub use self::index_ref::IndexRef;
+pub use self::value::{Value, ValueRef};
 pub use self::integer::Integer;
 pub use self::timestamp::Timestamp;
 pub use self::error::DbError;

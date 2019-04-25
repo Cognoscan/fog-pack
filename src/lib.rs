@@ -43,6 +43,7 @@ pub use self::timestamp::Timestamp;
 pub use self::error::DbError;
 pub use self::document::Document;
 pub use self::entry::Entry;
+pub use self::database::{Db, Permission};
 
 #[macro_use]
 mod macros;

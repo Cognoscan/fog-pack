@@ -1,6 +1,7 @@
 use std::fmt;
 use std::ops;
 use std::cmp;
+use std::time;
 
 /// Structure for holding a raw msgpack timestamp.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -34,6 +35,17 @@ impl Timestamp {
         self.nano
     }
 
+    /// Create a Timestamp based on the current system time. Can fail if the system clock is 
+    /// extremely wrong - the time is before Unix Epoch, or nanosecond portion is greater than 2 
+    /// seconds.
+    pub fn now() -> Option<Timestamp> {
+        match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
+            Ok(t) => {
+                Timestamp::from_raw(t.as_secs() as i64, t.subsec_nanos())
+            },
+            Err(_) => None
+        }
+    }
 }
 
 impl ops::Add<i64> for Timestamp {

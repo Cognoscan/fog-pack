@@ -8,17 +8,20 @@ pub struct Db {
     handle: std::thread::JoinHandle<()>,
     control_in: Sender<DbControl>,
     change_in: Sender<(ChangeRequest, Sender<ChangeResult>)>,
+    query_in: Sender<(QueryRequest, Sender<QueryResponse>)>,
 }
 
 impl Db {
     pub fn new() -> Db {
         let (control_in, control_out) = unbounded();
         let (change_in, change_out) = unbounded();
-        let handle = std::thread::spawn(move || db_loop(control_out, change_out));
+        let (query_in, query_out) = unbounded();
+        let handle = std::thread::spawn(move || db_loop(control_out, change_out, query_out));
         Db {
             handle,
             control_in,
             change_in,
+            query_in
         }
     }
 
@@ -73,6 +76,14 @@ impl Db {
         self.make_change(ChangeRequest::SetTtlEntry((doc, entry, ttl)))
     }
 
+    pub fn query(&self, query: Query, perm: Permission, capacity: usize) -> Result<QueryWait, ()> {
+        if capacity == 0 { return Err(()); }
+        let (result_in, result_out) = bounded(capacity);
+        let request = QueryRequest { query: query, permission: perm };
+        self.query_in.send((request, result_in)).map_err(|_e| ())?;
+        Ok(QueryWait { chan: result_out })
+    }
+
 }
 
 pub struct ChangeWait {
@@ -85,7 +96,7 @@ impl ChangeWait {
         self.chan.recv().unwrap_or(ChangeResult::Failed)
     }
 
-    // Check to see if the change request has completed
+    /// Check to see if the change request has completed
     pub fn try_recv(&self) -> Option<ChangeResult> {
         let res = self.chan.try_recv();
         match res {
@@ -102,8 +113,35 @@ impl ChangeWait {
     }
 }
 
-/// The internal database object. Used within the main event loop for storage and various 
-/// operations.
+pub struct QueryWait {
+    chan: Receiver<QueryResponse>
+}
+
+impl QueryWait {
+    /// Block until a query response occurs.
+    /// Check to see if a new query response is available.
+    pub fn recv(&self) -> QueryResponse {
+        self.chan.recv().unwrap_or(QueryResponse::DoneForever) // Done forever if channel is closed
+    }
+
+    /// The internal database object. Used within the main event loop for storage and various 
+    /// operations.
+    pub fn try_recv(&self) -> Option<QueryResponse> {
+        let res = self.chan.try_recv();
+        match res {
+            Err(e) => {
+                if e.is_empty() {
+                    None
+                }
+                else {
+                    Some(QueryResponse::DoneForever) // Done forever if channel is closed
+                }
+            },
+            Ok(r) => Some(r),
+        }
+    }
+}
+
 struct InternalDb {
     doc_db: BTreeMap<Hash,(Document,Permission,u32)>,
     entry_db: BTreeMap<Hash, Vec<(Entry,u32)>>,
@@ -152,41 +190,69 @@ impl InternalDb {
 /// - A change request has been made
 /// - A database management command has been issued
 /// 
-fn db_loop(control: Receiver<DbControl>, change: Receiver<(ChangeRequest, Sender<ChangeResult>)>) {
+fn db_loop(
+    control: Receiver<DbControl>,
+    change: Receiver<(ChangeRequest, Sender<ChangeResult>)>,
+    query_inbox: Receiver<(QueryRequest, Sender<QueryResponse>)>)
+{
     let mut db = InternalDb::new();
     let mut done = false;
+
+    // Set up queries to respond to
+    let mut open_queries: Vec<(QueryRequest, Sender<QueryResponse>)> = Vec::new();
     
     // Set up the channel selector
     let mut select = Select::new();
     let index_ctrl = select.recv(&control);
     let index_change = select.recv(&change);
+    let index_query = select.recv(&query_inbox);
 
     // Main loop
     loop {
-        let oper = select.select();
-        match oper.index() {
-            i if i == index_ctrl => {
-                let cmd = oper.recv(&control);
-                match cmd {
-                    Err(_) => done = true, // Halt if command channel was closed
-                    Ok(cmd) => {
-                        match cmd {
-                            DbControl::Stop => done = true,
+        let mut active = false;
+        let oper = select.try_select();
+        if let Ok(oper) = select.try_select() {
+            active = true;
+            match oper.index() {
+                i if i == index_ctrl => {
+                    let cmd = oper.recv(&control);
+                    match cmd {
+                        Err(_) => done = true, // Halt if command channel was closed
+                        Ok(cmd) => {
+                            match cmd {
+                                DbControl::Stop => done = true,
+                            }
                         }
+                    };
+                },
+                i if i == index_change => {
+                    if let Ok((cmd, resp)) = oper.recv(&change) {
+                        // Send the response. If nothing is at the other end, we don't care.
+                        resp.send(db.make_change(cmd)).unwrap_or(());
                     }
-                };
-            },
-            i if i == index_change => {
-                if let Ok((cmd, resp)) = oper.recv(&change) {
-                    // Send the response. If nothing is at the other end, we don't care.
-                    resp.send(db.make_change(cmd)).unwrap_or(());
+                },
+                i if i == index_query => {
+                    if let Ok((query, resp)) = oper.recv(&query_inbox) {
+                        open_queries.push((query, resp));
+                    }
                 }
-            },
-            _ => unreachable!(),
+                _ => unreachable!(),
+            }
         }
+
+        open_queries.retain(|(query_request, response)| {
+            response.send(QueryResponse::DoneForever).unwrap_or(());
+            drop(response);
+            false
+        });
 
         if done {
             break;
+        }
+
+        // Yield to the OS if the database is idling
+        if !active {
+            std::thread::yield_now();
         }
     };
 }
@@ -288,3 +354,21 @@ pub enum ChangeResult {
 enum DbControl {
     Stop,
 }
+
+struct QueryRequest {
+    query:  Query,
+    permission: Permission,
+}
+
+pub enum QueryResponse {
+    Doc((Document, i32)),
+    Entry((Entry, i32)),
+    DoneForever,
+    Invalid,
+    BadDoc(Hash),
+}
+
+
+
+
+

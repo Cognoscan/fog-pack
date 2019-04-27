@@ -26,6 +26,8 @@ mod error;
 mod document;
 mod entry;
 mod schema;
+mod permission;
+mod query;
 
 pub mod database;
 pub mod crypto;
@@ -43,7 +45,9 @@ pub use self::timestamp::Timestamp;
 pub use self::error::DbError;
 pub use self::document::Document;
 pub use self::entry::Entry;
-pub use self::database::{Db, Permission, Query, QueryResponse};
+pub use self::database::{Db, QueryResponse};
+pub use self::permission::Permission;
+pub use self::query::Query;
 
 #[macro_use]
 mod macros;

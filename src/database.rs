@@ -1,7 +1,78 @@
-use std::collections::BTreeMap;
-use crossbeam_channel::{Sender, Receiver, unbounded, bounded, Select};
+use std::collections::HashMap;
+use crossbeam_channel::{TryRecvError, RecvError, Sender, Receiver, unbounded, bounded, Select};
 
-use super::{Value, Hash, Document, Entry};
+use super::{Permission, Query, Value, Hash, Document, Entry};
+
+/// Types of changes that can be made to the database.
+enum ChangeRequest {
+    /// Add a document to the databse.
+    AddDoc((Document, Permission, u32)),
+    /// Remove a document from the database by hash.
+    DelDoc(Hash),
+    /// Add an entry to the database.
+    AddEntry((Entry, u32)),
+    /// Remove an entry from the database by hash of document & entry.
+    DelEntry((Hash, Hash)),
+    /// Remove documents/entries that match the query given.
+    DelQuery(Query),
+    /// Set time-to-live for a given document.
+    SetTtlDoc((Hash, u32)),
+    /// Set time-to-live for a given entry, by hash of document & entry.
+    SetTtlEntry((Hash, Hash, u32)),
+}
+
+/// Result of any changes requested of the database.
+#[derive(Debug)]
+pub enum ChangeResult {
+    /// Change made successfuly
+    Ok,
+    /// Failed for unknown reasons, likely due to underlying database
+    Failed,
+    /// Couldn't operate on a document because it doesn't exist. Also returned if adding an entry 
+    /// to a non-existent document, or querying a non-existent document.
+    NoSuchDoc,
+    /// Couldn't operate on an entry because it doesn't exist.
+    NoSuchEntry,
+    /// Couldn't delete a schema document because it is in use.
+    SchemaInUse,
+    /// Couldn't delete a certificate because it is in use.
+    CertInUse,
+    /// Document/Entry failed schema check when being added.
+    FailedSchemaCheck,
+    /// Couldn't find schema referenced by the document.
+    SchemaNotFound,
+    /// Query didn't match schema of the document(s) being operated on.
+    InvalidQuery,
+}
+
+/// Control operations on the database. For housekeeping and starting/stopping the database.
+enum DbControl {
+    Stop,
+}
+
+/// A bundled query request for the system
+struct QueryRequest {
+    query:  Query,
+    permission: Permission,
+}
+
+/// Possible responses to a query.
+pub enum QueryResponse {
+    /// A document matching the query, along with the relative effort spent retrieving it.
+    Doc((Document, i32)),
+    /// An entry matching the query, along with the relative effort spent retrieving it.
+    Entry((Entry, i32)),
+    /// Query has been exhausted. Only occurs for queries made to retrive a set list of documents. 
+    /// The query channel is closed after this.
+    DoneForever,
+    /// Query failed to match the schema for all given documents. The query channel is closed after 
+    /// this.
+    Invalid,
+    /// One of the documents retrieved failed schema validation.
+    BadDoc(Hash),
+    /// One of the documents retrieved used an unknown schema.
+    UnknownSchema((Hash, Hash)),
+}
 
 /// Database for holding documents and associated entries. Tracks schema, handles queries.
 pub struct Db {
@@ -86,30 +157,22 @@ impl Db {
 
 }
 
+/// A channel that receives the result of a change request.
 pub struct ChangeWait {
     chan: Receiver<ChangeResult>
 }
 
 impl ChangeWait {
-    /// Block until the database change request completes.
-    pub fn recv(self) -> ChangeResult {
-        self.chan.recv().unwrap_or(ChangeResult::Failed)
+    /// Block until the database change request completes. Errors if the change result has been 
+    /// received already, or if the database process died.
+    pub fn recv(self) -> Result<ChangeResult, RecvError> {
+        self.chan.recv()
     }
 
-    /// Check to see if the change request has completed
-    pub fn try_recv(&self) -> Option<ChangeResult> {
-        let res = self.chan.try_recv();
-        match res {
-            Err(e) => {
-                if e.is_empty() {
-                    None
-                }
-                else {
-                    Some(ChangeResult::Failed)
-                }
-            },
-            Ok(r) => Some(r),
-        }
+    /// Check to see if the change request has completed. Errors if channel is not ready, or if the 
+    /// channel disconnected.
+    pub fn try_recv(&self) -> Result<ChangeResult, TryRecvError> {
+        self.chan.try_recv()
     }
 }
 
@@ -118,40 +181,31 @@ pub struct QueryWait {
 }
 
 impl QueryWait {
-    /// Block until a query response occurs.
-    /// Check to see if a new query response is available.
-    pub fn recv(&self) -> QueryResponse {
-        self.chan.recv().unwrap_or(QueryResponse::DoneForever) // Done forever if channel is closed
+    /// Block until a query response occurs. Errors if the database closed the channel, which 
+    /// happens if the database stopped or if the database has already sent `DoneForever` or 
+    /// `Invalid` responses.
+    pub fn recv(&self) -> Result<QueryResponse, RecvError> {
+        self.chan.recv()
     }
 
-    /// The internal database object. Used within the main event loop for storage and various 
-    /// operations.
-    pub fn try_recv(&self) -> Option<QueryResponse> {
-        let res = self.chan.try_recv();
-        match res {
-            Err(e) => {
-                if e.is_empty() {
-                    None
-                }
-                else {
-                    Some(QueryResponse::DoneForever) // Done forever if channel is closed
-                }
-            },
-            Ok(r) => Some(r),
-        }
+    /// Check to see if any query results showed up. Errors if channel is not ready, or if the 
+    /// channel is closed. Channel is closed if the database stopped, or if the database has 
+    /// already sent `DoneForever` or `Invalid` responses.
+    pub fn try_recv(&self) -> Result<QueryResponse, TryRecvError> {
+        self.chan.try_recv()
     }
 }
 
 struct InternalDb {
-    doc_db: BTreeMap<Hash,(Document,Permission,u32)>,
-    entry_db: BTreeMap<Hash, Vec<(Entry,u32)>>,
+    doc_db: HashMap<Hash,(Document,Permission,u32)>,
+    entry_db: HashMap<Hash, Vec<(Entry,u32)>>,
 }
 
 impl InternalDb {
     fn new() -> InternalDb {
         InternalDb {
-            doc_db: BTreeMap::new(),
-            entry_db: BTreeMap::new()
+            doc_db: HashMap::new(),
+            entry_db: HashMap::new()
         }
     }
 
@@ -255,165 +309,5 @@ fn db_loop(
         }
     };
 }
-
-#[derive(Clone)]
-pub struct Permission {
-    pub advertise: bool,
-    pub machine_local: bool,
-    pub direct: bool,
-    pub local_net: bool,
-    pub global: bool,
-    pub anonymous: bool,
-}
-
-impl Default for Permission {
-    fn default() -> Self {
-        Permission::new()
-    }
-}
-
-impl Permission {
-    pub fn new() -> Permission {
-        Permission {
-            advertise: false,
-            machine_local: false,
-            direct: false,
-            local_net: false,
-            global: false,
-            anonymous: false,
-        }
-    }
-
-    /// Whether to advertise a document or not. This is ignored for entries and queries.
-    pub fn advertise(mut self, yes: bool) -> Self {
-        self.advertise = yes;
-        self
-    }
-
-    /// Whether this can be shared with other processes on the same machine
-    pub fn machine_local(mut self, yes: bool) -> Self {
-        self.machine_local = yes;
-        self
-    }
-
-    /// Whether this can be shared with a node that is directly connected.
-    ///
-    /// This includes nodes reached via non-mesh Bluetooth, Wi-Fi Direct, direct cable connection, 
-    /// etc.
-    pub fn direct(mut self, yes: bool) -> Self {
-        self.direct = yes;
-        self
-    }
-
-    /// Whether this can be shared with a node on the local network.
-    ///
-    /// This includes nodes reached via local Wi-Fi, mesh Wi-Fi, or mesh Bluetooth.
-    pub fn local_net(mut self, yes: bool) -> Self {
-        self.local_net = yes;
-        self
-    }
-
-    /// Whether this can be shared with a node anywhere non-local.
-    ///
-    /// This is for nodes anywhere on the internet.
-    pub fn global(mut self, yes: bool) -> Self {
-        self.global = yes;
-        self
-    }
-
-    /// Whether this should be shared anonymously. This generally increases latency and decreases 
-    /// bandwidth. 
-    ///
-    /// This means the underlying connections to other nodes always use anonymizing routing 
-    /// methods. Examples include onion routing, garlic routing, and mix networks. Compromises may 
-    /// still be possible through careful traffic analysis, especially if non-anonymous documents & 
-    /// queries are used.
-    pub fn anonymous(mut self, yes: bool) -> Self {
-        self.anonymous = yes;
-        self
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum QueryOrder {
-    Random,
-    LowestFirst,
-    HighestFirst,
-}
-
-
-#[derive(Clone)]
-pub struct Query {
-   reference: Option<Hash>,
-   root: Vec<Hash>,
-   priority: Option<Vec<String>>,
-   order: QueryOrder
-}
-
-impl Query {
-    pub fn new() -> Query {
-        Query {
-            reference: None,
-            root: Vec::new(),
-            priority: Some(Vec::new()),
-            order: QueryOrder::Random
-        }
-    }
-
-    pub fn set_ref(&mut self, hash: &Hash) {
-        self.reference = Some(hash.clone());
-    }
-
-    pub fn add_root(&mut self, root: &Hash) {
-        self.root.push(root.clone());
-    }
-
-    pub fn set_priority(&mut self, priority: Vec<String>) {
-        self.priority = Some(priority);
-    }
-}
-
-pub enum ChangeRequest {
-    AddDoc((Document, Permission, u32)),
-    DelDoc(Hash),
-    AddEntry((Entry, u32)),
-    DelEntry((Hash, Hash)),
-    DelQuery(Query),
-    SetTtlDoc((Hash, u32)),
-    SetTtlEntry((Hash, Hash, u32)),
-}
-
-#[derive(Debug)]
-pub enum ChangeResult {
-    Ok,
-    Failed,
-    NoSuchDoc,
-    NoSuchEntry,
-    SchemaInUse,
-    CertInUse,
-    FailedSchemaCheck,
-    SchemaNotFound,
-    InvalidQuery,
-}
-
-enum DbControl {
-    Stop,
-}
-
-struct QueryRequest {
-    query:  Query,
-    permission: Permission,
-}
-
-pub enum QueryResponse {
-    Doc((Document, i32)),
-    Entry((Entry, i32)),
-    DoneForever,
-    Invalid,
-    BadDoc(Hash),
-}
-
-
-
 
 

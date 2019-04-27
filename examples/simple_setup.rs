@@ -34,7 +34,7 @@ fn main() {
     })).unwrap();
     let schema_permission = Permission::new().local_net(true).direct(true);
     let res = db.add_doc(test_schema, &schema_permission, 0).unwrap();
-    let res = res.recv();
+    let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);
 
     println!("Making a document");
@@ -46,7 +46,7 @@ fn main() {
     let doc_permission = schema_permission.clone().advertise(true);
     let doc_hash = test_doc.hash();
     let res = db.add_doc(test_doc, &doc_permission, 0).unwrap();
-    let res = res.recv();
+    let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);
 
     println!("Making an entry");
@@ -55,7 +55,7 @@ fn main() {
         "text": "Making a post",
     }), &vault, &my_key).unwrap();
     let res = db.add_entry(test_entry, 0).unwrap();
-    let res = res.recv();
+    let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);
 
     println!("Retrieving a document");
@@ -63,7 +63,7 @@ fn main() {
     query.add_root(&doc_hash);
     let res = db.query(query, &doc_permission, 1).unwrap();
     loop {
-        let query_result = res.recv();
+        let query_result = res.recv().unwrap();
         match query_result {
             QueryResponse::Doc((doc, effort)) => {
                 println!("    Got a document back, effort = {}", effort);
@@ -88,7 +88,7 @@ fn main() {
 
     println!("Deleting a document");
     let res = db.del_doc(doc_hash.clone()).unwrap();
-    let res = res.recv();
+    let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);
 
     println!("Closing the database");

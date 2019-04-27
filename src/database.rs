@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use crossbeam_channel::{TryRecvError, RecvError, Sender, Receiver, unbounded, bounded, Select};
+use crossbeam_channel::{TrySendError, TryRecvError, RecvError, Sender, Receiver, unbounded, bounded, Select};
 
-use super::{Permission, Query, Value, Hash, Document, Entry};
+use super::{Permission, Query, Hash, Document, Entry};
 
 /// Types of changes that can be made to the database.
 enum ChangeRequest {
@@ -52,8 +52,8 @@ enum DbControl {
 
 /// A bundled query request for the system
 struct QueryRequest {
-    query:  Query,
-    permission: Permission,
+    pub query:  Query,
+    pub permission: Permission,
 }
 
 /// Possible responses to a query.
@@ -79,7 +79,7 @@ pub struct Db {
     handle: std::thread::JoinHandle<()>,
     control_in: Sender<DbControl>,
     change_in: Sender<(ChangeRequest, Sender<ChangeResult>)>,
-    query_in: Sender<(QueryRequest, Sender<QueryResponse>)>,
+    query_in: Sender<(QueryRequest, Sender<QueryResponse>, Receiver<()>)>,
 }
 
 impl Db {
@@ -150,9 +150,10 @@ impl Db {
     pub fn query(&self, query: Query, perm: &Permission, capacity: usize) -> Result<QueryWait, ()> {
         if capacity == 0 { return Err(()); }
         let (result_in, result_out) = bounded(capacity);
+        let (done, quit) = bounded(0); // Channel to drop when the query maker is done
         let request = QueryRequest { query: query, permission: perm.clone() };
-        self.query_in.send((request, result_in)).map_err(|_e| ())?;
-        Ok(QueryWait { chan: result_out })
+        self.query_in.send((request, result_in, quit)).map_err(|_e| ())?;
+        Ok(QueryWait { chan: result_out, done: done })
     }
 
 }
@@ -177,7 +178,8 @@ impl ChangeWait {
 }
 
 pub struct QueryWait {
-    chan: Receiver<QueryResponse>
+    chan: Receiver<QueryResponse>,
+    done: Sender<()>
 }
 
 impl QueryWait {
@@ -234,6 +236,77 @@ impl InternalDb {
             ChangeRequest::SetTtlEntry(_)   => ChangeResult::Failed,
         }
     }
+
+    fn get_doc(&self, hash: &Hash, perm: &Permission) -> Option<Document> {
+        match self.doc_db.get(hash) {
+            Some(storage) => {
+                let doc = storage.0.clone();
+                Some(doc)
+            },
+            None => None
+        }
+    }
+}
+
+struct OpenQuery {
+    root: Hash,
+    perm: Permission,
+    channel: Sender<QueryResponse>,
+    quit: Receiver<()>,
+    root_sent: bool,
+    active: bool,
+}
+
+impl OpenQuery {
+    fn new(root: Hash, perm: Permission, channel: Sender<QueryResponse>, quit: Receiver<()>) -> OpenQuery {
+        OpenQuery {
+            root,
+            perm,
+            channel,
+            quit, 
+            root_sent: false,
+            active: true,
+        }
+    }
+
+    fn channel_full(&self) -> bool {
+        self.channel.is_full()
+    }
+
+    fn done(&mut self) -> bool {
+        let done = match self.quit.try_recv() {
+            Err(e) => {
+                e.is_disconnected()
+            }
+            _ => false
+        };
+        self.active = !done;
+        done
+    }
+
+    fn get_root(&self) -> &Hash {
+        &self.root
+    }
+
+    fn is_root_sent(&self) -> bool {
+        self.root_sent
+    }
+
+    fn root_sent(&mut self) {
+        self.root_sent = true;
+    }
+
+    fn get_perm(&self) -> &Permission {
+        &self.perm
+    }
+
+    fn finish(&mut self) {
+        self.active = false;
+    }
+
+    fn try_send(&self, response: QueryResponse) -> Result<(), TrySendError<QueryResponse>> {
+        self.channel.try_send(response)
+    }
 }
 
 /// The primary event loop for the database. The actual database handles change requests, queries, 
@@ -247,13 +320,14 @@ impl InternalDb {
 fn db_loop(
     control: Receiver<DbControl>,
     change: Receiver<(ChangeRequest, Sender<ChangeResult>)>,
-    query_inbox: Receiver<(QueryRequest, Sender<QueryResponse>)>)
+    query_inbox: Receiver<(QueryRequest, Sender<QueryResponse>, Receiver<()>)>)
 {
     let mut db = InternalDb::new();
     let mut done = false;
 
-    // Set up queries to respond to
-    let mut open_queries: Vec<(QueryRequest, Sender<QueryResponse>)> = Vec::new();
+    // Queries to respond to. Contains iterators, response channel, and bool to indicate the query 
+    // is active
+    let mut open_queries: Vec<OpenQuery> = Vec::new();
     
     // Set up the channel selector
     let mut select = Select::new();
@@ -285,19 +359,38 @@ fn db_loop(
                     }
                 },
                 i if i == index_query => {
-                    if let Ok((query, resp)) = oper.recv(&query_inbox) {
-                        open_queries.push((query, resp));
+                    if let Ok((query, resp, quit)) = oper.recv(&query_inbox) {
+                        for root in query.query.root_iter() {
+                            open_queries.push(OpenQuery::new(root.clone(), query.permission.clone(), resp.clone(), quit.clone()));
+                        }
                     }
                 }
                 _ => unreachable!(),
             }
         }
 
-        open_queries.retain(|(query_request, response)| {
-            response.send(QueryResponse::DoneForever).unwrap_or(());
-            drop(response);
-            false
-        });
+        for query in open_queries.iter_mut() {
+            // Check to make sure query is open and not full right now
+            if query.done() { continue; }
+            if query.channel_full() { continue; }
+            // Send DoneForever if we're only retrieving a single document
+            if query.is_root_sent() {
+                if let Ok(()) = query.try_send(QueryResponse::DoneForever) {
+                    query.finish();
+                }
+            }
+            match db.get_doc(query.get_root(), query.get_perm()) {
+                Some(doc) => {
+                    if let Ok(()) = query.try_send(QueryResponse::Doc((doc, 0))) {
+                        query.root_sent();
+                    };
+                },
+                None => (),
+            };
+        };
+
+        // Drop completed queries
+        open_queries.retain(|query| query.active);
 
         if done {
             break;

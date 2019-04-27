@@ -82,6 +82,9 @@ fn main() {
             QueryResponse::BadDoc(_) => {
                 println!("    BadDoc: One of the root hashes refers to a document that fails schema checks");
             }
+            QueryResponse::UnknownSchema(_) => {
+                println!("    UnknownSchema: One of the root hashes mapped to a document that has an unrecognized schema");
+            }
         };
     }
     drop(res); // Done with query response

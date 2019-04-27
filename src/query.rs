@@ -36,4 +36,12 @@ impl Query {
     pub fn set_priority(&mut self, priority: Vec<String>) {
         self.priority = Some(priority);
     }
+
+    pub fn get_reference(&self) -> Option<Hash> {
+        self.reference.clone()
+    }
+
+    pub fn root_iter(&self) -> std::slice::Iter<Hash> {
+        self.root.iter()
+    }
 }

@@ -1,13 +1,13 @@
 use std::io;
 use std::io::ErrorKind::{InvalidData, UnexpectedEof};
 use std::collections::HashMap;
-use std::cmp::Ordering;
+//use std::cmp::Ordering;
 
 use byteorder::{ReadBytesExt, BigEndian};
 
-use super::{Value, Hash, Integer, Identity, Lockbox, Timestamp};
+use super::{Hash, Integer};
 use Marker;
-use ExtType;
+//use ExtType;
 
 fn not_shortest() -> io::Error {
     io::Error::new(InvalidData, "Not shortest possible encoding")

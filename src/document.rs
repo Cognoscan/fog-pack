@@ -1,8 +1,8 @@
-use std::io;
 use super::Value;
 use super::Hash;
 use super::crypto::{Vault, Key, Signature, CryptoError};
 
+#[derive(Clone)]
 pub struct Document {
     hash: Hash,
     doc: Vec<u8>,

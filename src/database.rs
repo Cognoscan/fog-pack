@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use crossbeam_channel::{Sender, Receiver, unbounded, bounded, Select};
 
-use super::{Hash, Document, Entry};
+use super::{Value, Hash, Document, Entry};
 
 /// Database for holding documents and associated entries. Tracks schema, handles queries.
 pub struct Db {
@@ -41,8 +41,8 @@ impl Db {
     }
 
     /// Add a document to the database. Returns a `ChangeWait` if request is successfuly made.
-    pub fn add_doc(&self, doc: Document, perm: Permission, ttl: u32) -> Result<ChangeWait, ()> {
-        self.make_change(ChangeRequest::AddDoc((doc, perm, ttl)))
+    pub fn add_doc(&self, doc: Document, perm: &Permission, ttl: u32) -> Result<ChangeWait, ()> {
+        self.make_change(ChangeRequest::AddDoc((doc, perm.clone(), ttl)))
     }
 
     /// Remove a document from the database, based on its hash. Returns a `ChangeWait` if request 
@@ -76,10 +76,10 @@ impl Db {
         self.make_change(ChangeRequest::SetTtlEntry((doc, entry, ttl)))
     }
 
-    pub fn query(&self, query: Query, perm: Permission, capacity: usize) -> Result<QueryWait, ()> {
+    pub fn query(&self, query: Query, perm: &Permission, capacity: usize) -> Result<QueryWait, ()> {
         if capacity == 0 { return Err(()); }
         let (result_in, result_out) = bounded(capacity);
-        let request = QueryRequest { query: query, permission: perm };
+        let request = QueryRequest { query: query, permission: perm.clone() };
         self.query_in.send((request, result_in)).map_err(|_e| ())?;
         Ok(QueryWait { chan: result_out })
     }
@@ -210,7 +210,6 @@ fn db_loop(
     // Main loop
     loop {
         let mut active = false;
-        let oper = select.try_select();
         if let Ok(oper) = select.try_select() {
             active = true;
             match oper.index() {
@@ -259,12 +258,18 @@ fn db_loop(
 
 #[derive(Clone)]
 pub struct Permission {
-    advertise: bool,
-    machine_local: bool,
-    direct: bool,
-    local_net: bool,
-    global: bool,
-    anonymous: bool,
+    pub advertise: bool,
+    pub machine_local: bool,
+    pub direct: bool,
+    pub local_net: bool,
+    pub global: bool,
+    pub anonymous: bool,
+}
+
+impl Default for Permission {
+    fn default() -> Self {
+        Permission::new()
+    }
 }
 
 impl Permission {
@@ -280,35 +285,40 @@ impl Permission {
     }
 
     /// Whether to advertise a document or not. This is ignored for entries and queries.
-    pub fn advertise(&mut self, yes: bool) {
+    pub fn advertise(mut self, yes: bool) -> Self {
         self.advertise = yes;
+        self
     }
 
     /// Whether this can be shared with other processes on the same machine
-    pub fn machine_local(&mut self, yes: bool) {
+    pub fn machine_local(mut self, yes: bool) -> Self {
         self.machine_local = yes;
+        self
     }
 
     /// Whether this can be shared with a node that is directly connected.
     ///
     /// This includes nodes reached via non-mesh Bluetooth, Wi-Fi Direct, direct cable connection, 
     /// etc.
-    pub fn direct(&mut self, yes: bool) {
+    pub fn direct(mut self, yes: bool) -> Self {
         self.direct = yes;
+        self
     }
 
     /// Whether this can be shared with a node on the local network.
     ///
     /// This includes nodes reached via local Wi-Fi, mesh Wi-Fi, or mesh Bluetooth.
-    pub fn local_net(&mut self, yes: bool) {
+    pub fn local_net(mut self, yes: bool) -> Self {
         self.local_net = yes;
+        self
     }
 
     /// Whether this can be shared with a node anywhere non-local.
     ///
     /// This is for nodes anywhere on the internet.
-    pub fn global(&mut self, yes: bool) {
+    pub fn global(mut self, yes: bool) -> Self {
         self.global = yes;
+        self
     }
 
     /// Whether this should be shared anonymously. This generally increases latency and decreases 
@@ -318,14 +328,49 @@ impl Permission {
     /// methods. Examples include onion routing, garlic routing, and mix networks. Compromises may 
     /// still be possible through careful traffic analysis, especially if non-anonymous documents & 
     /// queries are used.
-    pub fn anonymous(&mut self, yes: bool) {
+    pub fn anonymous(mut self, yes: bool) -> Self {
         self.anonymous = yes;
+        self
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum QueryOrder {
+    Random,
+    LowestFirst,
+    HighestFirst,
+}
+
+
 #[derive(Clone)]
 pub struct Query {
-    pub query: Vec<u8>,
+   reference: Option<Hash>,
+   root: Vec<Hash>,
+   priority: Option<Vec<String>>,
+   order: QueryOrder
+}
+
+impl Query {
+    pub fn new() -> Query {
+        Query {
+            reference: None,
+            root: Vec::new(),
+            priority: Some(Vec::new()),
+            order: QueryOrder::Random
+        }
+    }
+
+    pub fn set_ref(&mut self, hash: &Hash) {
+        self.reference = Some(hash.clone());
+    }
+
+    pub fn add_root(&mut self, root: &Hash) {
+        self.root.push(root.clone());
+    }
+
+    pub fn set_priority(&mut self, priority: Vec<String>) {
+        self.priority = Some(priority);
+    }
 }
 
 pub enum ChangeRequest {

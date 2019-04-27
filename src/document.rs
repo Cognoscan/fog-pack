@@ -63,19 +63,4 @@ impl Document {
             sig.encode(buf);
         }
     }
-
-    pub fn get_value(&self) -> io::Result<Value> {
-        super::decode::read_value(&mut &self.doc[..])
-    }
-
-    pub fn decode(_buf: &mut &[u8]) -> Result<Document, CryptoError> {
-        // Extract the document, but don't decode the Value
-        // hash: Hash,
-        // doc: Vec<u8>,
-        // signatures: Vec<Signature>,
-        // len: usize,
-        // Get number of signatures
-        // Attempt to read in all signatures
-        Err(CryptoError::UnsupportedVersion)
-    }
 }

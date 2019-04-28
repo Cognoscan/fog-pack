@@ -26,6 +26,29 @@ pub enum Value {
 
 impl Value {
 
+    pub fn as_ref(&self) -> ValueRef {
+        match self {
+            &Value::Null => ValueRef::Null,
+            &Value::Boolean(v) => ValueRef::Boolean(v),
+            &Value::Integer(v) => ValueRef::Integer(v),
+            &Value::String(ref v) => ValueRef::String(v.as_ref()),
+            &Value::F32(v) => ValueRef::F32(v),
+            &Value::F64(v) => ValueRef::F64(v),
+            &Value::Binary(ref v) => ValueRef::Binary(v.as_slice()),
+            &Value::Array(ref v) => {
+                ValueRef::Array(v.iter().map(|i| i.as_ref()).collect())
+            },
+            &Value::Object(ref v) => {
+                ValueRef::Object(v.iter().map(
+                    |(f, ref i)| (f.as_ref(), i.as_ref())).collect())
+            },
+            &Value::Hash(ref v) => ValueRef::Hash(v.clone()),
+            &Value::Identity(ref v) => ValueRef::Identity(v.clone()),
+            &Value::Lockbox(ref v) => ValueRef::Lockbox(v.clone()),
+            &Value::Timestamp(v) => ValueRef::Timestamp(v),
+        }
+    }
+
     pub fn is_nil(&self) -> bool {
         if let Value::Null = *self {
             true
@@ -523,6 +546,30 @@ pub enum ValueRef<'a> {
 }
 
 impl<'a> ValueRef<'a> {
+
+    pub fn to_owned(&self) -> Value {
+        match self {
+            &ValueRef::Null => Value::Null,
+            &ValueRef::Boolean(v) => Value::Boolean(v),
+            &ValueRef::Integer(v) => Value::Integer(v),
+            &ValueRef::String(v) => Value::String(v.to_string()),
+            &ValueRef::F32(v) => Value::F32(v),
+            &ValueRef::F64(v) => Value::F64(v),
+            &ValueRef::Binary(v) => Value::Binary(v.to_vec()),
+            &ValueRef::Array(ref v) => {
+                Value::Array(v.iter().map(|i| i.to_owned()).collect())
+            }
+            &ValueRef::Object(ref v) => {
+                let obj = 
+                    v.iter().map(|(ref f,i)| (f.to_string(), i.to_owned())).collect();
+                Value::Object(obj)
+            }
+            &ValueRef::Hash(ref v) => Value::Hash(v.clone()),
+            &ValueRef::Identity(ref v) => Value::Identity(v.clone()),
+            &ValueRef::Lockbox(ref v) => Value::Lockbox(v.clone()),
+            &ValueRef::Timestamp(v) => Value::Timestamp(v),
+        }
+    }
 
     pub fn is_nil(&self) -> bool {
         if let ValueRef::Null = *self {

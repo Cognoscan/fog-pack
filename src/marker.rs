@@ -188,3 +188,37 @@ impl From<ExtType> for u8 {
         val.to_i8() as u8
     }
 }
+
+/// Defines the possible decodings for markers + ExtType + length bytes.
+#[derive(Debug)]
+pub enum MarkerType {
+    Null,
+    Boolean(bool),
+    NegInt((usize, i8)),
+    PosInt((usize, u8)),
+    String(usize),
+    F32,
+    F64,
+    Binary(usize),
+    Array(usize),
+    Object(usize),
+    Hash(usize),
+    Identity(usize),
+    Lockbox(usize),
+    Timestamp(usize),
+}
+
+impl MarkerType {
+    pub fn from_ext_i8(len: usize, v: i8) -> Option<MarkerType> {
+        match v {
+            -1 => Some(MarkerType::Timestamp(len)),
+            1  => Some(MarkerType::Hash(len)),
+            2  => Some(MarkerType::Identity(len)),
+            3  => Some(MarkerType::Lockbox(len)),
+            _ => None,
+        }
+    }
+}
+
+
+

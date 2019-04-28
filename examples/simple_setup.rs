@@ -32,6 +32,7 @@ fn main() {
             }
         ]
     })).unwrap();
+    let schema_hash = test_schema.hash();
     let schema_permission = Permission::new().local_net(true).direct(true);
     let res = db.add_doc(test_schema, &schema_permission, 0).unwrap();
     let res = res.recv().unwrap();
@@ -39,7 +40,7 @@ fn main() {
 
     println!("Making a document");
     let mut test_doc = Document::new(msgpack!({
-        "": Hash::new_empty(),
+        "": schema_hash.clone(),
         "title": "Test chat",
         "description": "This is a test chat",
     })).unwrap();
@@ -69,6 +70,9 @@ fn main() {
         match query_result {
             QueryResponse::Doc((doc, effort)) => {
                 println!("    Got a document back, effort = {}", effort);
+                println!("    Document is:");
+                println!("{}", doc.get_value());
+                println!("");
             },
             QueryResponse::Entry(_) => {
                 println!("    Got an entry back");

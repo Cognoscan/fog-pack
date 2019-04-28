@@ -34,7 +34,7 @@ pub mod crypto;
 pub mod encode;
 pub mod decode;
 
-use marker::{Marker, ExtType};
+use marker::{Marker, ExtType, MarkerType};
 
 pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
 pub use self::index::Index;

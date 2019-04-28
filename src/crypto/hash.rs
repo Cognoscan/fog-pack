@@ -21,6 +21,7 @@ pub struct Hash {
     digest: [u8; 64],
 }
 
+#[derive(Clone)]
 pub struct HashState {
     version: u8,
     state: Blake2BState,

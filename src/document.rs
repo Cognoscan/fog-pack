@@ -1,66 +1,73 @@
-use super::Value;
-use super::Hash;
-use super::crypto::{Vault, Key, Signature, CryptoError};
+use super::{Hash, Value, ValueRef};
+use super::crypto::{HashState, Vault, Key, Identity, CryptoError};
 
 #[derive(Clone)]
 pub struct Document {
-    hash: Hash,
+    hash_state: HashState,
+    doc_hash: Hash,
     doc: Vec<u8>,
-    signatures: Vec<Signature>,
-    len: usize,
+    signed_by: Vec<Identity>,
 }
 
 impl Document {
-    /// Create a new document from a given Value.
-    pub fn new(v: Value) -> Option<Document> {
+
+    /// Create a new document from a given Value. Fails if value isn't an Object.
+    pub fn new(v: Value) -> Result<Document, ()> {
+        if !v.is_obj() { return Err(()); }
         let mut doc = Vec::new();
         super::encode::write_value(&mut doc, &v);
-        let hash = Hash::new(1, &doc[..]).unwrap(); // Shouldn't fail if version == 1
-        let len = doc.len() + 1; // +1 for the number of signatures at the end
-        Some(Document {
-            hash,
+        let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+        hash_state.update(&doc[..]); 
+        let doc_hash = hash_state.get_hash();
+        Ok(Document {
+            hash_state,
+            doc_hash,
             doc,
-            signatures: Vec::new(),
-            len
+            signed_by: Vec::new(),
         })
     }
 
-    /// Sign the document with a given Key from a given Vault. Documents can be signed up to 127 
-    /// times. Fails if the key is invalid (`BadKey`), can't be found (`NotInStorage`), or is being 
-    /// signed more than 127 times (`BadLength`)
+    /// Sign the document with a given Key from a given Vault. Fails if the key is invalid 
+    /// (`BadKey`), can't be found (`NotInStorage`).
     pub fn sign(&mut self, vault: &Vault, key: &Key) -> Result<(), CryptoError> {
-        if self.signatures.len() >= 127 { return Err(CryptoError::BadLength); }
-        let signature = vault.sign(&self.hash, key)?;
-        self.len += signature.len();
-        self.signatures.push(signature);
+        let signature = vault.sign(&self.doc_hash, key)?;
+        self.signed_by.push(key.get_identity());
+        let len = self.doc.len();
+        signature.encode(&mut self.doc);
+        if self.doc.len() > len {
+            self.hash_state.update(&self.doc[len..]);
+        }
         Ok(())
     }
 
-    pub fn num_signatures(&self) -> u8 {
-        self.signatures.len() as u8
-    }
-
-    /// Create a document from a given value and immediately sign it.
-    pub fn new_signed(v: Value, vault: &Vault, key: &Key) -> Result<Document, CryptoError> {
-        let mut doc = Document::new(v).unwrap();
-        doc.sign(vault, key)?;
-        Ok(doc)
+    pub fn signed_by(&self) -> std::slice::Iter<Identity> {
+        self.signed_by.iter()
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.doc.len()
     }
 
+    pub fn to_vec(self) -> Vec<u8> {
+        self.doc
+    }
+
+    /// Get the Hash of the document as it currently is. Note that adding additional signatures 
+    /// will change the Hash.
     pub fn hash(&self) -> Hash {
-        self.hash.clone()
+        self.hash_state.get_hash()
     }
 
-    pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.reserve(self.len);
-        buf.extend_from_slice(&self.doc[..]);
-        buf.push(self.num_signatures());
-        for sig in self.signatures.iter() {
-            sig.encode(buf);
-        }
+    /*
+    pub fn to_value_ref(self) -> ValueRef {
+        ValueRef::
     }
+    */
 }
+
+// Finds the schema hash for a raw, encoded document. Fails if raw data isn't an object, or if 
+// the empty field ("") doesn't contain a Hash. If there is no empty field, `None` is returned.
+//fn extract_schema(&[u8]) -> Result<Option<Hash>, ()> {
+//
+//}
+

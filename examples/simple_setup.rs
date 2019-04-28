@@ -10,6 +10,14 @@ fn main() {
         crypto::PasswordLevel::Interactive,
         String::from("BadPassword")).unwrap();
 
+    let mut bin_raw = Vec::new();
+    let mut bin: Vec<u8> = Vec::new();
+    bin.extend_from_slice(b"Test");
+    encode::write_value(&mut bin_raw, &Value::from(bin));
+    let bin = decode::read_to_bin_ref(&mut &bin_raw[..], 6);
+    println!("{:?}", bin);
+    println!("{:?}", bin_raw);
+
     println!("Generate a new ID");
     let my_key = vault.new_key(); 
 

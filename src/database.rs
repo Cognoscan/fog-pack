@@ -22,7 +22,7 @@ enum ChangeRequest {
 }
 
 /// Result of any changes requested of the database.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum ChangeResult {
     /// Change made successfuly
     Ok,
@@ -253,6 +253,7 @@ struct OpenQuery {
     perm: Permission,
     channel: Sender<QueryResponse>,
     quit: Receiver<()>,
+    root_in_db: bool,
     root_sent: bool,
     active: bool,
 }
@@ -264,6 +265,7 @@ impl OpenQuery {
             perm,
             channel,
             quit, 
+            root_in_db: true,
             root_sent: false,
             active: true,
         }
@@ -282,6 +284,14 @@ impl OpenQuery {
         };
         self.active = !done;
         done
+    }
+
+    fn get_in_db(&self) -> bool {
+        self.root_in_db
+    }
+
+    fn set_in_db(&mut self, in_db: bool) {
+        self.root_in_db = in_db;
     }
 
     fn get_root(&self) -> &Hash {
@@ -354,8 +364,23 @@ fn db_loop(
                 },
                 i if i == index_change => {
                     if let Ok((cmd, resp)) = oper.recv(&change) {
+                        // Get document hash if document is being added
+                        let (add_doc, hash) = if let ChangeRequest::AddDoc((ref doc,_,_)) = cmd {
+                            (true, doc.hash())
+                        }
+                        else {
+                            (false, Hash::new_empty())
+                        };
+                        // Make change to database
+                        let result = db.make_change(cmd);
+                        // Check for open queries on this document & update as appropriate
+                        if (result == ChangeResult::Ok) && add_doc {
+                            for query in open_queries.iter_mut() {
+                                if query.get_root() == &hash { query.set_in_db(true); }
+                            }
+                        }
                         // Send the response. If nothing is at the other end, we don't care.
-                        resp.send(db.make_change(cmd)).unwrap_or(());
+                        resp.send(result).unwrap_or(());
                     }
                 },
                 i if i == index_query => {
@@ -370,9 +395,10 @@ fn db_loop(
         }
 
         for query in open_queries.iter_mut() {
-            // Check to make sure query is open and not full right now
+            // Check to make sure query is open, not full, and we have the document in the database
             if query.done() { continue; }
             if query.channel_full() { continue; }
+            if !query.get_in_db() { continue; }
             // Send DoneForever if we're only retrieving a single document
             if query.is_root_sent() {
                 if let Ok(()) = query.try_send(QueryResponse::DoneForever) {
@@ -385,7 +411,7 @@ fn db_loop(
                         query.root_sent();
                     };
                 },
-                None => (),
+                None => { query.set_in_db(false); },
             };
         };
 

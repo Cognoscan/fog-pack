@@ -10,14 +10,6 @@ fn main() {
         crypto::PasswordLevel::Interactive,
         String::from("BadPassword")).unwrap();
 
-    let mut bin_raw = Vec::new();
-    let mut bin: Vec<u8> = Vec::new();
-    bin.extend_from_slice(b"Test");
-    encode::write_value(&mut bin_raw, &Value::from(bin));
-    let bin = decode::read_to_bin_ref(&mut &bin_raw[..], 6);
-    println!("{:?}", bin);
-    println!("{:?}", bin_raw);
-
     println!("Generate a new ID");
     let my_key = vault.new_key(); 
 
@@ -53,6 +45,11 @@ fn main() {
     })).unwrap();
     let doc_permission = schema_permission.clone().advertise(true);
     let doc_hash = test_doc.hash();
+
+    println!("Setting up query, then adding document");
+    let mut query = Query::new();
+    query.add_root(&doc_hash);
+    let query_res = db.query(query, &doc_permission, 1).unwrap();
     let res = db.add_doc(test_doc, &doc_permission, 0).unwrap();
     let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);
@@ -67,11 +64,8 @@ fn main() {
     println!("    Got back: {:?}", res);
 
     println!("Retrieving a document");
-    let mut query = Query::new();
-    query.add_root(&doc_hash);
-    let res = db.query(query, &doc_permission, 1).unwrap();
     loop {
-        let query_result = res.recv().unwrap();
+        let query_result = query_res.recv().unwrap();
         match query_result {
             QueryResponse::Doc((doc, effort)) => {
                 println!("    Got a document back, effort = {}", effort);

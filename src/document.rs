@@ -58,11 +58,9 @@ impl Document {
         self.hash_state.get_hash()
     }
 
-    /*
-    pub fn to_value_ref(self) -> ValueRef {
-        ValueRef::
+    pub fn get_value(&self) -> ValueRef {
+        super::decode::read_value_ref(&mut &self.doc[..]).unwrap()
     }
-    */
 }
 
 // Finds the schema hash for a raw, encoded document. Fails if raw data isn't an object, or if 

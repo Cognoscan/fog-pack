@@ -7,6 +7,7 @@ use byteorder::{ReadBytesExt, BigEndian};
 
 use super::{Hash, Integer};
 use Marker;
+use decode;
 //use ExtType;
 
 fn not_shortest() -> io::Error {
@@ -26,6 +27,25 @@ pub struct Schema {
     entries: HashMap<String, Validator>,
     types: HashMap<String, Validator>,
     unknown_ok: bool
+}
+
+impl Schema {
+    pub fn from_raw(_raw: &[u8]) -> io::Result<Schema> {
+        Ok(Schema {
+            name: String::new(),
+            hash: Hash::new_empty(),
+            version: Integer::from(0),
+            required: HashMap::new(),
+            optional: HashMap::new(),
+            entries: HashMap::new(),
+            types: HashMap::new(),
+            unknown_ok: false,
+        })
+    }
+
+    pub fn validate_doc(&self, _doc: &mut &[u8]) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 enum Validator {
@@ -127,48 +147,10 @@ pub fn validate_doc(_schema: &Schema, doc: &mut &[u8]) -> io::Result<()> {
     };
     if len == 0 { return Err(io::Error::new(InvalidData, "Document cannot have zero fields")); }
 
-    let _old_field = get_string(doc)?;
+    let _old_field = decode::read_string(doc)?;
 
     Ok(())
 }
-
-fn get_string<'a>(buf: &mut &'a [u8]) -> io::Result<&'a str> {
-    let marker = Marker::from_u8(buf.read_u8()?);
-    let len = match marker {
-        Marker::FixStr(len) => {
-            len as usize
-        },
-        Marker::Str8 => {
-            let len = buf.read_u8()? as usize;
-            if len <= 31 { return Err(not_shortest()); }
-            len
-        }
-        Marker::Str16 => {
-            let len = buf.read_u16::<BigEndian>()? as usize;
-            if len <= (std::u8::MAX as usize) { return Err(not_shortest()); }
-            len
-        }
-        Marker::Str32 => {
-            let len = buf.read_u32::<BigEndian>()? as usize;
-            if len <= (std::u16::MAX as usize) { return Err(not_shortest()); }
-            len
-        },
-        _ => {
-            return Err(io::Error::new(InvalidData, "Expected String, got something else"));
-        }
-    };
-    if buf.len() >= len {
-        let (data, rem) = buf.split_at(len);
-        *buf = rem;
-        let data = ::std::str::from_utf8(data)
-            .map_err(|_e| io::Error::new(InvalidData, "String decoded is not valid UTF-8"))?;
-        Ok(data)
-    }
-    else {
-        Err(io::Error::new(UnexpectedEof, "String length larger than amount of data"))
-    }
-}
-
 
 
 

@@ -7,6 +7,8 @@ use super::crypto::{HashState, Vault, Key, Identity, CryptoError};
 use decode;
 use crypto;
 
+/// A Condense-db document. Guaranteed to hold a raw msgpack object with validated signatures. 
+/// Schema validation is not guaranteed unless it has come from the database.
 #[derive(Clone)]
 pub struct Document {
     hash_state: HashState,

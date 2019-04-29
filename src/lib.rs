@@ -36,6 +36,7 @@ pub mod decode;
 
 use marker::{Marker, ExtType, MarkerType};
 
+pub use self::schema::Schema;
 pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
 pub use self::index::Index;
 //pub use self::index_ref::IndexRef;

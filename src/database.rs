@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crossbeam_channel::{TrySendError, TryRecvError, RecvError, Sender, Receiver, unbounded, bounded, Select};
 
-use super::{Permission, Query, Hash, Document, Entry};
+use super::{Schema, Permission, Query, Hash, Document, Entry};
 use document;
 
 /// Types of changes that can be made to the database.
@@ -42,6 +42,8 @@ pub enum ChangeResult {
     FailedSchemaCheck,
     /// Couldn't find schema referenced by the document.
     SchemaNotFound,
+    /// Document tried to use a non-schema document as its schema.
+    NotValidSchema,
     /// Query didn't match schema of the document(s) being operated on.
     InvalidQuery,
 }
@@ -231,32 +233,44 @@ impl InternalDb {
                     let doc_len = doc.doc_len();
                     let doc = doc.to_vec();
                     // extract_schema verifies the document is a msgpack object & gets the schema.
-                    match document::extract_schema(&doc[..]) {
+                    let result = match document::extract_schema(&doc[..]) {
                         Ok(Some(schema_hash)) => {
                             let result = match self.doc_db.get(&schema_hash) {
-                                Some(schema) => {
-                                    // verify the document against the schema
-                                    // Increment the schema tracking count
-                                    self.schema_tracking.entry(schema_hash.clone())
-                                        .and_modify(|v| *v += 1)
-                                        .or_insert(1);
-                                    ChangeResult::Ok
+                                Some((_,schema,_,_)) => {
+                                    // Get the schema and verify the document
+                                    if let Ok(verifier) = Schema::from_raw(&schema[..]) {
+                                        if let Ok(_) = verifier.validate_doc(&mut &doc[..]) {
+                                            // Increment the schema tracking count
+                                            self.schema_tracking.entry(schema_hash.clone())
+                                                .and_modify(|v| *v += 1)
+                                                .or_insert(1);
+                                            ChangeResult::Ok
+                                        }
+                                        else {
+                                            ChangeResult::NotValidSchema
+                                        }
+                                    }
+                                    else {
+                                        ChangeResult::NotValidSchema
+                                    }
                                 },
                                 None => {
                                     ChangeResult::SchemaNotFound
                                 }
                             };
                             if result == ChangeResult::Ok {
-                                self.doc_db.insert(hash, (doc_len, doc, perm, ttl));
                             }
                             result
                         }
                         Ok(None) => {
-                            self.doc_db.insert(hash, (doc_len, doc, perm, ttl));
                             ChangeResult::Ok
                         }
                         Err(_) => ChangeResult::FailedSchemaCheck,
+                    };
+                    if result == ChangeResult::Ok {
+                        self.doc_db.insert(hash, (doc_len, doc, perm, ttl));
                     }
+                    result
                 }
                 else {
                     ChangeResult::Ok

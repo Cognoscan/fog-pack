@@ -11,10 +11,9 @@ validation criteria. The secondary purpose of a schema document is to specify
 which fields should be queryable, and how they may be queried. This allows a 
 database to optimize for queries ahead of time.
 
-All documents may refer to the schema document they meet using the `$schema` 
-reserved field. If left unspecified, the base schema document is used. The 
-field is always an array of Hash types, each of which must be the Document Hash 
-of a valid schema document.
+All documents may refer to the schema document they meet using an empty string 
+for the field. This unique field, if used, must contain a schema hash. If left 
+unspecified, it is assumed that there is no schema.
 
 When are Documents Validated?
 -----------------------------
@@ -356,7 +355,7 @@ following optional fields:
 	hashes. If this field is within an entry, the document referred to by the 
 	field's hash must be validated against the schema document the `link` Hash 
 	refers to, or must have been validated against one of the schema in the array 
-	and have that match its `$schema` field. If the Hash for `link` refers to a 
+	and have that match its specified schema. If the Hash for `link` refers to a 
 	non-schema document, validation always fails. This is ignored if used for 
 	anything that isn't in an entry, as `$link` queries can't be made within 
 	document fields.
@@ -438,7 +437,7 @@ below:
 ```json
 {
   "document(Condense-db Core Schema)" : [{
-    "$schema": "<Hash(Self)>",
+    "": "<Hash(Self)>",
     "name": "Condense-db Core Schema",
     "version": 1,
     "required": [
@@ -470,13 +469,12 @@ below:
         "type": "Obj",
         "comment": "Null type, can only be null, but can be queried",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Null" }
         ],
         "optional": [
           { "name": "comment", "type": "Str"  },
-          { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" }
+          { "name": "query",   "type": "Bool" }
         ]
       },
 
@@ -485,7 +483,7 @@ below:
         "type": "Obj",
         "comment": "Boolean type, can be true or false",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Bool" }
         ],
         "optional": [
@@ -493,7 +491,6 @@ below:
           { "name": "comment", "type": "Str"  },
           { "name": "const",   "type": "Bool" },
           { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" },
           { "name": "ord",     "type": "Bool" }
         ]
       },
@@ -503,7 +500,7 @@ below:
         "type": "Obj",
         "comment": "Integer type, can range from -2^63 to 2^64-1",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Int" }
         ],
         "optional": [
@@ -517,7 +514,6 @@ below:
           { "name": "default", "type": "Int"  },
           { "name": "comment", "type": "Str"  },
           { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" },
           { "name": "ord",     "type": "Bool" },
           { "name": "bit",     "type": "Bool" }
         ]
@@ -528,7 +524,7 @@ below:
         "type": "Obj",
         "comment": "String type, can hold arbitrary byte string",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Str" }
         ],
         "optional": [
@@ -541,7 +537,6 @@ below:
           { "name": "default", "type": "Str"  },
           { "name": "comment", "type": "Str"  },
           { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" },
           { "name": "ord",     "type": "Bool" },
           { "name": "regex",   "type": "Bool" }
         ]
@@ -552,7 +547,7 @@ below:
         "type": "Obj",
         "comment": "32-bit floating type",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "F32" }
         ],
         "optional": [
@@ -566,7 +561,6 @@ below:
           { "name": "default", "type": "F32"  },
           { "name": "comment", "type": "Str"  },
           { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" },
           { "name": "ord",     "type": "Bool" }
         ]
       },
@@ -576,7 +570,7 @@ below:
         "type": "Obj",
         "comment": "64-bit floating type",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "F64" }
         ],
         "optional": [
@@ -590,7 +584,6 @@ below:
           { "name": "default", "type": "F64"  },
           { "name": "comment", "type": "Str"  },
           { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" },
           { "name": "ord",     "type": "Bool" }
         ]
       },
@@ -600,7 +593,7 @@ below:
         "type": "Obj",
         "comment": "Binary type, can hold arbitrary byte sequence",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Bin" }
         ],
         "optional": [
@@ -612,7 +605,6 @@ below:
           { "name": "default", "type": "Bin"  },
           { "name": "comment", "type": "Str"  },
           { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" },
           { "name": "bit",     "type": "Bool" },
           { "name": "ord",     "type": "Bool" }
         ]
@@ -623,16 +615,16 @@ below:
         "type": "Obj",
         "comment": "Array type, can hold arrays of values",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Array" }
         ],
         "optional": [
           { "name": "in",            "type": "Array", "items": "Array", "unique": true },
           { "name": "nin",           "type": "Array", "items": "Array", "unique": true },
           { "name": "const",         "type": "Array" },
-          { "name": "items",         "type": "Multi", "any_of": ["Str", "StrArray"] },
-          { "name": "extra_items",   "type": "Str"   },
-          { "name": "contains",      "type": "Multi", "any_of": ["Str", "StrArray"] },
+          { "name": "items",         "type": "Multi", "any_of": ["StrName", "StrArray"] },
+          { "name": "extra_items",   "type": "StrName"   },
+          { "name": "contains",      "type": "Multi", "any_of": ["StrName", "StrArray"] },
           { "name": "unique_fields", "type": "Array", "items": "Str", "unique": true },
           { "name": "min_len",       "type": "Int", "min": 0 },
           { "name": "max_len",       "type": "Int", "min": 0 },
@@ -640,7 +632,6 @@ below:
           { "name": "default",       "type": "Array" },
           { "name": "comment",       "type": "Str"   },
           { "name": "query",         "type": "Bool"  },
-          { "name": "sign",          "type": "Bool" },
           { "name": "array",         "type": "Bool"  }
         ]
       },
@@ -650,23 +641,22 @@ below:
         "type": "Obj",
         "comment": "Object type: any key-value map",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Obj" }
         ],
         "optional": [
           { "name": "in",         "type": "Array", "items": "Obj", "unique": true },
           { "name": "nin",        "type": "Array", "items": "Obj", "unique": true },
-          { "name": "const",      "type": "Obj"  },
+          { "name": "const",      "type": "Obj"     },
           { "name": "required",   "type": "Array", "items": "Type", "unique_fields": ["name"] },
           { "name": "optional",   "type": "Array", "items": "Type", "unique_fields": ["name"] },
           { "name": "min_fields", "type": "Int", "min": 0 },
           { "name": "max_fields", "type": "Int", "min": 0 },
-          { "name": "field_type", "type": "Str"  },
-          { "name": "default",    "type": "Obj"  },
-          { "name": "comment",    "type": "Str"  },
-          { "name": "query",      "type": "Bool" },
-          { "name": "sign",       "type": "Bool" },
-          { "name": "unknown_ok", "type": "Bool" }
+          { "name": "field_type", "type": "StrName" },
+          { "name": "default",    "type": "Obj"     },
+          { "name": "comment",    "type": "Str"     },
+          { "name": "query",      "type": "Bool"    },
+          { "name": "unknown_ok", "type": "Bool"    }
         ]
       },
 
@@ -675,7 +665,7 @@ below:
         "type": "Obj",
         "comment": "Hash type: any cryptographihc hash",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Hash" }
         ],
         "optional": [
@@ -685,7 +675,6 @@ below:
           { "name": "default",    "type": "Hash" },
           { "name": "comment",    "type": "Str" },
           { "name": "query",      "type": "Bool" },
-          { "name": "sign",       "type": "Bool" },
           { "name": "link",       "type": "Multi", "any_of": [ "Hash", "HashArray" ] }
         ]
       },
@@ -695,13 +684,12 @@ below:
         "type": "Obj",
         "comment": "Identity type: any cryptographic public key",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Ident" }
         ],
         "optional": [
           { "name": "comment",    "type": "Str" },
-          { "name": "query",      "type": "Bool" },
-          { "name": "sign",       "type": "Bool" }
+          { "name": "query",      "type": "Bool" }
         ]
       },
 
@@ -710,13 +698,12 @@ below:
         "type": "Obj",
         "comment": "Lockbox type: Encrypted data, either secret/private keys or an encrypted value",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Lock" }
         ],
         "optional": [
           { "name": "comment",    "type": "Str" },
-          { "name": "query",      "type": "Bool" },
-          { "name": "sign",       "type": "Bool" }
+          { "name": "query",      "type": "Bool" }
         ]
       },
 
@@ -725,7 +712,7 @@ below:
         "type": "Obj",
         "comment": "Timestamp type",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Time" }
         ],
         "optional": [
@@ -739,7 +726,6 @@ below:
           { "name": "default", "type": "Time" },
           { "name": "comment", "type": "Str"  },
           { "name": "query",   "type": "Bool" },
-          { "name": "sign",    "type": "Bool" },
           { "name": "ord",     "type": "Bool" }
         ]
       },
@@ -749,9 +735,9 @@ below:
         "type": "Obj",
         "comment": "Type that can be one of multiple types",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str", "const": "Multi" },
-          { "name": "any_of",   "type": "Array", "items": "Str", "unique": true }
+          { "name": "any_of",   "type": "Array", "items": "StrName", "unique": true }
         ],
         "optional": [
           { "name": "comment", "type": "Str" }
@@ -763,16 +749,23 @@ below:
         "type": "Obj",
         "comment": "Type Definition used to reference complex types",
         "required": [
-          { "name": "name", "type": "Str" },
+          { "name": "name", "type": "StrName" },
           { "name": "type", "type": "Str" }
         ],
         "optional": [ { "name": "comment", "type": "Str" } ]
       },
 
       {
+        "name": "StrName",
+        "type": "Str",
+        "comment": "Used to validate type names",
+        "matches": "[^$].*"
+      },
+
+      {
         "name": "StrArray",
         "type": "Array",
-        "items": "Str",
+        "items": "StrName",
         "comment": "Used for the items field in Array types"
       },
 

@@ -5,10 +5,10 @@ have a special meaning in the context of a query, permission-setting, and
 establishing links with other nodes.
 
 A certificate is a entry attached to a specific document containing only two 
-fields: the `$schema` field, set to the hash of the Certificate schema, and the 
-`id` field, set to the Identity that is being certified. The entry itself has 
-the `cert` field, with an object having the `begin`, `end`, `name`, and `value` 
-fields. the entry is then signed by the certifying Identity.
+fields: the empty string field, set to the hash of the Certificate schema, and 
+the `id` field, set to the Identity that is being certified. The entry itself 
+has the `cert` field, with an object having the `begin`, `end`, `name`, and 
+`value` fields. the entry is then signed by the certifying Identity.
 
 - `begin` specifies the time after which the certificate is valid.
 - `end` specifies the time after which the certificate is not valid.
@@ -24,7 +24,7 @@ before `end`. It is invalid otherwise.
 ```json
 {
   "document(Condense-db Certificate List Schema)": [{
-    "$schema": "<Hash(Condense-db Core Schema)>",
+    "": "<Hash(Condense-db Core Schema)>",
     "name": "Condense-db Certificate List Schema",
     "required": [
       { "name": "id", "type": "Ident" }

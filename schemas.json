@@ -1,6 +1,6 @@
 {
   "document(Condense-db Query Schema)" : [{
-    "$schema": "<Hash(Condense-db Core Schema)>",
+    "": "<Hash(Condense-db Core Schema)>",
     "name": "Condense-db core schema",
     "required": [
       { "name": "root",  "type": "Array", "items": "Hash", "unique": true },
@@ -12,7 +12,7 @@
   }],
 
   "document(Condense-db Certificate List Schema)": [{
-    "$schema": "<Hash(Condense-db Core Schema)>",
+    "": "<Hash(Condense-db Core Schema)>",
     "name": "Condense-db Certificate List Schema",
     "required": [
       { "name": "id", "type": "Ident" }
@@ -32,7 +32,7 @@
   }],
 
   "document(Condense-db Core Schema)" : [{
-    "$schema": "<Hash(Self)>",
+    "": "<Hash(Self)>",
     "name": "Condense-db Core Schema",
     "version": 1,
     "required": [

@@ -251,7 +251,7 @@ As an example, say the data on a node is as below:
 ```json
 {
   "document(location record)": [{
-    "$schema": "<Hash(location record-keeping schema)>",
+    "": "<Hash(location record-keeping schema)>",
     "name": "Team Work Locations",
     "root": "<Identity(root)>"
   	},

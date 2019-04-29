@@ -66,7 +66,7 @@ Certificate Document, Certificate Entry, and query for an entry:
 ```json
 { 
   "document(ID user cert)": [{
-    "$schema": "<Hash(cert scheme)>",
+    "": "<Hash(cert scheme)>",
     "id": "<Identity(ID user)>"
   }],
 

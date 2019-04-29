@@ -88,6 +88,38 @@ pub fn read_value_ref<'a>(buf: &mut &'a [u8]) -> io::Result<ValueRef<'a>> {
     })
 }
 
+/// Verify a MessagePack value and return the number of bytes in it. Fails if the value isn't in 
+/// condense-db canonical form. That is:
+/// - All types are encoded in as few bytes as possible
+/// - Positive integers are always encoded using UInt types
+/// - Map types always have unique strings as keys
+/// - Maps are ordered lexicographically
+/// - Strings are valid UTF-8
+pub fn verify_value(buf: &mut &[u8]) -> io::Result<usize> {
+    let length = buf.len();
+    let marker = read_marker(buf)?;
+    match marker {
+        MarkerType::NegInt((len, v)) => { read_neg_int(buf, len, v)?; },
+        MarkerType::PosInt((len, v)) => { read_pos_int(buf, len, v)?; },
+        MarkerType::String(len) => { read_str(buf, len)?; },
+        MarkerType::F32 => { buf.read_f32::<BigEndian>()?; },
+        MarkerType::F64 => { buf.read_f64::<BigEndian>()?; },
+        MarkerType::Binary(len) => { read_bin(buf, len)?; },
+        MarkerType::Array(len) => {
+            for _i in 0..len {
+                verify_value(buf)?;
+            }
+        },
+        MarkerType::Object(len) => { verify_map(buf, len)?; },
+        MarkerType::Hash(len) => { read_hash(buf, len)?; },
+        MarkerType::Identity(len) => { read_id(buf, len)?; },
+        MarkerType::Lockbox(len) => { read_lockbox(buf, len)?; },
+        MarkerType::Timestamp(len) => { read_time(buf, len)?; },
+        _ => (),
+    }
+    Ok(length - buf.len())
+}
+
 /// Read a positive integer straight out of the stream. The size of the integer should be known from the 
 /// msgpack marker that was used. If the marker contained the integer, it should be included as `v`.
 /// Example Usage:
@@ -321,6 +353,37 @@ pub fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<ValueRe
         old_key = key;
     }
     Ok(ValueRef::Object(map))
+}
+
+/// General function for verifying a field-value map in a buffer. Makes sure the keys are unique, 
+/// valid UTF-8 Strings in lexicographic order.
+pub fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
+
+    if len == 0 { return Ok(0); }
+    let length = buf.len();
+
+    // Extract the first field-value pair
+    let mut old_key = try_read_str_ref(buf)?;
+    verify_value(buf)?;
+    // Iterate to get remaining field-value pairs
+    for _i in 1..len {
+        let key = try_read_str_ref(buf)?;
+        match old_key.cmp(&key) {
+            Ordering::Less => {
+                // old_key is lower in order. This is correct
+                verify_value(buf)?;
+            },
+            Ordering::Equal => {
+                return Err(Error::new(InvalidData, format!("Found object with non-unique field \"{}\"", key)));
+            },
+            Ordering::Greater => {
+                return Err(Error::new(InvalidData,
+                    format!("Object fields not in lexicographic order. Last = '{}', Current = '{}'", old_key, key)));
+            }
+        };
+        old_key = key;
+    }
+    Ok(length - buf.len())
 }
 
 /// Read raw Timestamp out from a buffer

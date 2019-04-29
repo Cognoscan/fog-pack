@@ -117,7 +117,7 @@ pub fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
 /// Convert from a raw vector straight into a document. This should *only* be called by the 
 /// internal database, as it does not do complete validity checking. It only verifies the hash and 
 /// extracts signatues. It should not be expected that these checks will always occur.
-pub fn from_raw(data: Vec<u8>, doc_len: usize) -> io::Result<Document> {
+pub fn from_raw(hash: &Hash, data: Vec<u8>, doc_len: usize) -> io::Result<Document> {
     if doc_len > data.len() { 
         return Err(io::Error::new(InvalidData, "Document length greater than raw data length"));
     }
@@ -135,6 +135,9 @@ pub fn from_raw(data: Vec<u8>, doc_len: usize) -> io::Result<Document> {
     hash_state.update(&data[..doc_len]);
     let doc_hash = hash_state.get_hash();
     hash_state.update(&data[doc_len..]);
+    if hash != &hash_state.get_hash() {
+        return Err(io::Error::new(InvalidData, "Raw document doesn't match stored hash"));
+    }
     Ok(Document {
         hash_state,
         doc_hash,

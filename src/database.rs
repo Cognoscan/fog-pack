@@ -244,7 +244,7 @@ impl InternalDb {
         let (result, delete) = match self.doc_db.get(hash) {
             Some(storage) => {
                 let doc = storage.1.clone();
-                match super::document::from_raw(doc, storage.0) {
+                match super::document::from_raw(hash, doc, storage.0) {
                     Ok(doc) => (Some(doc), false),
                     Err(_) => (None, true)
                 }

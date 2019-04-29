@@ -15,7 +15,7 @@ fn main() {
 
     println!("Setting up a simple schema");
     let mut test_schema = Document::new(msgpack!({
-        "": Hash::new_empty(),
+        //"": Hash::new_empty(),
         "name": "Simple chat schema",
         "required": [
             { "name": "title", "type": "Str", "max_len": 255 },
@@ -54,6 +54,12 @@ fn main() {
     let res = db.add_doc(test_doc, &doc_permission, 0).unwrap();
     let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);
+
+    println!("Trying to delete the schema while it is in use");
+    let res = db.del_doc(schema_hash.clone()).unwrap();
+    let res = res.recv().unwrap();
+    println!("    Got back: {:?}", res);
+
 
     println!("Making an entry");
     let test_entry = Entry::new_signed(doc_hash.clone(), String::from("post"), msgpack!({
@@ -97,6 +103,11 @@ fn main() {
 
     println!("Deleting a document");
     let res = db.del_doc(doc_hash.clone()).unwrap();
+    let res = res.recv().unwrap();
+    println!("    Got back: {:?}", res);
+
+    println!("Deleting the schema");
+    let res = db.del_doc(schema_hash.clone()).unwrap();
     let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);
 

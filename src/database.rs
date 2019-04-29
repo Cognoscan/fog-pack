@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crossbeam_channel::{TrySendError, TryRecvError, RecvError, Sender, Receiver, unbounded, bounded, Select};
 
 use super::{Permission, Query, Hash, Document, Entry};
+use document;
 
 /// Types of changes that can be made to the database.
 enum ChangeRequest {
@@ -24,7 +25,7 @@ enum ChangeRequest {
 /// Result of any changes requested of the database.
 #[derive(PartialEq, Debug)]
 pub enum ChangeResult {
-    /// Change made successfuly
+    /// Change made successfuly.
     Ok,
     /// Failed for unknown reasons, likely due to underlying database
     Failed,
@@ -112,6 +113,9 @@ impl Db {
     }
 
     /// Add a document to the database. Returns a `ChangeWait` if request is successfuly made.
+    /// The `ChangeWait` will return `Ok` if the document is added, or if the document already 
+    /// exists in the database. If the document already exists, it will be changed to have the 
+    /// permissions and time-to-live set by this call.
     pub fn add_doc(&self, doc: Document, perm: &Permission, ttl: u32) -> Result<ChangeWait, ()> {
         self.make_change(ChangeRequest::AddDoc((doc, perm.clone(), ttl)))
     }
@@ -123,6 +127,9 @@ impl Db {
     }
 
     /// Add an entry into the database. Returns a `ChangeWait` if request is successfully made.
+    /// The `ChangeWait` will return `Ok` if the entry is added, or if the entry already exists in 
+    /// the database. If the entry already exists, it will be changed to have the time-to-live set 
+    /// by this call.
     pub fn add_entry(&self, entry: Entry, ttl: u32) -> Result<ChangeWait, ()> {
         self.make_change(ChangeRequest::AddEntry((entry, ttl)))
     }
@@ -199,15 +206,20 @@ impl QueryWait {
 }
 
 struct InternalDb {
+    /// The document database
     doc_db: HashMap<Hash,(usize, Vec<u8>,Permission,u32)>,
+    /// The database of entries
     entry_db: HashMap<Hash, Vec<(Entry,u32)>>,
+    /// Tracking how many places a given schema is used.
+    schema_tracking: HashMap<Hash, usize>,
 }
 
 impl InternalDb {
     fn new() -> InternalDb {
         InternalDb {
             doc_db: HashMap::new(),
-            entry_db: HashMap::new()
+            entry_db: HashMap::new(),
+            schema_tracking: HashMap::new(),
         }
     }
 
@@ -215,20 +227,66 @@ impl InternalDb {
         match change {
             ChangeRequest::AddDoc((doc, perm, ttl)) => {
                 let hash = doc.hash();
-                let doc_len = doc.doc_len();
                 if !self.doc_db.contains_key(&hash) {
-                    self.doc_db.insert(hash, (doc_len, doc.to_vec(), perm, ttl));
-                }
-                ChangeResult::Ok
-            },
-            ChangeRequest::DelDoc(hash)     => {
-                if !self.doc_db.contains_key(&hash) {
-                    ChangeResult::NoSuchDoc
+                    let doc_len = doc.doc_len();
+                    let doc = doc.to_vec();
+                    // extract_schema verifies the document is a msgpack object & gets the schema.
+                    match document::extract_schema(&doc[..]) {
+                        Ok(Some(schema_hash)) => {
+                            let result = match self.doc_db.get(&schema_hash) {
+                                Some(schema) => {
+                                    // verify the document against the schema
+                                    // Increment the schema tracking count
+                                    self.schema_tracking.entry(schema_hash.clone())
+                                        .and_modify(|v| *v += 1)
+                                        .or_insert(1);
+                                    ChangeResult::Ok
+                                },
+                                None => {
+                                    ChangeResult::SchemaNotFound
+                                }
+                            };
+                            if result == ChangeResult::Ok {
+                                self.doc_db.insert(hash, (doc_len, doc, perm, ttl));
+                            }
+                            result
+                        }
+                        Ok(None) => {
+                            self.doc_db.insert(hash, (doc_len, doc, perm, ttl));
+                            ChangeResult::Ok
+                        }
+                        Err(_) => ChangeResult::FailedSchemaCheck,
+                    }
                 }
                 else {
-                    self.doc_db.remove(&hash);
                     ChangeResult::Ok
                 }
+            },
+            ChangeRequest::DelDoc(hash) => {
+                let result = match self.doc_db.get(&hash) {
+                    Some((_,doc,_,_)) => {
+                        if let Ok(Some(schema_hash)) = document::extract_schema(&doc[..]) {
+                            self.schema_tracking.entry(schema_hash)
+                                .and_modify(|v| *v -= 1);
+                        };
+                        match self.schema_tracking.get(&hash) {
+                            Some(count) => {
+                                if *count > 0 {
+                                    ChangeResult::SchemaInUse
+                                }
+                                else {
+                                    ChangeResult::Ok
+                                }
+                            },
+                            None => ChangeResult::Ok,
+                        }
+                    },
+                    None => ChangeResult::NoSuchDoc,
+                };
+                if result == ChangeResult::Ok {
+                    self.doc_db.remove(&hash);
+                }
+                result
             },
             ChangeRequest::AddEntry(_)      => ChangeResult::Failed,
             ChangeRequest::DelEntry(_)      => ChangeResult::Failed,
@@ -386,7 +444,7 @@ fn db_loop(
                         // Check for open queries on this document & update as appropriate
                         if (result == ChangeResult::Ok) && add_doc {
                             for query in open_queries.iter_mut() {
-                                if query.get_root() == &hash { query.set_in_db(true); }
+                                if *query.get_root() == hash { query.set_in_db(true); }
                             }
                         }
                         // Send the response. If nothing is at the other end, we don't care.

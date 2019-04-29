@@ -97,21 +97,13 @@ pub fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
     if obj_len == 0 { return Ok(None); }
 
     // Get the first field - should be the empty string if there is a schema used.
-    let field = if let MarkerType::String(len) = decode::read_marker(&mut buf)? {
-        decode::read_str(&mut buf, len)?
-    }
-    else {
-        return Err(io::Error::new(InvalidData, "Field in document isn't a String"));
-    };
+    let field = decode::read_str(&mut buf)?;
     if field.len() > 0 {
         return Ok(None);
     }
-    if let MarkerType::Hash(len) = decode::read_marker(&mut buf)? {
-        Ok(Some(decode::read_hash(&mut buf, len)?))
-    }
-    else {
-        Err(io::Error::new(InvalidData, "Empty string field doesn't have a Hash as its value"))
-    }
+    decode::read_hash(&mut buf)
+        .map(|v| Some(v))
+        .map_err(|_e| io::Error::new(InvalidData, "Empty string field doesn't have a Hash as its value"))
 }
 
 /// Convert from a raw vector straight into a document. This should *only* be called by the 

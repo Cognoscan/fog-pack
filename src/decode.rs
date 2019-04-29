@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::cmp::Ordering;
 
 use byteorder::{ReadBytesExt, BigEndian};
+use num_traits::NumCast;
 
 use super::{Value, Integer, ValueRef, Hash, Identity, Lockbox, Timestamp};
 use Marker;
@@ -32,10 +33,10 @@ pub fn read_value(buf: &mut &[u8]) -> io::Result<Value> {
         MarkerType::Boolean(v) => Value::Boolean(v),
         MarkerType::NegInt((len, v)) => Value::Integer(read_neg_int(buf, len, v)?),
         MarkerType::PosInt((len, v)) => Value::Integer(read_pos_int(buf, len, v)?),
-        MarkerType::String(len) => Value::String(read_str(buf, len)?.to_string()),
+        MarkerType::String(len) => Value::String(read_raw_str(buf, len)?.to_string()),
         MarkerType::F32 => Value::F32(buf.read_f32::<BigEndian>()?),
         MarkerType::F64 => Value::F64(buf.read_f64::<BigEndian>()?),
-        MarkerType::Binary(len) => Value::Binary(read_bin(buf, len)?.to_vec()),
+        MarkerType::Binary(len) => Value::Binary(read_raw_bin(buf, len)?.to_vec()),
         MarkerType::Array(len) => {
             let mut v = Vec::new();
             for _i in 0..len {
@@ -43,13 +44,11 @@ pub fn read_value(buf: &mut &[u8]) -> io::Result<Value> {
             }
             Value::Array(v)
         },
-        MarkerType::Object(len) => {
-            read_to_map(buf, len)?
-        }
-        MarkerType::Hash(len) => Value::Hash(read_hash(buf, len)?),
-        MarkerType::Identity(len) => Value::Identity(read_id(buf, len)?),
-        MarkerType::Lockbox(len) => Value::Lockbox(read_lockbox(buf, len)?),
-        MarkerType::Timestamp(len) => Value::Timestamp(read_time(buf, len)?),
+        MarkerType::Object(len) => Value::Object(read_to_map(buf, len)?),
+        MarkerType::Hash(len) => Value::Hash(read_raw_hash(buf, len)?),
+        MarkerType::Identity(len) => Value::Identity(read_raw_id(buf, len)?),
+        MarkerType::Lockbox(len) => Value::Lockbox(read_raw_lockbox(buf, len)?),
+        MarkerType::Timestamp(len) => Value::Timestamp(read_raw_time(buf, len)?),
     })
 }
 
@@ -67,10 +66,10 @@ pub fn read_value_ref<'a>(buf: &mut &'a [u8]) -> io::Result<ValueRef<'a>> {
         MarkerType::Boolean(v) => ValueRef::Boolean(v),
         MarkerType::NegInt((len, v)) => ValueRef::Integer(read_neg_int(buf, len, v)?),
         MarkerType::PosInt((len, v)) => ValueRef::Integer(read_pos_int(buf, len, v)?),
-        MarkerType::String(len) => ValueRef::String(read_str(buf, len)?),
+        MarkerType::String(len) => ValueRef::String(read_raw_str(buf, len)?),
         MarkerType::F32 => ValueRef::F32(buf.read_f32::<BigEndian>()?),
         MarkerType::F64 => ValueRef::F64(buf.read_f64::<BigEndian>()?),
-        MarkerType::Binary(len) => ValueRef::Binary(read_bin(buf, len)?),
+        MarkerType::Binary(len) => ValueRef::Binary(read_raw_bin(buf, len)?),
         MarkerType::Array(len) => {
             let mut v = Vec::new();
             for _i in 0..len {
@@ -78,13 +77,11 @@ pub fn read_value_ref<'a>(buf: &mut &'a [u8]) -> io::Result<ValueRef<'a>> {
             }
             ValueRef::Array(v)
         },
-        MarkerType::Object(len) => {
-            read_to_map_ref(buf, len)?
-        }
-        MarkerType::Hash(len) => ValueRef::Hash(read_hash(buf, len)?),
-        MarkerType::Identity(len) => ValueRef::Identity(read_id(buf, len)?),
-        MarkerType::Lockbox(len) => ValueRef::Lockbox(read_lockbox(buf, len)?),
-        MarkerType::Timestamp(len) => ValueRef::Timestamp(read_time(buf, len)?),
+        MarkerType::Object(len) => ValueRef::Object(read_to_map_ref(buf, len)?),
+        MarkerType::Hash(len) => ValueRef::Hash(read_raw_hash(buf, len)?),
+        MarkerType::Identity(len) => ValueRef::Identity(read_raw_id(buf, len)?),
+        MarkerType::Lockbox(len) => ValueRef::Lockbox(read_raw_lockbox(buf, len)?),
+        MarkerType::Timestamp(len) => ValueRef::Timestamp(read_raw_time(buf, len)?),
     })
 }
 
@@ -101,23 +98,273 @@ pub fn verify_value(buf: &mut &[u8]) -> io::Result<usize> {
     match marker {
         MarkerType::NegInt((len, v)) => { read_neg_int(buf, len, v)?; },
         MarkerType::PosInt((len, v)) => { read_pos_int(buf, len, v)?; },
-        MarkerType::String(len) => { read_str(buf, len)?; },
+        MarkerType::String(len) => { read_raw_str(buf, len)?; },
         MarkerType::F32 => { buf.read_f32::<BigEndian>()?; },
         MarkerType::F64 => { buf.read_f64::<BigEndian>()?; },
-        MarkerType::Binary(len) => { read_bin(buf, len)?; },
+        MarkerType::Binary(len) => { read_raw_bin(buf, len)?; },
         MarkerType::Array(len) => {
             for _i in 0..len {
                 verify_value(buf)?;
             }
         },
         MarkerType::Object(len) => { verify_map(buf, len)?; },
-        MarkerType::Hash(len) => { read_hash(buf, len)?; },
-        MarkerType::Identity(len) => { read_id(buf, len)?; },
-        MarkerType::Lockbox(len) => { read_lockbox(buf, len)?; },
-        MarkerType::Timestamp(len) => { read_time(buf, len)?; },
+        MarkerType::Hash(len) => { read_raw_hash(buf, len)?; },
+        MarkerType::Identity(len) => { read_raw_id(buf, len)?; },
+        MarkerType::Lockbox(len) => { read_raw_lockbox(buf, len)?; },
+        MarkerType::Timestamp(len) => { read_raw_time(buf, len)?; },
         _ => (),
     }
     Ok(length - buf.len())
+}
+
+pub fn read_null(buf: &mut &[u8]) -> io::Result<()> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Null = marker {
+        Ok(())
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected null value, got {:?}", marker)))
+    }
+}
+
+pub fn read_bool(buf: &mut &[u8]) -> io::Result<bool> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Boolean(v) = marker {
+        Ok(v)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected boolean, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read an integer from a msgpack data structure. Fails if an integer wasn't retrieved.
+pub fn read_integer(buf: &mut &[u8]) -> io::Result<Integer> {
+    let marker = read_marker(buf)?;
+    match marker {
+        MarkerType::PosInt((len, v)) => read_pos_int(buf, len, v),
+        MarkerType::NegInt((len, v)) => read_neg_int(buf, len, v),
+        _ => Err(Error::new(InvalidData, format!("Expected Integer, got {:?}", marker))),
+    }
+}
+
+/// Attempt to read a u8 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a u8.
+pub fn read_u8(buf: &mut &[u8]) -> io::Result<u8> {
+    let int = read_integer(buf)?;
+    NumCast::from(int.as_u64()
+        .ok_or(Error::new(InvalidData, "Value was negative"))?)
+        .ok_or(Error::new(InvalidData, "Value couldn't be represented as u8"))
+}
+
+/// Attempt to read a u16 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a u16.
+pub fn read_u16(buf: &mut &[u8]) -> io::Result<u16> {
+    let int = read_integer(buf)?;
+    NumCast::from(int.as_u64()
+        .ok_or(Error::new(InvalidData, "Value was negative"))?)
+        .ok_or(Error::new(InvalidData, "Value couldn't be represented as u16"))
+}
+
+/// Attempt to read a u32 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a u32.
+pub fn read_u32(buf: &mut &[u8]) -> io::Result<u32> {
+    let int = read_integer(buf)?;
+    NumCast::from(int.as_u64()
+        .ok_or(Error::new(InvalidData, "Value was negative"))?)
+        .ok_or(Error::new(InvalidData, "Value couldn't be represented as u32"))
+}
+
+/// Attempt to read a u64 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a u64.
+pub fn read_u64(buf: &mut &[u8]) -> io::Result<u64> {
+    let int = read_integer(buf)?;
+    int.as_u64()
+        .ok_or(Error::new(InvalidData, "Value was negative"))
+}
+
+/// Attempt to read a i8 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a i8.
+pub fn read_i8(buf: &mut &[u8]) -> io::Result<i8> {
+    let int = read_integer(buf)?;
+    NumCast::from(int.as_i64()
+        .ok_or(Error::new(InvalidData, "Value bigger than i64 maximum"))?)
+        .ok_or(Error::new(InvalidData, "Value couldn't be represented as i8"))
+}
+
+
+/// Attempt to read a i16 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a i16.
+pub fn read_i16(buf: &mut &[u8]) -> io::Result<i16> {
+    let int = read_integer(buf)?;
+    NumCast::from(int.as_i64()
+        .ok_or(Error::new(InvalidData, "Value bigger than i64 maximum"))?)
+        .ok_or(Error::new(InvalidData, "Value couldn't be represented as i16"))
+}
+
+/// Attempt to read a i32 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a i32.
+pub fn read_i32(buf: &mut &[u8]) -> io::Result<i32> {
+    let int = read_integer(buf)?;
+    NumCast::from(int.as_i64()
+        .ok_or(Error::new(InvalidData, "Value bigger than i64 maximum"))?)
+        .ok_or(Error::new(InvalidData, "Value couldn't be represented as i32"))
+}
+
+/// Attempt to read a i64 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// the integer isn't a i64.
+pub fn read_i64(buf: &mut &[u8]) -> io::Result<i64> {
+    let int = read_integer(buf)?;
+    int.as_i64()
+        .ok_or(Error::new(InvalidData, "Value bigger than i64 maximum"))
+}
+
+/// Attempt to read a str from a msgpack data structure. Fails if str wasn't present/valid.
+pub fn read_str<'a>(buf: &mut &'a [u8]) -> io::Result<&'a str> {
+    if let MarkerType::String(len) = read_marker(buf)? {
+        read_raw_str(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, "Object field was not a String"))
+    }
+}
+
+/// Attempt to copy a string from a msgpack data structure. Fails if string wasn't present/valid.
+pub fn read_string<'a>(buf: &mut &[u8]) -> io::Result<String> {
+    Ok(read_str(buf)?.to_string())
+}
+
+/// Attempt to read a F32 from a msgpack data structure. Fails if invalid F32 retrieved.
+pub fn read_f32(buf: &mut &[u8]) -> io::Result<f32> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::F32 = marker {
+        buf.read_f32::<BigEndian>()
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected f32, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read a F32 from a msgpack data structure. Fails if invalid F64 retrieved.
+pub fn read_f64(buf: &mut &[u8]) -> io::Result<f64> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::F64 = marker {
+        buf.read_f64::<BigEndian>()
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected f64, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read binary data.
+pub fn read_bin<'a>(buf: &mut &'a [u8]) -> io::Result<&'a [u8]> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Binary(len) = marker {
+        read_raw_bin(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected binary data, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read binary data to a Vec.
+pub fn read_vec<'a>(buf: &mut &[u8]) -> io::Result<Vec<u8>> {
+    Ok(read_bin(buf)?.to_vec())
+}
+
+/// Attempt to read an array as `ValueRef`.
+pub fn read_array_ref<'a>(buf: &mut &'a [u8]) -> io::Result<Vec<ValueRef<'a>>> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Array(len) = marker {
+        let mut v = Vec::new();
+        for _i in 0..len {
+            v.push(read_value_ref(buf)?);
+        }
+        Ok(v)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected array, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read an array as `Value`.
+pub fn read_array(buf: &mut &[u8]) -> io::Result<Vec<Value>> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Array(len) = marker {
+        let mut v = Vec::new();
+        for _i in 0..len {
+            v.push(read_value(buf)?);
+        }
+        Ok(v)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected array, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read an object as `ValueRef`.
+pub fn read_object_ref<'a>(buf: &mut &'a [u8]) -> io::Result<BTreeMap<&'a str, ValueRef<'a>>> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Object(len) = marker {
+        read_to_map_ref(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected object, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read an object as `Value`.
+pub fn read_object(buf: &mut &[u8]) -> io::Result<BTreeMap<String, Value>> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Object(len) = marker {
+        read_to_map(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected object, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read a `Hash`.
+pub fn read_hash(buf: &mut &[u8]) -> io::Result<Hash> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Hash(len) = marker {
+        read_raw_hash(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected hash, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read an `Identity`.
+pub fn read_id(buf: &mut &[u8]) -> io::Result<Identity> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Identity(len) = marker {
+        read_raw_id(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected Identity, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read a `Lockbox`.
+pub fn read_lockbox(buf: &mut &[u8]) -> io::Result<Lockbox> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Lockbox(len) = marker {
+        read_raw_lockbox(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected Lockbox, got {:?}", marker)))
+    }
+}
+
+/// Attempt to read a `Timestamp`.
+pub fn read_time(buf: &mut &[u8]) -> io::Result<Timestamp> {
+    let marker = read_marker(buf)?;
+    if let MarkerType::Timestamp(len) = marker {
+        read_raw_time(buf, len)
+    }
+    else {
+        Err(Error::new(InvalidData, format!("Expected Timestamp, got {:?}", marker)))
+    }
 }
 
 /// Read a positive integer straight out of the stream. The size of the integer should be known from the 
@@ -131,7 +378,7 @@ pub fn verify_value(buf: &mut &[u8]) -> io::Result<usize> {
 ///     return Err(Error::new(InvalidData, "Expected positive integer"));
 /// }
 /// ```
-pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
+fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),
         1 => {
@@ -185,7 +432,7 @@ pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
 ///     return Err(Error::new(InvalidData, "Expected negative integer"));
 /// }
 /// ```
-pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
+fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),
         1 => {
@@ -240,18 +487,9 @@ pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
     }
 }
 
-pub fn try_read_integer(buf: &mut &[u8]) -> io::Result<Integer> {
-    let marker = read_marker(buf)?;
-    match marker {
-        MarkerType::PosInt((len, v)) => read_pos_int(buf, len, v),
-        MarkerType::NegInt((len, v)) => read_neg_int(buf, len, v),
-        _ => Err(Error::new(InvalidData, format!("Expected Integer, got {:?}", marker))),
-    }
-}
-
 /// General function for referencing binary data in a buffer. Checks for if the 
 /// length is greater than remaining bytes in the buffer.
-pub fn read_bin<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a [u8]> {
+fn read_raw_bin<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a [u8]> {
     if buf.len() >= len {
         let (data, rem) = buf.split_at(len);
         *buf = rem;
@@ -265,7 +503,7 @@ pub fn read_bin<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a [u8]> {
 /// General function for referencing a UTF-8 string in a buffer. Checks for if the 
 /// length is greater than remaining bytes in the buffer, or if the bytes 
 /// received are not valid UTF-8.
-pub fn read_str<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a str> {
+fn read_raw_str<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a str> {
     if buf.len() >= len {
         let (data, rem) = buf.split_at(len);
         *buf = rem;
@@ -280,20 +518,18 @@ pub fn read_str<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a str> {
 
 /// General function for reading a field-value map from a buffer. Checks to make 
 /// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
-pub fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<Value> {
+fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<BTreeMap<String, Value>> {
 
     let mut map: BTreeMap<String,Value> = BTreeMap::new();
-    if len == 0 { return Ok(Value::from(map)); }
+    if len == 0 { return Ok(map); }
 
     // Extract the first field-value pair
-    let mut old_key = read_value(buf)?.to_string()
-        .ok_or(Error::new(InvalidData, "Object field was not a String"))?;
+    let mut old_key = read_string(buf)?;
     let val = read_value(buf)?;
     map.insert(old_key.clone(), val);
     // Iterate to get remaining field-value pairs
     for _i in 1..len {
-        let key = read_value(buf)?.to_string()
-            .ok_or(Error::new(InvalidData, "Object field was not a String"))?;
+        let key = read_string(buf)?;
         match old_key.cmp(&key) {
             Ordering::Less => {
                 // old_key is lower in order. This is correct
@@ -310,32 +546,23 @@ pub fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<Value> {
         };
         old_key = key;
     }
-    Ok(Value::Object(map))
-}
-
-fn try_read_str_ref<'a>(buf: &mut &'a [u8]) -> io::Result<&'a str> {
-    if let MarkerType::String(len) = read_marker(buf)? {
-        read_str(buf, len)
-    }
-    else {
-        Err(Error::new(InvalidData, "Object field was not a String"))
-    }
+    Ok(map)
 }
 
 /// General function for referencing a field-value map in a buffer. Checks to make 
 /// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
-pub fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<ValueRef<'a>> {
+fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<BTreeMap<&'a str, ValueRef<'a>>> {
 
     let mut map: BTreeMap<&'a str,ValueRef<'a>> = BTreeMap::new();
-    if len == 0 { return Ok(ValueRef::Object(map)); }
+    if len == 0 { return Ok(map); }
 
     // Extract the first field-value pair
-    let mut old_key = try_read_str_ref(buf)?;
+    let mut old_key = read_str(buf)?;
     let val = read_value_ref(buf)?;
     map.insert(old_key.clone(), val);
     // Iterate to get remaining field-value pairs
     for _i in 1..len {
-        let key = try_read_str_ref(buf)?;
+        let key = read_str(buf)?;
         match old_key.cmp(&key) {
             Ordering::Less => {
                 // old_key is lower in order. This is correct
@@ -352,22 +579,22 @@ pub fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<ValueRe
         };
         old_key = key;
     }
-    Ok(ValueRef::Object(map))
+    Ok(map)
 }
 
 /// General function for verifying a field-value map in a buffer. Makes sure the keys are unique, 
 /// valid UTF-8 Strings in lexicographic order.
-pub fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
+fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
 
     if len == 0 { return Ok(0); }
     let length = buf.len();
 
     // Extract the first field-value pair
-    let mut old_key = try_read_str_ref(buf)?;
+    let mut old_key = read_str(buf)?;
     verify_value(buf)?;
     // Iterate to get remaining field-value pairs
     for _i in 1..len {
-        let key = try_read_str_ref(buf)?;
+        let key = read_str(buf)?;
         match old_key.cmp(&key) {
             Ordering::Less => {
                 // old_key is lower in order. This is correct
@@ -387,7 +614,7 @@ pub fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
 }
 
 /// Read raw Timestamp out from a buffer
-pub fn read_time(buf: &mut &[u8], len: usize) -> io::Result<Timestamp> {
+fn read_raw_time(buf: &mut &[u8], len: usize) -> io::Result<Timestamp> {
     match len {
         4 => {
             let sec = buf.read_u32::<BigEndian>()?;
@@ -409,7 +636,7 @@ pub fn read_time(buf: &mut &[u8], len: usize) -> io::Result<Timestamp> {
 }
 
 /// Read raw Hash out from a buffer
-pub fn read_hash(buf: &mut &[u8], len: usize) -> io::Result<Hash> {
+fn read_raw_hash(buf: &mut &[u8], len: usize) -> io::Result<Hash> {
     let hash = Hash::decode(buf).map_err(|_e| Error::new(InvalidData, "Hash not recognized"))?;
     if hash.len() != len {
         Err(Error::new(InvalidData, "Hash type has invalid size"))
@@ -420,7 +647,7 @@ pub fn read_hash(buf: &mut &[u8], len: usize) -> io::Result<Hash> {
 }
 
 /// Read raw Identity out from a buffer
-pub fn read_id(buf: &mut &[u8], len: usize) -> io::Result<Identity> {
+fn read_raw_id(buf: &mut &[u8], len: usize) -> io::Result<Identity> {
     let id = Identity::decode(buf).map_err(|_e| Error::new(InvalidData, "Identity not recognized"))?;
     if id.len() != len {
         Err(Error::new(InvalidData, "Identity type has invalid size"))
@@ -431,7 +658,7 @@ pub fn read_id(buf: &mut &[u8], len: usize) -> io::Result<Identity> {
 }
 
 /// Read raw lockbox data out from a buffer
-pub fn read_lockbox(buf: &mut &[u8], len: usize) -> io::Result<Lockbox> {
+fn read_raw_lockbox(buf: &mut &[u8], len: usize) -> io::Result<Lockbox> {
     Ok(Lockbox::decode(len, buf).map_err(|_e| Error::new(InvalidData, "Lockbox not recognized"))?)
 }
 

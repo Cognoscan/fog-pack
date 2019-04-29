@@ -199,7 +199,7 @@ impl QueryWait {
 }
 
 struct InternalDb {
-    doc_db: HashMap<Hash,(Document,Permission,u32)>,
+    doc_db: HashMap<Hash,(usize, Vec<u8>,Permission,u32)>,
     entry_db: HashMap<Hash, Vec<(Entry,u32)>>,
 }
 
@@ -215,8 +215,9 @@ impl InternalDb {
         match change {
             ChangeRequest::AddDoc((doc, perm, ttl)) => {
                 let hash = doc.hash();
+                let doc_len = doc.doc_len();
                 if !self.doc_db.contains_key(&hash) {
-                    self.doc_db.insert(hash, (doc, perm, ttl));
+                    self.doc_db.insert(hash, (doc_len, doc.to_vec(), perm, ttl));
                 }
                 ChangeResult::Ok
             },
@@ -237,14 +238,23 @@ impl InternalDb {
         }
     }
 
-    fn get_doc(&self, hash: &Hash, perm: &Permission) -> Option<Document> {
-        match self.doc_db.get(hash) {
+    /// Retrieve a document. If decoding the document fails, assume the database was partially 
+    /// corrupted and remove the corrupted document.
+    fn get_doc(&mut self, hash: &Hash, perm: &Permission) -> Option<Document> {
+        let (result, delete) = match self.doc_db.get(hash) {
             Some(storage) => {
-                let doc = storage.0.clone();
-                Some(doc)
+                let doc = storage.1.clone();
+                match super::document::from_raw(doc, storage.0) {
+                    Ok(doc) => (Some(doc), false),
+                    Err(_) => (None, true)
+                }
             },
-            None => None
+            None => (None, false)
+        };
+        if delete {
+            self.doc_db.remove(hash);
         }
+        result
     }
 }
 

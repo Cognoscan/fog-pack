@@ -107,7 +107,7 @@ struct ValidF64 {
 }
 
     
-pub fn validate_doc(schema: &Schema, doc: &mut &[u8]) -> io::Result<()> {
+pub fn validate_doc(_schema: &Schema, doc: &mut &[u8]) -> io::Result<()> {
     let marker = Marker::from_u8(doc.read_u8()?);
     let len = match marker {
         Marker::FixMap(len) => len as usize,
@@ -127,7 +127,7 @@ pub fn validate_doc(schema: &Schema, doc: &mut &[u8]) -> io::Result<()> {
     };
     if len == 0 { return Err(io::Error::new(InvalidData, "Document cannot have zero fields")); }
 
-    let mut old_field = get_string(doc)?;
+    let _old_field = get_string(doc)?;
 
     Ok(())
 }

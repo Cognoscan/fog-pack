@@ -5,11 +5,13 @@ use MarkerType;
 use super::{Hash, Value, ValueRef};
 use super::crypto::{HashState, Vault, Key, Identity, CryptoError};
 use decode;
+use crypto;
 
 #[derive(Clone)]
 pub struct Document {
     hash_state: HashState,
     doc_hash: Hash,
+    doc_len: usize,
     doc: Vec<u8>,
     signed_by: Vec<Identity>,
 }
@@ -24,9 +26,11 @@ impl Document {
         let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
         hash_state.update(&doc[..]); 
         let doc_hash = hash_state.get_hash();
+        let doc_len = doc.len();
         Ok(Document {
             hash_state,
             doc_hash,
+            doc_len,
             doc,
             signed_by: Vec::new(),
         })
@@ -55,6 +59,11 @@ impl Document {
         self.doc.len()
     }
 
+    /// Get the length of the encoded value only (without signatures).
+    pub fn doc_len(&self) -> usize {
+        self.doc_len
+    }
+
     /// Turn the document into a raw encoded byte vector.
     pub fn to_vec(self) -> Vec<u8> {
         self.doc
@@ -76,7 +85,7 @@ impl Document {
 
 // Finds the schema hash for a raw, encoded document. Fails if raw data isn't an object, or if 
 // the empty field ("") doesn't contain a Hash. If there is no empty field, `None` is returned.
-fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
+pub fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
     let mut buf: &[u8] = buf;
     // Get the object tag & number of field/value pairs it has
     let obj_len = if let MarkerType::Object(len) = decode::read_marker(&mut buf)? {
@@ -103,6 +112,36 @@ fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
     else {
         Err(io::Error::new(InvalidData, "Empty string field doesn't have a Hash as its value"))
     }
+}
+
+/// Convert from a raw vector straight into a document. This should *only* be called by the 
+/// internal database, as it does not do complete validity checking. It only verifies the hash and 
+/// extracts signatues. It should not be expected that these checks will always occur.
+pub fn from_raw(data: Vec<u8>, doc_len: usize) -> io::Result<Document> {
+    if doc_len > data.len() { 
+        return Err(io::Error::new(InvalidData, "Document length greater than raw data length"));
+    }
+    let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+    let mut signed_by = Vec::new();
+    {
+        let mut index = &mut &data[doc_len..];
+        while index.len() > 0 {
+            let signature = crypto::Signature::decode(&mut index)
+                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
+            signed_by.push(signature.signed_by().clone());
+        }
+    }
+    // Get the HashState up to the correct point
+    hash_state.update(&data[..doc_len]);
+    let doc_hash = hash_state.get_hash();
+    hash_state.update(&data[doc_len..]);
+    Ok(Document {
+        hash_state,
+        doc_hash,
+        doc_len,
+        doc: data,
+        signed_by,
+    })
 }
 
 

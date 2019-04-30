@@ -17,20 +17,19 @@ fn main() {
     let mut test_schema = Document::new(msgpack!({
         //"": Hash::new_empty(),
         "name": "Simple chat schema",
-        "required": [
-            { "name": "title", "type": "Str", "max_len": 255 },
-            { "name": "description", "type": "Str" }
-        ],
-        "entries": [
-            {
-                "name": "post",
+        "required": {
+            "title": { "type": "Str", "max_len": 255 },
+            "description": { "type": "Str" }
+        },
+        "entries": {
+            "post" : {
                 "type": "Obj",
-                "required": [
-                    { "name": "time", "type": "Time" },
-                    { "name": "text", "type": "String" }
-                ]
+                "required": {
+                    "time": { "type": "Time" },
+                    "text": { "type": "String" }
+                }
             }
-        ]
+        }
     })).unwrap();
     let schema_hash = test_schema.hash();
     let schema_permission = Permission::new().local_net(true).direct(true);

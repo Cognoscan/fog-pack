@@ -312,7 +312,7 @@ impl InternalDb {
 
     /// Retrieve a document. If decoding the document fails, assume the database was partially 
     /// corrupted and remove the corrupted document.
-    fn get_doc(&mut self, hash: &Hash, perm: &Permission) -> Option<Document> {
+    fn get_doc(&mut self, hash: &Hash, _perm: &Permission) -> Option<Document> {
         let (result, delete) = match self.doc_db.get(hash) {
             Some(storage) => {
                 let doc = storage.1.clone();

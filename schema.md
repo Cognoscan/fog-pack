@@ -303,11 +303,6 @@ following optional fields:
 	be met.
 - `unique`: A boolean that, if true, requires each value in the array to be 
 	unique.
-- `unique_fields`: an array of unique strings. If present, it requires that any 
-	objects in the array be unique for the fields specified by this set of 
-	strings. If an object is missing one of the fields, it should be assumed it is 
-	not unique and validation must fail. Non-object types in the array *do not* 
-	have to meet this requirement.
 - `array`: allows array queries on this field if set to true.
 - `default`: specifies a default that implementations may use if the field is 
 	not present.
@@ -323,10 +318,10 @@ optional fields:
 - `in`: an array of objects the described field must be among.
 - `nin`: an array of objects the described field must not be among.
 - `const`: an object the described field must be set to.
-- `required`: an array of unique Data Types that must be present in the object, 
-	where each type name is the name of a field in the object.
-- `optional`: an array of unique Data Types that may optionally be present in 
-	the object, where each type name is the name of a field in the object.
+- `required`: an object listing unique Data Types that must be present in the 
+	object, where each field is the name of a field in the object.
+- `optional`: an object listing unique Data Types that may optionally be present 
+	in the object, where each type name is the name of a field in the object.
 - `min_fields`: a non-negative integer specifying the minimum number of fields 
 	allowed in the object.
 - `min_fields`: a non-negative integer specifying the maximum number of fields 
@@ -366,15 +361,19 @@ the optional requirements listed.
 #### Ident
 
 Ident types describe a field that contains a cryptographic public key, an 
-"Identity". They have no optional fields besides the basic `comment`, `sign`, 
-and `query` fields. `default` is not allowed; any implementation must always be 
-able to handle if a field normally containing a public key is not present.
+"Identity". They have no optional fields besides the basic `comment` and `query` 
+fields. `default` is not allowed; any implementation must always be able to 
+handle if a field normally containing a public key is not present.
 
 #### Lock
 
 Lock types describe a field that contains encrypted data (a "Lockbox"), which 
-may be a private key, secret key, or an encrypted data payload. They have no 
-optional fields besides the basic `comment`, `sign`, and `query` fields.
+may be a private key, secret key, or an encrypted data payload. They have the 
+following optional fields:
+
+- `max_len`: a non-negative integer specifying the maximum length of the lockbox 
+	itself.
+
 `default` is not allowed; any implementation must always be able to handle if a 
 field normally containing a lockbox is not present.
 

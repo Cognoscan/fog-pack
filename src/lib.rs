@@ -14,6 +14,7 @@ extern crate constant_time_eq;
 extern crate byteorder;
 extern crate libsodium_sys;
 extern crate libc;
+extern crate regex;
 //use std::io::Write;
 
 mod index;

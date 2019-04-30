@@ -1,8 +1,10 @@
 use std::fmt::{self, Debug, Display};
+use std::cmp;
+use std::cmp::Ordering;
 
 use num_traits::NumCast;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum IntPriv {
     /// Always non-less than zero.
     PosInt(u64),
@@ -13,7 +15,7 @@ pub enum IntPriv {
 /// Represents a MessagePack integer, whether signed or unsigned.
 ///
 /// A `Value` or `ValueRef` that contains integer can be constructed using `From` trait.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Integer {
     n: IntPriv,
 }
@@ -67,6 +69,23 @@ impl Integer {
 
 pub fn get_int_internal(val: &Integer) -> IntPriv {
     val.n
+}
+
+impl cmp::Ord for Integer {
+    fn cmp(&self, other: &Integer) -> Ordering {
+        match (self.n, other.n) {
+            (IntPriv::NegInt(lhs), IntPriv::NegInt(ref rhs)) => lhs.cmp(rhs),
+            (IntPriv::NegInt(_), IntPriv::PosInt(_)) => Ordering::Less,
+            (IntPriv::PosInt(_), IntPriv::NegInt(_)) => Ordering::Greater,
+            (IntPriv::PosInt(lhs), IntPriv::PosInt(ref rhs)) => lhs.cmp(rhs),
+        }
+    }
+}
+
+impl cmp::PartialOrd for Integer {
+    fn partial_cmp(&self, other: &Integer) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Debug for Integer {

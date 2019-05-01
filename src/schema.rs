@@ -407,6 +407,7 @@ impl Schema {
                     return Ok(());
                 }
 
+                // Size checks
                 if num_items < v.min_len {
                     return Err(Error::new(InvalidData,
                         format!("Field {} contains array with {} items, less than minimum of {}", field, num_items, v.min_len)));
@@ -415,6 +416,8 @@ impl Schema {
                     return Err(Error::new(InvalidData,
                         format!("Field {} contains array with {} items, greater than maximum of {}", field, num_items, v.max_len)));
                 }
+
+                // Setup for iterating over array
                 let mut unique_set: HashSet<&[u8]> = if v.unique {
                     HashSet::with_capacity(num_items)
                 }
@@ -423,7 +426,9 @@ impl Schema {
                 };
                 let mut contain_set: Vec<bool> = Vec::with_capacity(v.contains.len());
 
+                // Run through the whole array
                 for i in 0..num_items {
+                    // Validate as appropriate
                     let item_start = doc.clone();
                     if let Some(item_validator) = v.items.get(i) {
                         let item_validator = self.fetch_validator(item_validator);
@@ -440,14 +445,16 @@ impl Schema {
                     else {
                         verify_value(doc)?;
                     }
-                    // Check for uniqueness / if meets any "contains" requirements
                     let (item, _) = item_start.split_at(item_start.len()-doc.len());
+
+                    // Check for uniqueness
                     if v.unique {
                         if !unique_set.insert(item) {
                             return Err(Error::new(InvalidData,
                                 format!("Field {} contains a repeated item at index {}", field, i)));
                         }
                     }
+                    // Check to see if any `contains` requirements are met
                     contain_set.iter_mut()
                         .zip(v.contains.iter())
                         .filter(|(checked,_)| !**checked)
@@ -458,7 +465,13 @@ impl Schema {
                             }
                         });
                 }
-                Err(Error::new(InvalidData, format!("Checking for field \"{}\" not implemented", field)))
+                if contain_set.contains(&false) {
+                    Err(Error::new(InvalidData,
+                        format!("Field {} does not satisfy all `contains` requirements", field)))
+                }
+                else {
+                    Ok(())
+                }
             },
         }
     }

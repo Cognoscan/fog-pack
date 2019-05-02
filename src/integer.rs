@@ -65,6 +65,15 @@ impl Integer {
             IntPriv::NegInt(n) => NumCast::from(n),
         }
     }
+
+    /// Forcibly casts the value to u64 without modification.
+    #[inline]
+    pub fn as_bits(&self) -> u64 {
+        match self.n {
+            IntPriv::PosInt(n) => n,
+            IntPriv::NegInt(n) => n as u64,
+        }
+    }
 }
 
 pub fn get_int_internal(val: &Integer) -> IntPriv {

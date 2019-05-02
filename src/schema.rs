@@ -1,7 +1,7 @@
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use regex::Regex;
 
@@ -147,6 +147,7 @@ impl Schema {
             },
             Validator::Integer(v) => {
                 let value = read_integer(doc)?;
+                let value_raw = value.as_bits();
                 if value < v.min {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" is {}, less than minimum of {}", field, value, v.min)))
@@ -162,6 +163,14 @@ impl Schema {
                 else if (v.in_vec.len() > 0) && !v.in_vec.contains(&value) {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
+                }
+                else if (v.bit_set & value_raw) == v.bit_set {
+                    Err(Error::new(InvalidData,
+                        format!("Field \"{}\" is 0x{:X}, but must have set bits 0x{:X}", field, value_raw, v.bit_set)))
+                }
+                else if (v.bit_clear ^ value_raw) == v.bit_clear {
+                    Err(Error::new(InvalidData,
+                        format!("Field \"{}\" is 0x{:X}, but must have cleared bits 0x{:X}", field, value_raw, v.bit_clear)))
                 }
                 else {
                     Ok(())
@@ -229,14 +238,9 @@ impl Schema {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" contains string not on the `in` list", field)))
                 }
-                else if let Some(ref reg) = v.matches {
-                    if !reg.is_match(value) {
-                        Err(Error::new(InvalidData,
-                            format!("Field \"{}\" fails regex check", field)))
-                    }
-                    else {
-                        Ok(())
-                    }
+                else if v.matches.iter().any(|reg| !reg.is_match(value)) {
+                    Err(Error::new(InvalidData,
+                        format!("Field \"{}\" fails regex check", field)))
                 }
                 else {
                     Ok(())
@@ -399,13 +403,61 @@ impl Schema {
                     MarkerType::Array(len) => len,
                     _ => return Err(Error::new(InvalidData, format!("Array for field \"{}\"not found", field))),
                 };
-                //if num_items == 0 && v.min_len == 0 { return Ok(()); }
-                //min_len: usize,
-                //max_len: usize,
-                //items: Vec<Validator>,
-                //extra_items: Option<Box<Validator>>,
-                //contains: Vec<Validator>,
-                //unique: bool,
+                if num_items == 0 && v.min_len == 0 && v.items.len() == 0 && v.contains.len() == 0 {
+                    return Ok(());
+                }
+
+                if num_items < v.min_len {
+                    return Err(Error::new(InvalidData,
+                        format!("Field {} contains array with {} items, less than minimum of {}", field, num_items, v.min_len)));
+                }
+                if num_items > v.max_len {
+                    return Err(Error::new(InvalidData,
+                        format!("Field {} contains array with {} items, greater than maximum of {}", field, num_items, v.max_len)));
+                }
+                let mut unique_set: HashSet<&[u8]> = if v.unique {
+                    HashSet::with_capacity(num_items)
+                }
+                else {
+                    HashSet::with_capacity(0)
+                };
+                let mut contain_set: Vec<bool> = Vec::with_capacity(v.contains.len());
+
+                for i in 0..num_items {
+                    let item_start = doc.clone();
+                    if let Some(item_validator) = v.items.get(i) {
+                        let item_validator = self.fetch_validator(item_validator);
+                        if let Err(e) = self.run_validator(field, item_validator, doc) {
+                            return Err(e);
+                        }
+                    }
+                    else if let Some(ref item_validator) = v.extra_items {
+                        let item_validator = self.fetch_validator(item_validator);
+                        if let Err(e) = self.run_validator(field, item_validator, doc) {
+                            return Err(e);
+                        }
+                    }
+                    else {
+                        verify_value(doc)?;
+                    }
+                    // Check for uniqueness / if meets any "contains" requirements
+                    let (item, _) = item_start.split_at(item_start.len()-doc.len());
+                    if v.unique {
+                        if !unique_set.insert(item) {
+                            return Err(Error::new(InvalidData,
+                                format!("Field {} contains a repeated item at index {}", field, i)));
+                        }
+                    }
+                    contain_set.iter_mut()
+                        .zip(v.contains.iter())
+                        .filter(|(checked,_)| !**checked)
+                        .for_each(|(checked,contains_item)| {
+                            let item_validator = self.fetch_validator(contains_item);
+                            if let Ok(()) = self.run_validator(field, item_validator, &mut item.clone()) {
+                                *checked = true;
+                            }
+                        });
+                }
                 Err(Error::new(InvalidData, format!("Checking for field \"{}\" not implemented", field)))
             },
         }
@@ -438,6 +490,8 @@ struct ValidInt {
     nin_vec: Vec<Integer>,
     min: Integer,
     max: Integer,
+    bit_set: u64,
+    bit_clear: u64,
 }
 
 struct ValidStr {
@@ -445,7 +499,7 @@ struct ValidStr {
     nin_vec: Vec<String>,
     min_len: usize,
     max_len: usize,
-    matches: Option<Box<Regex>>,
+    matches: Vec<Regex>,
 }
 
 struct ValidF32 {

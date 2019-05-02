@@ -25,6 +25,22 @@ impl Timestamp {
         Timestamp { sec, nano: 0 }
     }
 
+    /// Minimum possible time that can be represented
+    pub fn min_value() -> Timestamp {
+        Timestamp {
+            sec: i64::min_value(),
+            nano: 0,
+        }
+    }
+
+    /// Maximum possible time that can be represented
+    pub fn max_value() -> Timestamp {
+        Timestamp {
+            sec: i64::max_value(),
+            nano: 1_999_999_999,
+        }
+    }
+
     /// Return the UNIX timestamp (number of seconds since January 1, 1970 
     /// 0:00:00 UTC)
     pub fn timestamp(&self) -> i64 {

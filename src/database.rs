@@ -238,7 +238,7 @@ impl InternalDb {
                             let result = match self.doc_db.get(&schema_hash) {
                                 Some((_,schema,_,_)) => {
                                     // Get the schema and verify the document
-                                    if let Ok(verifier) = Schema::from_raw(&schema[..]) {
+                                    if let Ok(verifier) = Schema::from_raw(&mut &schema[..]) {
                                         if let Ok(_) = verifier.validate_doc(&mut &doc[..]) {
                                             // Increment the schema tracking count
                                             self.schema_tracking.entry(schema_hash.clone())
@@ -247,7 +247,7 @@ impl InternalDb {
                                             ChangeResult::Ok
                                         }
                                         else {
-                                            ChangeResult::NotValidSchema
+                                            ChangeResult::FailedSchemaCheck
                                         }
                                     }
                                     else {
@@ -265,7 +265,7 @@ impl InternalDb {
                         Ok(None) => {
                             ChangeResult::Ok
                         }
-                        Err(_) => ChangeResult::FailedSchemaCheck,
+                        Err(_) => ChangeResult::FailedSchemaCheck, // Failed because it wasn't even a proper document
                     };
                     if result == ChangeResult::Ok {
                         self.doc_db.insert(hash, (doc_len, doc, perm, ttl));

@@ -378,7 +378,7 @@ pub fn read_time(buf: &mut &[u8]) -> io::Result<Timestamp> {
 ///     return Err(Error::new(InvalidData, "Expected positive integer"));
 /// }
 /// ```
-fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
+pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),
         1 => {
@@ -432,7 +432,7 @@ fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
 ///     return Err(Error::new(InvalidData, "Expected negative integer"));
 /// }
 /// ```
-fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
+pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),
         1 => {
@@ -489,7 +489,7 @@ fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
 
 /// General function for referencing binary data in a buffer. Checks for if the 
 /// length is greater than remaining bytes in the buffer.
-fn read_raw_bin<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a [u8]> {
+pub fn read_raw_bin<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a [u8]> {
     if buf.len() >= len {
         let (data, rem) = buf.split_at(len);
         *buf = rem;
@@ -503,7 +503,7 @@ fn read_raw_bin<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a [u8]> {
 /// General function for referencing a UTF-8 string in a buffer. Checks for if the 
 /// length is greater than remaining bytes in the buffer, or if the bytes 
 /// received are not valid UTF-8.
-fn read_raw_str<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a str> {
+pub fn read_raw_str<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a str> {
     if buf.len() >= len {
         let (data, rem) = buf.split_at(len);
         *buf = rem;
@@ -518,7 +518,7 @@ fn read_raw_str<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a str> {
 
 /// General function for reading a field-value map from a buffer. Checks to make 
 /// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
-fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<BTreeMap<String, Value>> {
+pub fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<BTreeMap<String, Value>> {
 
     let mut map: BTreeMap<String,Value> = BTreeMap::new();
     if len == 0 { return Ok(map); }
@@ -551,7 +551,7 @@ fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<BTreeMap<String, Value
 
 /// General function for referencing a field-value map in a buffer. Checks to make 
 /// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
-fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<BTreeMap<&'a str, ValueRef<'a>>> {
+pub fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<BTreeMap<&'a str, ValueRef<'a>>> {
 
     let mut map: BTreeMap<&'a str,ValueRef<'a>> = BTreeMap::new();
     if len == 0 { return Ok(map); }
@@ -584,7 +584,7 @@ fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<BTreeMap<&'
 
 /// General function for verifying a field-value map in a buffer. Makes sure the keys are unique, 
 /// valid UTF-8 Strings in lexicographic order.
-fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
+pub fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
 
     if len == 0 { return Ok(0); }
     let length = buf.len();
@@ -614,7 +614,7 @@ fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
 }
 
 /// Read raw Timestamp out from a buffer
-fn read_raw_time(buf: &mut &[u8], len: usize) -> io::Result<Timestamp> {
+pub fn read_raw_time(buf: &mut &[u8], len: usize) -> io::Result<Timestamp> {
     match len {
         4 => {
             let sec = buf.read_u32::<BigEndian>()?;
@@ -636,7 +636,7 @@ fn read_raw_time(buf: &mut &[u8], len: usize) -> io::Result<Timestamp> {
 }
 
 /// Read raw Hash out from a buffer
-fn read_raw_hash(buf: &mut &[u8], len: usize) -> io::Result<Hash> {
+pub fn read_raw_hash(buf: &mut &[u8], len: usize) -> io::Result<Hash> {
     let hash = Hash::decode(buf).map_err(|_e| Error::new(InvalidData, "Hash not recognized"))?;
     if hash.len() != len {
         Err(Error::new(InvalidData, "Hash type has invalid size"))
@@ -647,7 +647,7 @@ fn read_raw_hash(buf: &mut &[u8], len: usize) -> io::Result<Hash> {
 }
 
 /// Read raw Identity out from a buffer
-fn read_raw_id(buf: &mut &[u8], len: usize) -> io::Result<Identity> {
+pub fn read_raw_id(buf: &mut &[u8], len: usize) -> io::Result<Identity> {
     let id = Identity::decode(buf).map_err(|_e| Error::new(InvalidData, "Identity not recognized"))?;
     if id.len() != len {
         Err(Error::new(InvalidData, "Identity type has invalid size"))
@@ -658,7 +658,7 @@ fn read_raw_id(buf: &mut &[u8], len: usize) -> io::Result<Identity> {
 }
 
 /// Read raw lockbox data out from a buffer
-fn read_raw_lockbox(buf: &mut &[u8], len: usize) -> io::Result<Lockbox> {
+pub fn read_raw_lockbox(buf: &mut &[u8], len: usize) -> io::Result<Lockbox> {
     Ok(Lockbox::decode(len, buf).map_err(|_e| Error::new(InvalidData, "Lockbox not recognized"))?)
 }
 

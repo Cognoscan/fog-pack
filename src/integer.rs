@@ -21,6 +21,16 @@ pub struct Integer {
 }
 
 impl Integer {
+    /// Minimum possible integer that can be represented. Equivalent to `i64::min_value()`.
+    pub fn min_value() -> Integer {
+        Integer { n: IntPriv::NegInt(i64::min_value()) }
+    }
+
+    /// Maximum possible integer that can be represented. Equivalent to `u64::max_value()`.
+    pub fn max_value() -> Integer {
+        Integer { n: IntPriv::PosInt(u64::max_value()) }
+    }
+
     /// Returns `true` if the integer can be represented as `i64`.
     #[inline]
     pub fn is_i64(&self) -> bool {

@@ -156,7 +156,7 @@ impl Schema {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" is {}, greater than maximum of {}", field, value, v.max)))
                 }
-                else if v.nin_vec.contains(&value) {
+                else if let Ok(_) = v.nin_vec.binary_search(&value) {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" is {}, which is on the `nin` list", field, value)))
                 }
@@ -164,11 +164,11 @@ impl Schema {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
                 }
-                else if (v.bit_set & value_raw) == v.bit_set {
+                else if (v.bit_set & value_raw) != v.bit_set {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" is 0x{:X}, but must have set bits 0x{:X}", field, value_raw, v.bit_set)))
                 }
-                else if (v.bit_clear ^ value_raw) == v.bit_clear {
+                else if (v.bit_clear ^ value_raw) != v.bit_clear {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" is 0x{:X}, but must have cleared bits 0x{:X}", field, value_raw, v.bit_clear)))
                 }
@@ -255,6 +255,14 @@ impl Schema {
                 else if value.len() > v.max_len {
                     Err(Error::new(InvalidData,
                         format!("Field \"{}\" contains binary longer than max length of {}", field, v.min_len)))
+                }
+                else if v.bit_set.iter().zip(value).any(|(bit, val)| (bit & val) != *bit) {
+                    Err(Error::new(InvalidData,
+                        format!("Field \"{}\" does not have all required bits set", field)))
+                }
+                else if v.bit_clear.iter().zip(value).any(|(bit, val)| (bit ^ val) != *bit) {
+                    Err(Error::new(InvalidData,
+                        format!("Field \"{}\" does not have all required bits cleared", field)))
                 }
                 else if v.nin_vec.iter().any(|x| value == &x[..]) {
                     Err(Error::new(InvalidData,
@@ -534,6 +542,8 @@ struct ValidBin {
     nin_vec: Vec<Vec<u8>>,
     min_len: usize,
     max_len: usize,
+    bit_set: Vec<u8>,
+    bit_clear: Vec<u8>,
 }
 
 struct ValidArray {

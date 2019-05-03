@@ -227,6 +227,51 @@ impl Schema {
                 Err(Error::new(Other, "Can't yet decode this validator type"))
             }
             MarkerType::Object(len) => {
+                let mut field = read_str(raw)?;
+                // | Field        | Content                      |
+                // | --           | --                           |
+                // | any          | Array of Validators          |
+                // | array        | non-negative integer         |
+                // | bit          | non-negative integer         |
+                // | bits_clr     | Integer/Binary               |
+                // | bits_set     | Integer/Binary               |
+                // | comment      | String                       |
+                // | contains     | Array of Validators          |
+                // | contains_num | non-negative integer         |
+                // | default      | Any                          |
+                // | description  | String                       |
+                // | entries      | Object                       |
+                // | ex_max       | Boolean                      |
+                // | ex_min       | Boolean                      |
+                // | extra_items  | Validator                    |
+                // | field_type   | Validator                    |
+                // | in           | Array of type                |
+                // | items        | Array of Validators          |
+                // | link         | Validator                    |
+                // | link_ok      | bool                         |
+                // | match        | String Array                 |
+                // | max          | Numeric type                 |
+                // | max_fields   | Non-negative Integer         |
+                // | max_len      | Non-negative Integer         |
+                // | min          | Numeric type                 |
+                // | min_fields   | Non-negative Integer         |
+                // | min_len      | Non-negative Integer         |
+                // | name         | String                       |
+                // | nin          | Array of type                |
+                // | opt          | Object with Validator Values |
+                // | ord          | bool                         |
+                // | query        | bool                         |
+                // | regex        | non-negative integer         |
+                // | req          | Object with Validator Values |
+                // | schema       | Array of Hashes              |
+                // | set          | non-negative integer         |
+                // | type         | String                       |
+                // | types        | Object                       |
+                // | unique       | Boolean                      |
+                // | unknown_ok   | Boolean                      |
+                // | version      | Integer                      |
+
+
                 Err(Error::new(Other, "Can't yet decode this validator type"))
             }
         }

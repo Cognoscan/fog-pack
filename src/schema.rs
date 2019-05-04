@@ -369,6 +369,10 @@ impl Schema {
                 verify_value(doc)?;
                 Ok(())
             },
+            Validator::Null => {
+                read_null(doc)?;
+                Ok(())
+            },
             Validator::Multi(v) => {
                 if v.any_of.iter().any(|validator| {
                     let validator = self.fetch_validator(validator);
@@ -706,7 +710,7 @@ impl Schema {
                 else {
                     HashSet::with_capacity(0)
                 };
-                let mut contain_set: Vec<bool> = Vec::with_capacity(v.contains.len());
+                let mut contain_set: Vec<bool> = vec![false; v.contains.len()];
 
                 // Run through the whole array
                 for i in 0..num_items {
@@ -762,6 +766,7 @@ impl Schema {
 pub enum Validator {
     Invalid,
     Valid,
+    Null,
     Type(String),
     Boolean(ValidBool),
     Integer(ValidInt),

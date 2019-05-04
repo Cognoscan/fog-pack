@@ -66,217 +66,6 @@ impl Schema {
         })
     }
 
-    pub fn read_validator(raw: &mut &[u8], is_query: bool) -> io::Result<Validator> {
-        match read_marker(raw)? {
-            MarkerType::Null => Ok(Validator::Valid),
-            MarkerType::Boolean(v) => {
-                Ok(Validator::Boolean(
-                    ValidBool {
-                        constant: Some(v),
-                        query: is_query,
-                    }
-                ))
-            },
-            MarkerType::NegInt((len, v)) => {
-                let val = read_neg_int(raw, len, v)?;
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::Integer(
-                    ValidInt {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        min: Integer::from(i64::min_value()),
-                        max: Integer::from(u64::max_value()),
-                        bit_set: 0,
-                        bit_clear: 0,
-                        query: is_query,
-                        ord: is_query,
-                        bit: is_query,
-                    }
-                ))
-            },
-            MarkerType::PosInt((len, v)) => {
-                let val = read_pos_int(raw, len, v)?;
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::Integer(
-                    ValidInt {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        min: Integer::min_value(),
-                        max: Integer::max_value(),
-                        bit_set: 0,
-                        bit_clear: 0,
-                        query: is_query,
-                        ord: is_query,
-                        bit: is_query,
-                    }
-                ))
-            },
-            MarkerType::String(len) => {
-                let val = read_raw_str(raw, len)?.to_string();
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::String(
-                    ValidStr {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        min_len: usize::min_value(),
-                        max_len: usize::max_value(),
-                        matches: Vec::with_capacity(0),
-                        query: is_query,
-                        ord: is_query,
-                        regex: is_query,
-                    }
-                ))
-            },
-            MarkerType::F32 => {
-                let val = raw.read_f32::<BigEndian>()?;
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::F32(
-                    ValidF32 {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        min: ::std::f32::NEG_INFINITY,
-                        max: ::std::f32::INFINITY,
-                        query: is_query,
-                        ord: is_query,
-                    }
-                ))
-            },
-            MarkerType::F64 => {
-                let val = raw.read_f64::<BigEndian>()?;
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::F64(
-                    ValidF64 {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        min: ::std::f64::NEG_INFINITY,
-                        max: ::std::f64::INFINITY,
-                        query: is_query,
-                        ord: is_query,
-                    }
-                ))
-            },
-            MarkerType::Binary(len) => {
-                let val = read_raw_bin(raw, len)?.to_vec();
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::Binary(
-                    ValidBin {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        min_len: usize::min_value(),
-                        max_len: usize::max_value(),
-                        bit_set: Vec::with_capacity(0),
-                        bit_clear: Vec::with_capacity(0),
-                        query: is_query,
-                        ord: is_query,
-                        bit: is_query,
-                    }
-                ))
-            },
-            MarkerType::Hash(len) => {
-                let val = read_raw_hash(raw, len)?;
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::Hash(
-                    ValidHash {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        link: None,
-                        schema: Vec::with_capacity(0),
-                        query: is_query,
-                        link_ok: is_query,
-                    }
-                ))
-            },
-            MarkerType::Identity(len) => {
-                let val = read_raw_id(raw, len)?;
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::Identity(
-                    ValidIdent {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        query: is_query,
-                    }
-                ))
-            }
-            MarkerType::Lockbox(_) => {
-                Err(Error::new(InvalidData, "Lockbox cannot be used in a schema"))
-            }
-            MarkerType::Timestamp(len) => {
-                let val = read_raw_time(raw, len)?;
-                let mut in_vec = Vec::with_capacity(1);
-                in_vec.push(val);
-                Ok(Validator::Timestamp(
-                    ValidTime {
-                        in_vec,
-                        nin_vec: Vec::with_capacity(0),
-                        min: Timestamp::min_value(),
-                        max: Timestamp::max_value(),
-                        query: is_query,
-                        ord: is_query,
-                    }
-                ))
-            },
-            MarkerType::Array(len) => {
-                Err(Error::new(Other, "Can't yet decode this validator type"))
-            }
-            MarkerType::Object(len) => {
-                let mut field = read_str(raw)?;
-                // | Field        | Content                      |
-                // | --           | --                           |
-                // | any          | Array of Validators          |
-                // | array        | non-negative integer         |
-                // | bit          | non-negative integer         |
-                // | bits_clr     | Integer/Binary               |
-                // | bits_set     | Integer/Binary               |
-                // | comment      | String                       |
-                // | contains     | Array of Validators          |
-                // | contains_num | non-negative integer         |
-                // | default      | Any                          |
-                // | description  | String                       |
-                // | entries      | Object                       |
-                // | ex_max       | Boolean                      |
-                // | ex_min       | Boolean                      |
-                // | extra_items  | Validator                    |
-                // | field_type   | Validator                    |
-                // | in           | Array of type                |
-                // | items        | Array of Validators          |
-                // | link         | Validator                    |
-                // | link_ok      | bool                         |
-                // | match        | String Array                 |
-                // | max          | Numeric type                 |
-                // | max_fields   | Non-negative Integer         |
-                // | max_len      | Non-negative Integer         |
-                // | min          | Numeric type                 |
-                // | min_fields   | Non-negative Integer         |
-                // | min_len      | Non-negative Integer         |
-                // | name         | String                       |
-                // | nin          | Array of type                |
-                // | opt          | Object with Validator Values |
-                // | ord          | bool                         |
-                // | query        | bool                         |
-                // | regex        | non-negative integer         |
-                // | req          | Object with Validator Values |
-                // | schema       | Array of Hashes              |
-                // | set          | non-negative integer         |
-                // | type         | String                       |
-                // | types        | Object                       |
-                // | unique       | Boolean                      |
-                // | unknown_ok   | Boolean                      |
-                // | version      | Integer                      |
-
-
-                Err(Error::new(Other, "Can't yet decode this validator type"))
-            }
-        }
-    }
-
     /// Validates a document against this schema. Does not check the schema field itself.
     pub fn validate_doc(&self, doc: &mut &[u8]) -> io::Result<()> {
         let num_fields = match read_marker(doc)? {
@@ -783,11 +572,260 @@ pub enum Validator {
     Multi(ValidMulti),
 }
 
+impl Validator {
+    pub fn read_validator(raw: &mut &[u8], is_query: bool) -> io::Result<Validator> {
+        match read_marker(raw)? {
+            MarkerType::Null => Ok(Validator::Valid),
+            MarkerType::Boolean(v) => {
+                Ok(Validator::Boolean(ValidBool::from_const(v, is_query)))
+            },
+            MarkerType::NegInt((len, v)) => {
+                let val = read_neg_int(raw, len, v)?;
+                Ok(Validator::Integer(ValidInt::from_const(val, is_query)))
+            },
+            MarkerType::PosInt((len, v)) => {
+                let val = read_pos_int(raw, len, v)?;
+                Ok(Validator::Integer(ValidInt::from_const(val, is_query)))
+            },
+            MarkerType::String(len) => {
+                let val = read_raw_str(raw, len)?;
+                Ok(Validator::String(ValidStr::from_const(val, is_query)))
+            },
+            MarkerType::F32 => {
+                let val = raw.read_f32::<BigEndian>()?;
+                Ok(Validator::F32(ValidF32::from_const(val, is_query)))
+            },
+            MarkerType::F64 => {
+                let val = raw.read_f64::<BigEndian>()?;
+                Ok(Validator::F64(ValidF64::from_const(val, is_query)))
+            },
+            MarkerType::Binary(len) => {
+                let val = read_raw_bin(raw, len)?;
+                Ok(Validator::Binary(ValidBin::from_const(val, is_query)))
+            },
+            MarkerType::Hash(len) => {
+                let val = read_raw_hash(raw, len)?;
+                Ok(Validator::Hash(ValidHash::from_const(val, is_query)))
+            },
+            MarkerType::Identity(len) => {
+                let val = read_raw_id(raw, len)?;
+                Ok(Validator::Identity(ValidIdent::from_const(val, is_query)))
+            }
+            MarkerType::Lockbox(_) => {
+                Err(Error::new(InvalidData, "Lockbox cannot be used in a schema"))
+            }
+            MarkerType::Timestamp(len) => {
+                let val = read_raw_time(raw, len)?;
+                Ok(Validator::Timestamp(ValidTime::from_const(val, is_query)))
+            },
+            MarkerType::Array(_len) => {
+                Err(Error::new(Other, "Can't yet decode this validator type"))
+            }
+            MarkerType::Object(len) => {
+                // Create new validators and try them all.
+                let mut possible = vec![
+                    Validator::Null,
+                    Validator::Type(String::from("")),
+                    Validator::Boolean(ValidBool::new(is_query)),
+                    Validator::Integer(ValidInt::new(is_query)),
+                    Validator::String(ValidStr::new(is_query)),
+                    Validator::F32(ValidF32::new(is_query)),
+                    Validator::F64(ValidF64::new(is_query)),
+                    Validator::Binary(ValidBin::new(is_query)),
+                    Validator::Array(ValidArray::new(is_query)),
+                    Validator::Object(ValidObj::new(is_query)),
+                    Validator::Hash(ValidHash::new(is_query)),
+                    Validator::Identity(ValidIdent::new(is_query)),
+                    Validator::Timestamp(ValidTime::new(is_query)),
+                    Validator::Multi(ValidMulti::new(is_query)),
+                ];
+                let mut possible_check = vec![true; possible.len()];
+
+                let mut old_field = read_str(&mut raw.clone())?;
+                let mut field: &str;
+                for i in 0..len {
+                    field = read_str(raw)?;
+                    // Check for proper lexicographic order of fields
+                    if i != 0 {
+                        if field <= old_field {
+                            return Err(Error::new(InvalidData, "Repeated or improperly ordered fields in object"));
+                        }
+                    }
+                    old_field = field;
+                    match field {
+                        "comment" => {
+                            read_str(raw).map_err(|_e| Error::new(InvalidData, "`comment` field didn't contain string"))?;
+                        },
+                        _ => {
+                            let mut raw_now = &raw[..];
+                            possible_check.iter_mut()
+                                .zip(possible.iter_mut())
+                                .filter(|(check,_)| !**check)
+                                .for_each(|(check,validator)| {
+                                    let mut raw_local = &raw_now[..];
+                                    let result = validator.update(field, &mut raw_local).unwrap_or(false);
+                                    if result {
+                                        *raw = raw_local;
+                                    }
+                                    *check = result;
+                                });
+                        }
+                    }
+                }
+
+                    // For each validator, check to see if it can parse this field.
+                // | Field        | Content                      |
+                // | --           | --                           |
+                // | any          | Array of Validators          |
+                // | array        | non-negative integer         |
+                // | bit          | non-negative integer         |
+                // | bits_clr     | Integer/Binary               |
+                // | bits_set     | Integer/Binary               |
+                // | comment      | String                       |
+                // | contains     | Array of Validators          |
+                // | contains_num | non-negative integer         |
+                // | default      | Any                          |
+                // | description  | String                       |
+                // | entries      | Object                       |
+                // | ex_max       | Boolean                      |
+                // | ex_min       | Boolean                      |
+                // | extra_items  | Validator                    |
+                // | field_type   | Validator                    |
+                // | in           | Array of type                |
+                // | items        | Array of Validators          |
+                // | link         | Validator                    |
+                // | link_ok      | bool                         |
+                // | match        | String Array                 |
+                // | max          | Numeric type                 |
+                // | max_fields   | Non-negative Integer         |
+                // | max_len      | Non-negative Integer         |
+                // | min          | Numeric type                 |
+                // | min_fields   | Non-negative Integer         |
+                // | min_len      | Non-negative Integer         |
+                // | name         | String                       |
+                // | nin          | Array of type                |
+                // | opt          | Object with Validator Values |
+                // | ord          | bool                         |
+                // | query        | bool                         |
+                // | regex        | non-negative integer         |
+                // | req          | Object with Validator Values |
+                // | schema       | Array of Hashes              |
+                // | set          | non-negative integer         |
+                // | type         | String                       |
+                // | types        | Object                       |
+                // | unique       | Boolean                      |
+                // | unknown_ok   | Boolean                      |
+                // | version      | Integer                      |
+
+
+                Err(Error::new(Other, "Can't yet decode this validator type"))
+            }
+        }
+    }
+
+    fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+        match self {
+            Validator::Type(ref mut v) => {
+                match field {
+                    "type" => {
+                        v.push_str(read_str(raw)?);
+                        Ok(true)
+                    },
+                    _ => Ok(false),
+                }
+            },
+            Validator::Null => {
+                match field {
+                    "type" => Ok("Null" == read_str(raw)?),
+                    _ => Ok(false)
+                }
+            },
+            Validator::Boolean(v) => v.update(field, raw),
+            _ => Ok(false),
+        }
+    }
+}
+
+
+/// Boolean type validator
+#[derive(Clone)]
 pub struct ValidBool {
     constant: Option<bool>,
     query: bool,
 }
 
+impl ValidBool {
+    fn new(is_query: bool) -> ValidBool {
+        ValidBool {
+            constant: None,
+            query: is_query
+        }
+    }
+
+    fn from_const(constant: bool, is_query: bool) -> ValidBool {
+        let mut v = ValidBool::new(is_query);
+        let constant = Some(constant);
+        v.constant = constant;
+        v
+    }
+
+    fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+        match field {
+            "type" => Ok("Bool" == read_str(raw)?),
+            "in" => {
+                self.constant = Some(read_bool(raw)?);
+                Ok(true)
+            },
+            "nin" => {
+                self.constant = Some(!(read_bool(raw)?));
+                Ok(true)
+            }
+            "query" => {
+                self.query = read_bool(raw)?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn intersect(&self, other: Validator, query: bool) -> Result<Validator, ()> {
+        if !self.query && query { return Err(()); }
+        match other {
+            Validator::Boolean(other) => {
+                if let Some(o) = other.constant {
+                    if let Some(s) = self.constant {
+                        if s == o {
+                            Ok(Validator::Boolean(ValidBool {
+                                constant: self.constant,
+                                query: self.query && other.query,
+                            }))
+                        }
+                        else {
+                            Ok(Validator::Invalid)
+                        }
+                    }
+                    else {
+                        Ok(Validator::Boolean(ValidBool {
+                            constant: other.constant,
+                            query: self.query && other.query,
+                        }))
+                    }
+                }
+                else {
+                    Ok(Validator::Boolean(ValidBool {
+                        constant: None,
+                        query: self.query && other.query,
+                    }))
+                }
+            },
+            Validator::Valid => Ok(Validator::Boolean(self.clone())),
+            _ => Ok(Validator::Invalid),
+        }
+    }
+}
+
+/// Integer type validator
+#[derive(Clone)]
 pub struct ValidInt {
     in_vec: Vec<Integer>,
     nin_vec: Vec<Integer>,
@@ -800,6 +838,59 @@ pub struct ValidInt {
     bit: bool,
 }
 
+impl ValidInt {
+    fn new(is_query: bool) -> ValidInt {
+        ValidInt {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            min: Integer::min_value(),
+            max: Integer::max_value(),
+            bit_set: 0,
+            bit_clear: 0,
+            query: is_query,
+            ord: is_query,
+            bit: is_query,
+        }
+    }
+
+    fn from_const(constant: Integer, is_query: bool) -> ValidInt {
+        let mut v = ValidInt::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant);
+        v.in_vec = in_vec;
+        v
+    }
+
+    /// Intersection of Integer with other Validators. Returns Err only is `query` is true and the 
+    /// other validator contains non-allowed query parameters.
+    fn intersect(&self, other: Validator, query: bool) -> Result<Validator, ()> {
+        if query && !self.query && !self.ord && !self.bit { return Err(()); }
+        match other {
+            Validator::Integer(other) => {
+                if query && (
+                    (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
+                    || (!self.ord && ((other.min > Integer::min_value()) || (other.max < Integer::max_value())))
+                    || (!self.bit && ((other.bit_set > 0) || (other.bit_clear > 0))))
+                {
+                    Err(())
+                }
+                else if (self.min > other.max) || (self.max < other.min) 
+                    || ((self.bit_set & other.bit_clear) != 0) || ((self.bit_clear & other.bit_set) != 0)
+                {
+                    Ok(Validator::Invalid)
+                }
+                else {
+                    // NOT DONE YET
+                    Ok(Validator::Invalid)
+                }
+            },
+            Validator::Valid => Ok(Validator::Integer(self.clone())),
+            _ => Ok(Validator::Invalid),
+        }
+    }
+}
+
+/// String type validator
 pub struct ValidStr {
     in_vec: Vec<String>,
     nin_vec: Vec<String>,
@@ -811,6 +902,30 @@ pub struct ValidStr {
     regex: bool,
 }
 
+impl ValidStr {
+    fn new(is_query: bool) -> ValidStr {
+        ValidStr {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            min_len: usize::min_value(),
+            max_len: usize::max_value(),
+            matches: Vec::with_capacity(0),
+            query: is_query,
+            ord: is_query,
+            regex: is_query,
+        }
+    }
+
+    fn from_const(constant: &str, is_query: bool) -> ValidStr {
+        let mut v = ValidStr::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant.to_string());
+        v.in_vec = in_vec;
+        v
+    }
+}
+
+/// F32 type validator
 pub struct ValidF32 {
     in_vec: Vec<f32>,
     nin_vec: Vec<f32>,
@@ -820,6 +935,28 @@ pub struct ValidF32 {
     ord: bool,
 }
 
+impl ValidF32 {
+    fn new(is_query: bool) -> ValidF32 {
+        ValidF32 {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            min: ::std::f32::NEG_INFINITY,
+            max: ::std::f32::INFINITY,
+            query: is_query,
+            ord: is_query,
+        }
+    }
+
+    fn from_const(constant: f32, is_query: bool) -> ValidF32 {
+        let mut v = ValidF32::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant);
+        v.in_vec = in_vec;
+        v
+    }
+}
+
+/// F64 type validator
 pub struct ValidF64 {
     in_vec: Vec<f64>,
     nin_vec: Vec<f64>,
@@ -829,6 +966,28 @@ pub struct ValidF64 {
     ord: bool,
 }
 
+impl ValidF64 {
+    fn new(is_query: bool) -> ValidF64 {
+        ValidF64 {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            min: ::std::f64::NEG_INFINITY,
+            max: ::std::f64::INFINITY,
+            query: is_query,
+            ord: is_query,
+        }
+    }
+
+    fn from_const(constant: f64, is_query: bool) -> ValidF64 {
+        let mut v = ValidF64::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant);
+        v.in_vec = in_vec;
+        v
+    }
+}
+
+/// Binary type validator
 pub struct ValidBin {
     in_vec: Vec<Vec<u8>>,
     nin_vec: Vec<Vec<u8>>,
@@ -840,6 +999,31 @@ pub struct ValidBin {
     ord: bool,
     bit: bool,
 }
+
+impl ValidBin {
+    fn new(is_query: bool) -> ValidBin {
+        ValidBin {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            min_len: usize::min_value(),
+            max_len: usize::max_value(),
+            bit_set: Vec::with_capacity(0),
+            bit_clear: Vec::with_capacity(0),
+            query: is_query,
+            ord: is_query,
+            bit: is_query,
+        }
+    }
+
+    fn from_const(constant: &[u8], is_query: bool) -> ValidBin {
+        let mut v = ValidBin::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant.to_vec());
+        v.in_vec = in_vec;
+        v
+    }
+}
+
 
 pub struct ValidArray {
     /// Raw msgpack to compare against
@@ -855,6 +1039,25 @@ pub struct ValidArray {
     array: bool,
 }
 
+/// Array type validator
+impl ValidArray {
+    fn new(is_query: bool) -> ValidArray {
+        ValidArray {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            min_len: usize::min_value(),
+            max_len: usize::max_value(),
+            items: Vec::with_capacity(0),
+            extra_items: None,
+            contains: Vec::with_capacity(0),
+            unique: false,
+            query: is_query,
+            array: is_query,
+        }
+    }
+}
+
+/// Object type validator
 pub struct ValidObj {
     in_vec: Vec<Vec<u8>>,
     nin_vec: Vec<Vec<u8>>,
@@ -867,6 +1070,25 @@ pub struct ValidObj {
     query: bool,
 }
 
+impl ValidObj {
+    fn new(is_query: bool) -> ValidObj {
+        // For `unknown_ok`, default to no unknowns allowed, the only time we are not permissive by 
+        // default in schema validators.
+        ValidObj {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            required: Vec::with_capacity(0),
+            optional: Vec::with_capacity(0),
+            min_fields: usize::min_value(),
+            max_fields: usize::max_value(),
+            field_type: None,
+            unknown_ok: is_query,
+            query: is_query,
+        }
+    }
+}
+
+/// Hash type validator
 pub struct ValidHash {
     in_vec: Vec<Hash>,
     nin_vec: Vec<Hash>,
@@ -876,17 +1098,67 @@ pub struct ValidHash {
     link_ok: bool,
 }
 
+impl ValidHash {
+    fn new(is_query: bool) -> ValidHash {
+        ValidHash {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            link: None,
+            schema: Vec::with_capacity(0),
+            query: is_query,
+            link_ok: is_query,
+        }
+    }
+
+    fn from_const(constant: Hash, is_query: bool) -> ValidHash {
+        let mut v = ValidHash::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant);
+        v.in_vec = in_vec;
+        v
+    }
+}
+
 pub struct ValidIdent {
     in_vec: Vec<Identity>,
     nin_vec: Vec<Identity>,
     query: bool,
 }
 
+impl ValidIdent {
+    fn new(is_query: bool) -> ValidIdent {
+        ValidIdent {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            query: is_query,
+        }
+    }
+
+    fn from_const(constant: Identity, is_query: bool) -> ValidIdent {
+        let mut v = ValidIdent::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant);
+        v.in_vec = in_vec;
+        v
+    }
+}
+
+/// Lock type validator
 pub struct ValidLock {
     max_len: usize,
     query: bool,
 }
 
+impl ValidLock {
+    fn new(is_query: bool) -> ValidLock {
+        ValidLock {
+            max_len: usize::max_value(),
+            query: is_query
+        }
+    }
+}
+
+/// Timestamp type validator
 pub struct ValidTime {
     in_vec: Vec<Timestamp>,
     nin_vec: Vec<Timestamp>,
@@ -896,10 +1168,57 @@ pub struct ValidTime {
     ord: bool,
 }
 
+impl ValidTime {
+    fn new(is_query: bool) -> ValidTime {
+        ValidTime {
+            in_vec: Vec::with_capacity(0),
+            nin_vec: Vec::with_capacity(0),
+            min: Timestamp::min_value(),
+            max: Timestamp::max_value(),
+            query: is_query,
+            ord: is_query,
+        }
+    }
+
+    fn from_const(constant: Timestamp, is_query: bool) -> ValidTime {
+        let mut v = ValidTime::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant);
+        v.in_vec = in_vec;
+        v
+    }
+}
+
+/// Container for multiple accepted Validators
 pub struct ValidMulti {
     any_of: Vec<Validator>,
 }
 
+impl ValidMulti {
+    fn new(_is_query: bool) -> ValidMulti {
+        ValidMulti {
+            any_of: Vec::with_capacity(0)
+        }
+    }
+}
+
+/// Merge two `in` and `nin` lists simultaneously.
+///
+/// Returned values are: new `in` list, new `nin` list, and a boolean that is false if nothing can 
+/// satisfy both lists.
+fn merge_lists<T>(left_in: &[T], left_nin: &[T], right_in: &[T], right_nin: &[T]) -> (Vec<T>, Vec<T>, bool) {
+    if (left_in.len() > 0) || (right_in.len() > 0) {
+        let new_in = Vec::with_capacity(0);
+        let new_nin = Vec::with_capacity(0);
+        (new_in, new_nin, false)
+    }
+    else {
+        let new_in = Vec::with_capacity(0);
+        let new_nin = Vec::with_capacity(left_nin.len() + right_nin.len());
+        
+        (new_in, new_nin, true)
+    }
+}
 
 
 

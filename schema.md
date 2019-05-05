@@ -491,4 +491,26 @@ be used to validate itself and all other schema documents.
 | contains_num | non-negative integer |
 
 
+### Integer Type
 
+Integer validators have the following validation fields:
+
+- `type`: Must be `Int` or not present.
+- `in`: A single integer or array of integers that are allowed by the validator. 
+	If not present, any integer meeting the other criteria is allowed.
+- `nin`: A single integer or array of integers that are not allowed by the 
+	validator.
+- `min`: Indicate the minimum value allowed by the validator. Defaults to the 
+	minimum possible integer value if not present.
+- `max`: Indicate the maximum value allowed by the validator. Defaults to 
+	maximum possible integer value if not present.
+- `ex_min`: Optional boolean. Changes `min` to be exclusive instead of inclusive.
+- `ex_max`: Optional boolean. Changes `max` to be exclusive instead of inclusive.
+- `bits_set`: Optional Integer value. Requires that all bits set in it also be 
+  set in the checked value. Negative values are always sign-extended.
+- `bits_clr`: Optional Integer value. Requires that all bits set in it be 
+	cleared in the checked value. Negative values are always sign-extended.
+
+In addition: integer validators have the query-relevant optional `query`, `ord`, 
+and `bit` boolean fields. Finally, they may also have `default` and `comment` 
+fields.

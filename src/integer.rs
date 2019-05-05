@@ -1,6 +1,7 @@
 use std::fmt::{self, Debug, Display};
 use std::cmp;
 use std::cmp::Ordering;
+use std::ops;
 
 use num_traits::NumCast;
 
@@ -107,6 +108,52 @@ impl cmp::PartialOrd for Integer {
     }
 }
 
+impl ops::Add<i64> for Integer {
+    type Output = Integer;
+
+    fn add(self, other: i64) -> Integer {
+        match self.n {
+            IntPriv::PosInt(lhs) => {
+                if other >= 0 {
+                    Integer::from(lhs + (other as u64))
+                }
+                else {
+                    if lhs >= (1u64 << 63) {
+                        Integer::from(lhs.wrapping_add(other as u64))
+                    }
+                    else {
+                        Integer::from((lhs as i64) + other)
+                    }
+                }
+            },
+            IntPriv::NegInt(lhs) => Integer::from(lhs + other),
+        }
+    }
+}
+
+impl ops::Sub<i64> for Integer {
+    type Output = Integer;
+
+    fn sub(self, other: i64) -> Integer {
+        match self.n {
+            IntPriv::PosInt(lhs) => {
+                if other < 0 {
+                    Integer::from(lhs.wrapping_sub(other as u64))
+                }
+                else {
+                    if lhs >= (1u64 << 63) {
+                        Integer::from(lhs - (other as u64))
+                    }
+                    else {
+                        Integer::from((lhs as i64) - other)
+                    }
+                }
+            },
+            IntPriv::NegInt(lhs) => Integer::from(lhs - other),
+        }
+    }
+}
+
 impl Debug for Integer {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         Debug::fmt(&self.n, fmt)
@@ -201,3 +248,57 @@ impl From<isize> for Integer {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add() {
+        let x = Integer::min_value();
+        let y = i64::max_value();
+        assert_eq!(x + y, Integer::from(-1));
+        let y = 1i64;
+        assert_eq!(x + y, Integer::from(i64::min_value()+1));
+        let x = Integer::from(1u64 << 63);
+        assert_eq!(x + y, Integer::from((1u64 << 63)+1));
+        let x = Integer::from((1u64 << 63)-1);
+        assert_eq!(x + y, Integer::from(1u64 << 63));
+
+        let x = Integer::max_value();
+        let y = i64::min_value();
+        assert_eq!(x + y, Integer::from(u64::max_value() >> 1));
+        let y = -1i64;
+        assert_eq!(x + y, Integer::from(u64::max_value()-1));
+        let x = Integer::from(1u64 << 63);
+        assert_eq!(x + y, Integer::from((1u64 << 63)-1));
+        let x = Integer::from((1u64 << 63)-1);
+        assert_eq!(x + y, Integer::from((1u64 << 63)-2));
+    }
+
+    #[test]
+    fn sub() {
+        let x = Integer::min_value();
+        let y = i64::min_value();
+        assert_eq!(x - y, Integer::from(0));
+        let y = -1i64;
+        assert_eq!(x - y, Integer::from(i64::min_value()+1));
+        let x = Integer::from(1u64 << 63);
+        assert_eq!(x - y, Integer::from((1u64 << 63)+1));
+        let x = Integer::from((1u64 << 63)-1);
+        assert_eq!(x - y, Integer::from(1u64 << 63));
+
+
+        let x = Integer::max_value();
+        let y = i64::max_value();
+        assert_eq!(x - y, Integer::from(1u64 << 63));
+        let y = 1i64;
+        assert_eq!(x - y, Integer::from(u64::max_value()-1));
+        let x = Integer::from(1u64 << 63);
+        assert_eq!(x - y, Integer::from((1u64 << 63)-1));
+        let x = Integer::from((1u64 << 63)-1);
+        assert_eq!(x - y, Integer::from((1u64 << 63)-2));
+    }
+}
+

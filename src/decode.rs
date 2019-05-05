@@ -38,7 +38,7 @@ pub fn read_value(buf: &mut &[u8]) -> io::Result<Value> {
         MarkerType::F64 => Value::F64(buf.read_f64::<BigEndian>()?),
         MarkerType::Binary(len) => Value::Binary(read_raw_bin(buf, len)?.to_vec()),
         MarkerType::Array(len) => {
-            let mut v = Vec::new();
+            let mut v = Vec::with_capacity(len);
             for _i in 0..len {
                 v.push(read_value(buf)?);
             }
@@ -71,7 +71,7 @@ pub fn read_value_ref<'a>(buf: &mut &'a [u8]) -> io::Result<ValueRef<'a>> {
         MarkerType::F64 => ValueRef::F64(buf.read_f64::<BigEndian>()?),
         MarkerType::Binary(len) => ValueRef::Binary(read_raw_bin(buf, len)?),
         MarkerType::Array(len) => {
-            let mut v = Vec::new();
+            let mut v = Vec::with_capacity(len);
             for _i in 0..len {
                 v.push(read_value_ref(buf)?);
             }
@@ -275,7 +275,7 @@ pub fn read_vec<'a>(buf: &mut &[u8]) -> io::Result<Vec<u8>> {
 pub fn read_array_ref<'a>(buf: &mut &'a [u8]) -> io::Result<Vec<ValueRef<'a>>> {
     let marker = read_marker(buf)?;
     if let MarkerType::Array(len) = marker {
-        let mut v = Vec::new();
+        let mut v = Vec::with_capacity(len);
         for _i in 0..len {
             v.push(read_value_ref(buf)?);
         }
@@ -290,7 +290,7 @@ pub fn read_array_ref<'a>(buf: &mut &'a [u8]) -> io::Result<Vec<ValueRef<'a>>> {
 pub fn read_array(buf: &mut &[u8]) -> io::Result<Vec<Value>> {
     let marker = read_marker(buf)?;
     if let MarkerType::Array(len) = marker {
-        let mut v = Vec::new();
+        let mut v = Vec::with_capacity(len);
         for _i in 0..len {
             v.push(read_value(buf)?);
         }
@@ -369,15 +369,6 @@ pub fn read_time(buf: &mut &[u8]) -> io::Result<Timestamp> {
 
 /// Read a positive integer straight out of the stream. The size of the integer should be known from the 
 /// msgpack marker that was used. If the marker contained the integer, it should be included as `v`.
-/// Example Usage:
-/// ```
-/// let value = if let MarkerType::PosInt((len, v)) = read_marker(buf) {
-///     read_pos_int(buf, len, v)?
-/// }
-/// else {
-///     return Err(Error::new(InvalidData, "Expected positive integer"));
-/// }
-/// ```
 pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),
@@ -423,15 +414,6 @@ pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
 
 /// Read a negative integer straight out of the stream. The size of the integer should be known from the 
 /// msgpack marker that was used. If the marker contained the integer, it should be included as `v`.
-/// Example Usage:
-/// ```
-/// let value = if let MarkerType::NegInt((len, v)) = read_marker(buf) {
-///     read_neg_int(buf, len, v)?
-/// }
-/// else {
-///     return Err(Error::new(InvalidData, "Expected negative integer"));
-/// }
-/// ```
 pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),

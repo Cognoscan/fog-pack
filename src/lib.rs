@@ -5,10 +5,13 @@
 extern crate serde_json;
 #[cfg(test)]
 extern crate hex;
+#[cfg(test)]
+extern crate rand;
+#[cfg(test)]
+extern crate colored;
 
 extern crate crossbeam_channel;
 extern crate crossbeam_utils;
-extern crate colored;
 extern crate num_traits;
 extern crate constant_time_eq;
 extern crate byteorder;

@@ -1051,23 +1051,166 @@ fn merge_lists<T>(left_in: &[T], left_nin: &[T], right_in: &[T], right_nin: &[T]
     }
 }
 
-
 fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T> 
-    where T: Ord, F: FnMut(&T, &T) -> Ordering
+    where T: Clone, F: Fn(&T, &T) -> Ordering
 {
-    let new = Vec::with_capacity(in1.len() + in2.len());
-    let i1 = 0;
-    let i2 = 0;
-    
+    //println!("    in1 = {:?}", in1);
+    //println!("    in2 = {:?}", in2);
+    let mut new = Vec::with_capacity(in1.len() + in2.len());
+    let mut i1 = 0;
+    let mut i2 = 0;
+    if (in2.len() > 0)  && (in1.len() > 0) {
+        i1 = in1.binary_search_by(|probe| compare(probe, &in2[0])).unwrap_or_else(|x| x);
+        new.extend_from_slice(&in1[0..i1]);
+    }
+    //println!("    Start extend with i1={}", i1);
+    while let (Some(item1), Some(item2)) = (in1.get(i1), in2.get(i2)) {
+        //println!("       Cmp {} vs. {}", i1, i2);
+        match compare(item1, item2) {
+            Ordering::Less => {
+                new.push(item1.clone());
+                i1 += 1;
+            },
+            Ordering::Equal => {
+                new.push(item1.clone());
+                i1 += 1;
+                i2 += 1;
+            },
+            Ordering::Greater => {
+                new.push(item2.clone());
+                i2 += 1;
+            },
+        }
+    }
+    //println!("    End extend with i1={}, i2={}", i1, i2);
+    if i1 < in1.len() {
+        new.extend_from_slice(&in1[i1..]);
+    }
+    else {
+        new.extend_from_slice(&in2[i2..]);
+    }
+    new.shrink_to_fit();
     new
 }
 
 fn sorted_intersection<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T> 
-    where T: Ord, F: FnMut(&T, &T) -> Ordering
+    where T: Clone, F: Fn(&T, &T) -> Ordering
 {
-    let new = Vec::with_capacity(in1.len().min(in2.len()));
+    let mut new = Vec::with_capacity(in1.len().min(in2.len()));
+    let mut i1 = 0;
+    let mut i2 = 0;
+    if (in2.len() > 0)  && (in1.len() > 0) {
+        i1 = in1.binary_search_by(|probe| compare(probe, &in2[0])).unwrap_or_else(|x| x);
+    }
+    while let (Some(item1), Some(item2)) = (in1.get(i1), in2.get(i2)) {
+        match compare(item1, item2) {
+            Ordering::Less => {
+                i1 += 1;
+            },
+            Ordering::Equal => {
+                new.push(item1.clone());
+                i1 += 1;
+                i2 += 1;
+            },
+            Ordering::Greater => {
+                i2 += 1;
+            },
+        }
+    }
+    new.shrink_to_fit();
     new
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::prelude::*;
 
+    fn comp(in1: &i8, in2: &i8) -> Ordering {
+        if in1 < in2 {
+            Ordering::Less
+        }
+        else if in1 == in2 {
+            Ordering::Equal
+        }
+        else {
+            Ordering::Greater
+        }
+    }
 
+    #[test]
+    fn test_sorted_union() {
+        let num_iter = 5000;
+        let mut rng = rand::thread_rng();
+        let range = rand::distributions::Uniform::new(-20,20);
+        let len_range = rand::distributions::Uniform::new(0,32);
+
+        let mut success = true;
+
+        for _ in 0..num_iter {
+            let len_x = rng.sample(len_range);
+            let len_y = rng.sample(len_range);
+            let mut x: Vec<i8> = Vec::with_capacity(len_x);
+            let mut y: Vec<i8> = Vec::with_capacity(len_y);
+            for _ in 0..len_x {
+                x.push(rng.sample(range));
+            }
+            for _ in 0..len_y {
+                y.push(rng.sample(range));
+            }
+            let mut z: Vec<i8> = Vec::with_capacity(len_x+len_y);
+            z.extend_from_slice(&x);
+            z.extend_from_slice(&y);
+            z.sort_unstable();
+            z.dedup();
+
+            x.sort_unstable();
+            x.dedup();
+            y.sort_unstable();
+            y.dedup();
+            let z_test = sorted_union(&x,&y,comp);
+            let equal = z == z_test;
+            if !equal { success = false; break; }
+        }
+
+        assert!(success, "sorted_union did not work for all random vectors");
+    }
+
+    #[test]
+    fn test_sorted_intersection() {
+        let num_iter = 5000;
+        let mut rng = rand::thread_rng();
+        let range = rand::distributions::Uniform::new(-20,20);
+        let len_range = rand::distributions::Uniform::new(0,32);
+
+        let mut success = true;
+
+        for _ in 0..num_iter {
+            let len_x = rng.sample(len_range);
+            let len_y = rng.sample(len_range);
+            let mut x: Vec<i8> = Vec::with_capacity(len_x);
+            let mut y: Vec<i8> = Vec::with_capacity(len_y);
+            for _ in 0..len_x {
+                x.push(rng.sample(range));
+            }
+            for _ in 0..len_y {
+                y.push(rng.sample(range));
+            }
+            x.sort_unstable();
+            x.dedup();
+            y.sort_unstable();
+            y.dedup();
+
+            let z: Vec<i8> = x.iter()
+                .filter(|x_val| y.binary_search(x_val).is_ok())
+                .map(|&x| x)
+                .collect();
+
+            let z_test = sorted_intersection(&x,&y,comp);
+            let equal = z == z_test;
+            if !equal { success = false; break; }
+        }
+
+        assert!(success, "sorted_intersection did not work for all random vectors");
+    }
+}

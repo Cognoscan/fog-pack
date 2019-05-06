@@ -895,6 +895,7 @@ impl ValidInt {
                             self.in_vec.push(read_integer(raw)?);
                         };
                         self.in_vec.sort_unstable();
+                        self.in_vec.dedup();
                     },
                     _ => {
                         return Err(Error::new(InvalidData, "Integer validator expected array or constant for `in` field"));
@@ -941,6 +942,7 @@ impl ValidInt {
                             self.nin_vec.push(read_integer(raw)?);
                         };
                         self.nin_vec.sort_unstable();
+                        self.nin_vec.dedup();
                     },
                     _ => {
                         return Err(Error::new(InvalidData, "Integer validator expected array or constant for `nin` field"));
@@ -1417,6 +1419,9 @@ fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T>
     where T: Ord, F: FnMut(&T, &T) -> Ordering
 {
     let new = Vec::with_capacity(in1.len() + in2.len());
+    let i1 = 0;
+    let i2 = 0;
+    
     new
 }
 

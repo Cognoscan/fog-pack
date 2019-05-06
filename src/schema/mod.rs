@@ -1051,11 +1051,11 @@ fn merge_lists<T>(left_in: &[T], left_nin: &[T], right_in: &[T], right_nin: &[T]
     }
 }
 
+/// Returns the union of two slices that have been sorted and deduplicated. The union is also 
+/// sorted and deduplicated.
 fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T> 
     where T: Clone, F: Fn(&T, &T) -> Ordering
 {
-    //println!("    in1 = {:?}", in1);
-    //println!("    in2 = {:?}", in2);
     let mut new = Vec::with_capacity(in1.len() + in2.len());
     let mut i1 = 0;
     let mut i2 = 0;
@@ -1063,9 +1063,7 @@ fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T>
         i1 = in1.binary_search_by(|probe| compare(probe, &in2[0])).unwrap_or_else(|x| x);
         new.extend_from_slice(&in1[0..i1]);
     }
-    //println!("    Start extend with i1={}", i1);
     while let (Some(item1), Some(item2)) = (in1.get(i1), in2.get(i2)) {
-        //println!("       Cmp {} vs. {}", i1, i2);
         match compare(item1, item2) {
             Ordering::Less => {
                 new.push(item1.clone());
@@ -1082,7 +1080,6 @@ fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T>
             },
         }
     }
-    //println!("    End extend with i1={}, i2={}", i1, i2);
     if i1 < in1.len() {
         new.extend_from_slice(&in1[i1..]);
     }
@@ -1093,6 +1090,8 @@ fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T>
     new
 }
 
+/// Returns the intersection of two slices that have been sorted and deduplicated. The intersection 
+/// is also sorted and deduplicated.
 fn sorted_intersection<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T> 
     where T: Clone, F: Fn(&T, &T) -> Ordering
 {

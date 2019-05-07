@@ -1033,24 +1033,6 @@ impl ValidMulti {
     }
 }
 
-/// Merge two `in` and `nin` lists simultaneously.
-///
-/// Returned values are: new `in` list, new `nin` list, and a boolean that is false if nothing can 
-/// satisfy both lists.
-fn merge_lists<T>(left_in: &[T], left_nin: &[T], right_in: &[T], right_nin: &[T]) -> (Vec<T>, Vec<T>, bool) {
-    if (left_in.len() > 0) || (right_in.len() > 0) {
-        let new_in = Vec::with_capacity(0);
-        let new_nin = Vec::with_capacity(0);
-        (new_in, new_nin, false)
-    }
-    else {
-        let new_in = Vec::with_capacity(0);
-        let new_nin = Vec::with_capacity(left_nin.len() + right_nin.len());
-        
-        (new_in, new_nin, true)
-    }
-}
-
 /// Returns the union of two slices that have been sorted and deduplicated. The union is also 
 /// sorted and deduplicated.
 fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T> 

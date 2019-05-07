@@ -498,102 +498,67 @@ pub fn read_raw_str<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<&'a str> {
     }
 }
 
+/// Step through every field/value pair in an object
+pub fn object_iterate<'a, F>(buf: &mut &'a [u8], len: usize, mut f: F) -> io::Result<()>
+    where F: FnMut(&'a str, &mut &'a [u8]) -> io::Result<()>
+{
+    if len == 0 { return Ok(()); }
+    let mut old_field = read_str(buf)?;
+    f(old_field, buf)?;
+    let mut field: &str;
+    for _ in 1..len {
+        field = read_str(buf)?;
+        match old_field.cmp(&field) {
+            Ordering::Less => {
+                // old_field is lower in order. This is correct
+                f(field, buf)?;
+            },
+            Ordering::Equal => {
+                return Err(Error::new(InvalidData, format!("Found object with non-unique field \"{}\"", field)));
+            },
+            Ordering::Greater => {
+                return Err(Error::new(InvalidData,
+                    format!("Object fields not in lexicographic order. Last = '{}', Current = '{}'", old_field, field)));
+            },
+        }
+        old_field = field;
+    }
+    Ok(())
+}
+
 /// General function for reading a field-value map from a buffer. Checks to make 
 /// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
 pub fn read_to_map(buf: &mut &[u8], len: usize) -> io::Result<BTreeMap<String, Value>> {
 
     let mut map: BTreeMap<String,Value> = BTreeMap::new();
-    if len == 0 { return Ok(map); }
-
-    // Extract the first field-value pair
-    let mut old_key = read_string(buf)?;
-    let val = read_value(buf)?;
-    map.insert(old_key.clone(), val);
-    // Iterate to get remaining field-value pairs
-    for _i in 1..len {
-        let key = read_string(buf)?;
-        match old_key.cmp(&key) {
-            Ordering::Less => {
-                // old_key is lower in order. This is correct
-                let val = read_value(buf)?;
-                map.insert(key.clone(), val);
-            },
-            Ordering::Equal => {
-                return Err(Error::new(InvalidData, format!("Found object with non-unique field \"{}\"", key)));
-            },
-            Ordering::Greater => {
-                return Err(Error::new(InvalidData,
-                    format!("Object fields not in lexicographic order. Last = '{}', Current = '{}'", old_key, key)));
-            }
-        };
-        old_key = key;
-    }
+    object_iterate(buf, len, |field, buf| {
+        let val = read_value(buf)?;
+        map.insert(field.clone().to_string(), val);
+        Ok(())
+    })?;
     Ok(map)
 }
 
 /// General function for referencing a field-value map in a buffer. Checks to make 
 /// sure the keys are unique, valid UTF-8 Strings in lexicographic order.
 pub fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> io::Result<BTreeMap<&'a str, ValueRef<'a>>> {
-
     let mut map: BTreeMap<&'a str,ValueRef<'a>> = BTreeMap::new();
-    if len == 0 { return Ok(map); }
-
-    // Extract the first field-value pair
-    let mut old_key = read_str(buf)?;
-    let val = read_value_ref(buf)?;
-    map.insert(old_key.clone(), val);
-    // Iterate to get remaining field-value pairs
-    for _i in 1..len {
-        let key = read_str(buf)?;
-        match old_key.cmp(&key) {
-            Ordering::Less => {
-                // old_key is lower in order. This is correct
-                let val = read_value_ref(buf)?;
-                map.insert(key.clone(), val);
-            },
-            Ordering::Equal => {
-                return Err(Error::new(InvalidData, format!("Found object with non-unique field \"{}\"", key)));
-            },
-            Ordering::Greater => {
-                return Err(Error::new(InvalidData,
-                    format!("Object fields not in lexicographic order. Last = '{}', Current = '{}'", old_key, key)));
-            }
-        };
-        old_key = key;
-    }
+    object_iterate(buf, len, |field, buf| {
+        let val = read_value_ref(buf)?;
+        map.insert(field.clone(), val);
+        Ok(())
+    })?;
     Ok(map)
 }
 
 /// General function for verifying a field-value map in a buffer. Makes sure the keys are unique, 
 /// valid UTF-8 Strings in lexicographic order.
 pub fn verify_map(buf: &mut &[u8], len: usize) -> io::Result<usize> {
-
-    if len == 0 { return Ok(0); }
     let length = buf.len();
-
-    // Extract the first field-value pair
-    let mut old_key = read_str(buf)?;
-    verify_value(buf)?;
-    // Iterate to get remaining field-value pairs
-    for _i in 1..len {
-        let key = read_str(buf)?;
-        match old_key.cmp(&key) {
-            Ordering::Less => {
-                // old_key is lower in order. This is correct
-                verify_value(buf)?;
-            },
-            Ordering::Equal => {
-                return Err(Error::new(InvalidData, format!("Found object with non-unique field \"{}\"", key)));
-            },
-            Ordering::Greater => {
-                return Err(Error::new(InvalidData,
-                    format!("Object fields not in lexicographic order. Last = '{}', Current = '{}'", old_key, key)));
-            }
-        };
-        old_key = key;
-    }
+    object_iterate(buf, len, |_, buf| { verify_value(buf)?; Ok(()) })?;
     Ok(length - buf.len())
 }
+
 
 /// Read raw Timestamp out from a buffer
 pub fn read_raw_time(buf: &mut &[u8], len: usize) -> io::Result<Timestamp> {

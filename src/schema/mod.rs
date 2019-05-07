@@ -94,19 +94,7 @@ impl Schema {
         // Setup for loop
         let mut req_index = 0;
         let mut opt_index = 0;
-        let mut old_field = read_str(&mut doc.clone())?;
-        let mut field: &str;
-        // Main loop to check all fields
-        for i in 0..num_fields {
-            field = read_str(doc)?;
-            // Check for proper lexicographic order of fields
-            if i != 0 {
-                if field <= old_field {
-                    return Err(Error::new(InvalidData, "Repeated or improperly ordered fields in document"));
-                }
-            }
-            old_field = field;
-
+        object_iterate(doc, num_fields, |field, doc| {
             // Check against required/optional/unknown types
             let validator = 
                 if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
@@ -137,7 +125,8 @@ impl Schema {
             if let Err(e) = self.run_validator(field, validator, doc) {
                 return Err(e);
             }
-        }
+            Ok(())
+        })?;
 
         if req_index >= self.required.len() {
             Ok(())
@@ -385,19 +374,7 @@ impl Schema {
                 let obj_start = doc.clone();
                 let mut req_index = 0;
                 let mut opt_index = 0;
-                let mut old_field = read_str(&mut doc.clone())?;
-                let mut field: &str;
-                // Main loop to check all fields
-                for i in 0..num_fields {
-                    field = read_str(doc)?;
-                    // Check for proper lexicographic order of fields
-                    if i != 0 {
-                        if field <= old_field {
-                            return Err(Error::new(InvalidData, "Repeated or improperly ordered fields in object"));
-                        }
-                    }
-                    old_field = field;
-
+                object_iterate(doc, num_fields, |field, doc| {
                     // Check against required/optional/unknown types
                     let validator = 
                         if Some(field) == v.required.get(req_index).map(|x| x.0.as_str()) {
@@ -428,7 +405,8 @@ impl Schema {
                     if let Err(e) = self.run_validator(field, validator, doc) {
                         return Err(e);
                     }
-                }
+                    Ok(())
+                })?;
 
                 let (obj_start, _) = obj_start.split_at(obj_start.len()-doc.len());
                 if v.nin_vec.iter().any(|x| obj_start == &x[..]) {
@@ -615,17 +593,7 @@ impl Validator {
                 ];
                 let mut possible_check = vec![true; possible.len()];
 
-                let mut old_field = read_str(&mut raw.clone())?;
-                let mut field: &str;
-                for i in 0..len {
-                    field = read_str(raw)?;
-                    // Check for proper lexicographic order of fields
-                    if i != 0 {
-                        if field <= old_field {
-                            return Err(Error::new(InvalidData, "Repeated or improperly ordered fields in object"));
-                        }
-                    }
-                    old_field = field;
+                object_iterate(raw, len, |field, raw| {
                     match field {
                         "comment" => {
                             read_str(raw).map_err(|_e| Error::new(InvalidData, "`comment` field didn't contain string"))?;
@@ -645,7 +613,8 @@ impl Validator {
                                 });
                         }
                     }
-                }
+                    Ok(())
+                })?;
 
                     // For each validator, check to see if it can parse this field.
                 // | Field        | Content                      |

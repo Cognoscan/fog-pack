@@ -20,6 +20,9 @@ extern crate libc;
 extern crate regex;
 //use std::io::Write;
 
+#[macro_use]
+mod macros;
+
 mod index;
 //mod index_ref;
 mod value;
@@ -32,6 +35,8 @@ mod entry;
 mod schema;
 mod permission;
 mod query;
+// Uncomment this in like a week (say 05/10). The feature this uses should be stable by then.
+//mod str_char; 
 
 pub mod database;
 pub mod crypto;
@@ -53,8 +58,4 @@ pub use self::entry::Entry;
 pub use self::database::{Db, QueryResponse};
 pub use self::permission::Permission;
 pub use self::query::Query;
-
-#[macro_use]
-mod macros;
-
 

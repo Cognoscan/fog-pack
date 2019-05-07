@@ -287,3 +287,21 @@ impl ValidInt {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    //use rand::prelude::*;
+
+    fn read_it(raw: &mut &[u8]) -> io::Result<ValidInt> {
+        Err(Error::new(InvalidData, "Not an object"))
+    }
+
+
+    #[test]
+    fn generate() {
+        let test1 = msgpack!({
+            "type": "Int"
+        });
+    }
+}

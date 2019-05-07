@@ -14,7 +14,7 @@ fn main() {
     let my_key = vault.new_key(); 
 
     println!("Setting up a simple schema");
-    let mut test_schema = Document::new(msgpack!({
+    let test_schema = Document::new(msgpack!({
         //"": Hash::new_empty(),
         "name": "Simple chat schema",
         "required": {
@@ -38,7 +38,7 @@ fn main() {
     println!("    Got back: {:?}", res);
 
     println!("Making a document");
-    let mut test_doc = Document::new(msgpack!({
+    let test_doc = Document::new(msgpack!({
         "": schema_hash.clone(),
         "title": "Test chat",
         "description": "This is a test chat",

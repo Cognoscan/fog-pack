@@ -1,4 +1,4 @@
-use std::fmt::{self, Debug, Display};
+use std::fmt::{self, Debug, UpperHex, LowerHex, Display};
 use std::cmp;
 use std::cmp::Ordering;
 use std::ops;
@@ -166,6 +166,18 @@ impl Display for Integer {
             IntPriv::PosInt(v) => Display::fmt(&v, fmt),
             IntPriv::NegInt(v) => Display::fmt(&v, fmt),
         }
+    }
+}
+
+impl UpperHex for Integer {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        UpperHex::fmt(&self.as_bits(), fmt)
+    }
+}
+
+impl LowerHex for Integer {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        LowerHex::fmt(&self.as_bits(), fmt)
     }
 }
 

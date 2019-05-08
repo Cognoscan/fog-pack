@@ -231,7 +231,7 @@ impl ValidInt {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" is 0x{:X}, but must have set bits 0x{:X}", field, value_raw, self.bit_set)))
         }
-        else if (self.bit_clear & value_raw) == 0 {
+        else if (self.bit_clear & value_raw) != 0 {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" is 0x{:X}, but must have cleared bits 0x{:X}", field, value_raw, self.bit_clear)))
         }
@@ -290,18 +290,107 @@ impl ValidInt {
 
 #[cfg(test)]
 mod tests {
+    use encode;
+    use value::Value;
     use super::*;
-    //use rand::prelude::*;
+    use rand::prelude::*;
 
-    fn read_it(raw: &mut &[u8]) -> io::Result<ValidInt> {
-        Err(Error::new(InvalidData, "Not an object"))
+    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidInt> {
+        if let MarkerType::Object(len) = read_marker(raw)? {
+            let mut validator = ValidInt::new(is_query);
+            object_iterate(raw, len, |field, raw| {
+                if !validator.update(field, raw)? {
+                    Err(Error::new(InvalidData, "Wasn't a valid integer validator"))
+                }
+                else {
+                    Ok(())
+                }
+            })?;
+            validator.finalize(); // Don't care about if the validator can pass values or not
+            Ok(validator)
+
+        }
+        else {
+            Err(Error::new(InvalidData, "Not an object"))
+        }
     }
 
 
+    fn rand_integer<R: Rng>(rng: &mut R) -> Integer {
+        if rng.gen() {
+            let v: i64 = rng.gen();
+            Integer::from(v)
+        }
+        else {
+            let v: u64 = rng.gen();
+            Integer::from(v)
+        }
+    }
+
     #[test]
     fn generate() {
-        let test1 = msgpack!({
+        let valid_count = 10;
+        let test_count = 100;
+
+        // Variables used in all tests
+        let mut rng = rand::thread_rng();
+        let mut test1 = Vec::new();
+        let mut val = Vec::with_capacity(9);
+
+        // Test passing any integer
+        test1.clear();
+        encode::write_value(&mut test1, &msgpack!({
             "type": "Int"
-        });
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        for _ in 0..test_count {
+            val.clear();
+            encode::write_value(&mut val, &Value::from(rand_integer(&mut rng)));
+            validator.validate("", &mut &val[..]).unwrap();
+        }
+
+        // Test integers in a range
+        for _ in 0..valid_count {
+            test1.clear();
+            let val1 = rand_integer(&mut rng);
+            let val2 = rand_integer(&mut rng);
+            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
+            encode::write_value(&mut test1, &msgpack!({
+                "min": min,
+                "max": max
+            }));
+            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            for _ in 0..test_count {
+                val.clear();
+                let test_val = rand_integer(&mut rng);
+                encode::write_value(&mut val, &Value::from(test_val.clone()));
+                assert_eq!(
+                    (test_val >= min) && (test_val <= max),
+                    validator.validate("", &mut &val[..]).is_ok(),
+                    "{} was between {} and {} but failed validation", test_val, min, max);
+            }
+        }
+
+        // Test integers with bitset / bitclear
+        for _ in 0..valid_count {
+            test1.clear();
+            let set: u64 = rng.gen();
+            let clr: u64 = rng.gen::<u64>() & !set;
+            encode::write_value(&mut test1, &msgpack!({
+                "bits_set": set,
+                "bits_clr": clr
+            }));
+            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            for _ in 0..test_count {
+                val.clear();
+                let test_val = rand_integer(&mut rng);
+                encode::write_value(&mut val, &Value::from(test_val.clone()));
+                let test_val = test_val.as_bits();
+                assert_eq!(
+                    ((test_val & set) == set) && ((test_val & clr) == 0),
+                    validator.validate("", &mut &val[..]).is_ok(),
+                    "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
+            }
+        }
     }
 }

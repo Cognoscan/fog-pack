@@ -273,6 +273,9 @@ impl ValidInt {
                         ex_min: false, // Doesn't get used by this point - for setup of validator only.
                         ex_max: false, // Doesn't get used by this point - for setup of validator only.
                     };
+                    if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
+                        return Ok(Validator::Invalid);
+                    }
                     let valid = new_validator.finalize();
                     if !valid {
                         Ok(Validator::Invalid)
@@ -325,6 +328,11 @@ mod tests {
             let v: u64 = rng.gen();
             Integer::from(v)
         }
+    }
+
+    fn rand_i8<R: Rng>(rng: &mut R) -> Integer {
+        let v: i8 = rng.gen();
+        Integer::from(v)
     }
 
     #[test]
@@ -391,6 +399,199 @@ mod tests {
                     validator.validate("", &mut &val[..]).is_ok(),
                     "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
             }
+        }
+
+        // Test i8 in a range
+        for _ in 0..valid_count {
+            test1.clear();
+            let val1 = rand_i8(&mut rng);
+            let val2 = rand_i8(&mut rng);
+            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
+            encode::write_value(&mut test1, &msgpack!({
+                "min": min,
+                "max": max
+            }));
+            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            for _ in 0..test_count {
+                val.clear();
+                let test_val = rand_i8(&mut rng);
+                encode::write_value(&mut val, &Value::from(test_val.clone()));
+                assert_eq!(
+                    (test_val >= min) && (test_val <= max),
+                    validator.validate("", &mut &val[..]).is_ok(),
+                    "{} was between {} and {} but failed validation", test_val, min, max);
+            }
+        }
+
+        // Test i8 with bitset / bitclear
+        for _ in 0..valid_count {
+            test1.clear();
+            let set: u64 = rng.gen();
+            let clr: u64 = rng.gen::<u64>() & !set;
+            encode::write_value(&mut test1, &msgpack!({
+                "bits_set": set,
+                "bits_clr": clr
+            }));
+            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            for _ in 0..test_count {
+                val.clear();
+                let test_val = rand_i8(&mut rng);
+                encode::write_value(&mut val, &Value::from(test_val.clone()));
+                let test_val = test_val.as_bits();
+                assert_eq!(
+                    ((test_val & set) == set) && ((test_val & clr) == 0),
+                    validator.validate("", &mut &val[..]).is_ok(),
+                    "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
+            }
+        }
+
+        // Test i8 with in/nin
+        test1.clear();
+        let mut in_vec: Vec<Integer> = Vec::with_capacity(valid_count);
+        let mut nin_vec: Vec<Integer> = Vec::with_capacity(valid_count);
+        for _ in 0..valid_count {
+            in_vec.push(rand_i8(&mut rng));
+            nin_vec.push(rand_i8(&mut rng));
+        }
+        let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
+        let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
+        encode::write_value(&mut test1, &msgpack!({
+            "in": in_vec_val,
+            "nin": nin_vec_val,
+        }));
+        let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+        for _ in 0..test_count {
+            val.clear();
+            let test_val = rand_i8(&mut rng);
+            encode::write_value(&mut val, &Value::from(test_val.clone()));
+            assert_eq!(
+                in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
+                validator.validate("", &mut &val[..]).is_ok(),
+                "{:X} was in `in` and not `nin` but failed validation", test_val);
+        }
+    }
+
+    #[test]
+    fn intersect() {
+        let valid_count = 10;
+        let test_count = 1000;
+
+        // Variables used in all tests
+        let mut rng = rand::thread_rng();
+        let mut test1 = Vec::new();
+        let mut val = Vec::with_capacity(9);
+
+        // Test passing any integer
+        // Test i8 in a range
+        for _ in 0..valid_count {
+            test1.clear();
+            let val1 = rand_i8(&mut rng);
+            let val2 = rand_i8(&mut rng);
+            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
+            encode::write_value(&mut test1, &msgpack!({
+                "min": min,
+                "max": max
+            }));
+            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            test1.clear();
+            let val1 = rand_i8(&mut rng);
+            let val2 = rand_i8(&mut rng);
+            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
+            encode::write_value(&mut test1, &msgpack!({
+                "min": min,
+                "max": max
+            }));
+            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
+            for _ in 0..test_count {
+                val.clear();
+                let test_val = rand_i8(&mut rng);
+                encode::write_value(&mut val, &Value::from(test_val.clone()));
+                assert_eq!(
+                    valid1.validate("", &mut &val[..]).is_ok()
+                    && valid2.validate("", &mut &val[..]).is_ok(),
+                    validi.validate("", &mut &val[..]).is_ok(),
+                    "Min/Max intersection for Integer validators fails");
+            }
+        }
+
+        // Test i8 with bitset / bitclear
+        for _ in 0..valid_count {
+            test1.clear();
+            let set: u64 = rng.gen();
+            let clr: u64 = rng.gen::<u64>() & !set;
+            encode::write_value(&mut test1, &msgpack!({
+                "bits_set": set,
+                "bits_clr": clr
+            }));
+            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            test1.clear();
+            let set: u64 = rng.gen();
+            let clr: u64 = rng.gen::<u64>() & !set;
+            encode::write_value(&mut test1, &msgpack!({
+                "bits_set": set,
+                "bits_clr": clr
+            }));
+            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
+            for _ in 0..test_count {
+                val.clear();
+                let test_val = rand_i8(&mut rng);
+                encode::write_value(&mut val, &Value::from(test_val.clone()));
+                assert_eq!(
+                    valid1.validate("", &mut &val[..]).is_ok()
+                    && valid2.validate("", &mut &val[..]).is_ok(),
+                    validi.validate("", &mut &val[..]).is_ok(),
+                    "Bit set/clear intersection for Integer validators fails");
+            }
+        }
+
+        // Test i8 with in/nin
+        test1.clear();
+        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
+        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
+        for _ in 0..valid_count {
+            in_vec.push(Value::from(rand_i8(&mut rng)));
+            nin_vec.push(Value::from(rand_i8(&mut rng)));
+        }
+        encode::write_value(&mut test1, &msgpack!({
+            "in": in_vec,
+            "nin": nin_vec,
+        }));
+        let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+        test1.clear();
+        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
+        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
+        for _ in 0..valid_count {
+            in_vec.push(Value::from(rand_i8(&mut rng)));
+            nin_vec.push(Value::from(rand_i8(&mut rng)));
+        }
+        encode::write_value(&mut test1, &msgpack!({
+            "in": in_vec,
+            "nin": nin_vec,
+        }));
+        let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+        let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
+        println!("Valid1_in = {:?}", valid1.in_vec);
+        println!("Valid1_nin = {:?}", valid1.nin_vec);
+        println!("Valid2_in = {:?}", valid2.in_vec);
+        println!("Valid2_nin = {:?}", valid2.nin_vec);
+        if let Validator::Integer(ref v) = validi {
+            println!("Validi_in = {:?}", v.in_vec);
+            println!("Validi_nin = {:?}", v.nin_vec);
+        }
+        else {
+            println!("Validi always false");
+        }
+        for _ in 0..(10*test_count) {
+            val.clear();
+            let test_val = rand_i8(&mut rng);
+            encode::write_value(&mut val, &Value::from(test_val.clone()));
+            assert_eq!(
+                valid1.validate("", &mut &val[..]).is_ok()
+                && valid2.validate("", &mut &val[..]).is_ok(),
+                validi.validate("", &mut &val[..]).is_ok(),
+                "Set intersection for Integer validators fails with {}", test_val);
         }
     }
 }

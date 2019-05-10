@@ -688,6 +688,27 @@ impl Validator {
             _ => Ok(false),
         }
     }
+
+    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+        match self {
+            Validator::Invalid => Err(Error::new(InvalidData, format!("Field \"{}\" is always invalid", field))),
+            Validator::Valid => {
+                verify_value(doc)?;
+                Ok(())
+            },
+            Validator::Null => {
+                read_null(doc)?;
+                Ok(())
+            },
+            Validator::Boolean(v) => {
+                v.validate(field, doc)
+            },
+            Validator::Integer(v) => {
+                v.validate(field, doc)
+            },
+            _ => Err(Error::new(Other, "Can't validate this type yet")),
+        }
+    }
 }
 
 /// String type validator

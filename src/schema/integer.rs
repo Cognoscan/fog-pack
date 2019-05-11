@@ -211,7 +211,14 @@ impl ValidInt {
     pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
         let value = read_integer(doc)?;
         let value_raw = value.as_bits();
-        if value < self.min {
+        if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
+            Err(Error::new(InvalidData,
+                format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
+        }
+        else if self.in_vec.len() > 0 {
+            Ok(())
+        }
+        else if value < self.min {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" is {}, less than minimum of {}", field, value, self.min)))
         }
@@ -222,10 +229,6 @@ impl ValidInt {
         else if self.nin_vec.binary_search(&value).is_ok() {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" is {}, which is on the `nin` list", field, value)))
-        }
-        else if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
         }
         else if (self.bit_set & value_raw) != self.bit_set {
             Err(Error::new(InvalidData,
@@ -260,8 +263,17 @@ impl ValidInt {
                     Ok(Validator::Invalid)
                 }
                 else {
+                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
+                        sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
+                    }
+                    else if self.in_vec.len() > 0 {
+                        self.in_vec.clone()
+                    }
+                    else {
+                        other.in_vec.clone()
+                    };
                     let mut new_validator = ValidInt {
-                        in_vec: sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b)),
+                        in_vec: in_vec,
                         nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
                         min: self.min.max(other.min),
                         max: self.max.min(other.max),

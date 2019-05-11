@@ -18,6 +18,7 @@ extern crate byteorder;
 extern crate libsodium_sys;
 extern crate libc;
 extern crate regex;
+extern crate ieee754;
 //use std::io::Write;
 
 #[macro_use]

@@ -13,9 +13,11 @@ use decode::*;
 
 mod bool;
 mod integer;
+mod float32;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
+use self::float32::ValidF32;
 
 
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
@@ -185,26 +187,7 @@ impl Schema {
                 v.validate(field, doc)
             },
             Validator::F32(v) => {
-                let value = read_f32(doc)?;
-                if value < v.min {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, less than minimum of {}", field, value, v.min)))
-                }
-                else if value > v.max {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, greater than maximum of {}", field, value, v.max)))
-                }
-                else if v.nin_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, which is on the `nin` list", field, value)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             },
             Validator::F64(v) => {
                 let value = read_f64(doc)?;
@@ -741,37 +724,6 @@ impl ValidStr {
         let mut v = ValidStr::new(is_query);
         let mut in_vec = Vec::with_capacity(1);
         in_vec.push(constant.to_string());
-        v.in_vec = in_vec;
-        v
-    }
-}
-
-/// F32 type validator
-pub struct ValidF32 {
-    in_vec: Vec<f32>,
-    nin_vec: Vec<f32>,
-    min: f32,
-    max: f32,
-    query: bool,
-    ord: bool,
-}
-
-impl ValidF32 {
-    fn new(is_query: bool) -> ValidF32 {
-        ValidF32 {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            min: ::std::f32::NEG_INFINITY,
-            max: ::std::f32::INFINITY,
-            query: is_query,
-            ord: is_query,
-        }
-    }
-
-    fn from_const(constant: f32, is_query: bool) -> ValidF32 {
-        let mut v = ValidF32::new(is_query);
-        let mut in_vec = Vec::with_capacity(1);
-        in_vec.push(constant);
         v.in_vec = in_vec;
         v
     }

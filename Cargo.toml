@@ -2,6 +2,8 @@
 name = "condense_db"
 version = "0.1.0"
 authors = ["Scott Teal"]
+readme = "README.md"
+repository = "https://github.com/Cognoscan/condense_db"
 
 [dependencies]
 libc = "0.2"

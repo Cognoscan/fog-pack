@@ -3,6 +3,8 @@ use std::ops;
 use std::cmp;
 use std::time;
 
+const MAX_NANOSEC: u32 = 1_999_999_999;
+
 /// Structure for holding a raw msgpack timestamp.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Timestamp {
@@ -13,7 +15,7 @@ pub struct Timestamp {
 impl Timestamp {
     /// Create a UTC timestamp from a raw seconds + nanoseconds value
     pub fn from_raw(sec: i64, nano: u32) -> Option<Timestamp> {
-        if nano > 1_999_999_999 {
+        if nano > MAX_NANOSEC {
             None
         }
         else {
@@ -37,8 +39,52 @@ impl Timestamp {
     pub fn max_value() -> Timestamp {
         Timestamp {
             sec: i64::max_value(),
-            nano: 1_999_999_999,
+            nano: MAX_NANOSEC,
         }
+    }
+
+    pub fn min(self, other: Timestamp) -> Timestamp {
+        if self < other {
+            self
+        }
+        else {
+            other
+        }
+    }
+
+    pub fn max(self, other: Timestamp) -> Timestamp {
+        if self > other {
+            self
+        }
+        else {
+            other
+        }
+    }
+
+    /// Add 1 nanosecond to timestamp. Will go into leap second (nanoseconds > 1e6) before it goes 
+    /// to the next second.
+    pub fn next(mut self) -> Timestamp {
+        if self.nano < MAX_NANOSEC {
+            self.nano += 1;
+        }
+        else {
+            self.nano = 0;
+            self.sec += 1;
+        }
+        self
+    }
+
+    /// Subtract 1 nanosecond from timestamp. Will go into leap second (nanoseconds > 1e6) when it 
+    /// must decrement a second.
+    pub fn prev(mut self) -> Timestamp {
+        if self.nano > 0 {
+            self.nano -= 1;
+        }
+        else {
+            self.nano = MAX_NANOSEC;
+            self.sec -= 1;
+        }
+        self
     }
 
     /// Return the UNIX timestamp (number of seconds since January 1, 1970 

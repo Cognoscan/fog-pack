@@ -7,17 +7,21 @@ use std::cmp::Ordering;
 use byteorder::{ReadBytesExt, BigEndian};
 use regex::Regex;
 
-use super::{Hash, Identity, Timestamp};
+use super::{Hash, Identity};
 use MarkerType;
 use decode::*;
 
 mod bool;
 mod integer;
 mod float32;
+mod float64;
+mod time;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
 use self::float32::ValidF32;
+use self::float64::ValidF64;
+use self::time::ValidTime;
 
 
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
@@ -190,26 +194,7 @@ impl Schema {
                 v.validate(field, doc)
             },
             Validator::F64(v) => {
-                let value = read_f64(doc)?;
-                if value < v.min {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, less than minimum of {}", field, value, v.min)))
-                }
-                else if value > v.max {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, greater than maximum of {}", field, value, v.max)))
-                }
-                else if v.nin_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, which is on the `nin` list", field, value)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             },
             Validator::String(v) => {
                 let value = read_str(doc)?;
@@ -314,26 +299,7 @@ impl Schema {
                 }
             },
             Validator::Timestamp(v) => {
-                let value = read_time(doc)?;
-                if value < v.min {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" Timestamp = {}, less than minimum of {}", field, value, v.min)))
-                }
-                else if value > v.max {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" Timestamp = {}, greater than maximum of {}", field, value, v.max)))
-                }
-                else if v.nin_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" Timestamp = {}, which is on the `nin` list", field, value)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" Timestamp = {}, which is not in the `in` list", field, value)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             },
             Validator::Object(v) => {
                 let num_fields = match read_marker(doc)? {
@@ -692,6 +658,12 @@ impl Validator {
             Validator::F32(v) => {
                 v.validate(field, doc)
             },
+            Validator::F64(v) => {
+                v.validate(field, doc)
+            },
+            Validator::Timestamp(v) => {
+                v.validate(field, doc)
+            },
             _ => Err(Error::new(Other, "Can't validate this type yet")),
         }
     }
@@ -727,37 +699,6 @@ impl ValidStr {
         let mut v = ValidStr::new(is_query);
         let mut in_vec = Vec::with_capacity(1);
         in_vec.push(constant.to_string());
-        v.in_vec = in_vec;
-        v
-    }
-}
-
-/// F64 type validator
-pub struct ValidF64 {
-    in_vec: Vec<f64>,
-    nin_vec: Vec<f64>,
-    min: f64,
-    max: f64,
-    query: bool,
-    ord: bool,
-}
-
-impl ValidF64 {
-    fn new(is_query: bool) -> ValidF64 {
-        ValidF64 {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            min: ::std::f64::NEG_INFINITY,
-            max: ::std::f64::INFINITY,
-            query: is_query,
-            ord: is_query,
-        }
-    }
-
-    fn from_const(constant: f64, is_query: bool) -> ValidF64 {
-        let mut v = ValidF64::new(is_query);
-        let mut in_vec = Vec::with_capacity(1);
-        in_vec.push(constant);
         v.in_vec = in_vec;
         v
     }
@@ -931,37 +872,6 @@ impl ValidLock {
             max_len: usize::max_value(),
             query: is_query
         }
-    }
-}
-
-/// Timestamp type validator
-pub struct ValidTime {
-    in_vec: Vec<Timestamp>,
-    nin_vec: Vec<Timestamp>,
-    min: Timestamp,
-    max: Timestamp,
-    query: bool,
-    ord: bool,
-}
-
-impl ValidTime {
-    fn new(is_query: bool) -> ValidTime {
-        ValidTime {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            min: Timestamp::min_value(),
-            max: Timestamp::max_value(),
-            query: is_query,
-            ord: is_query,
-        }
-    }
-
-    fn from_const(constant: Timestamp, is_query: bool) -> ValidTime {
-        let mut v = ValidTime::new(is_query);
-        let mut in_vec = Vec::with_capacity(1);
-        in_vec.push(constant);
-        v.in_vec = in_vec;
-        v
     }
 }
 

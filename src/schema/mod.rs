@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use byteorder::{ReadBytesExt, BigEndian};
 use regex::Regex;
 
-use super::{Hash, Identity};
+use super::Hash;
 use MarkerType;
 use decode::*;
 
@@ -17,6 +17,7 @@ mod float32;
 mod float64;
 mod time;
 mod lock;
+mod identity;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
@@ -24,6 +25,7 @@ use self::float32::ValidF32;
 use self::float64::ValidF64;
 use self::time::ValidTime;
 use self::lock::ValidLock;
+use self::identity::ValidIdentity;
 
 const MAX_VEC_RESERVE: usize = 2048;
 
@@ -278,18 +280,7 @@ impl Schema {
                 }
             }
             Validator::Identity(v) => {
-                let value = read_id(doc)?;
-                if v.nin_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" has Identity on `nin` list", field)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" has Identity not on `in` list", field)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             },
             Validator::Lockbox(v) => {
                 v.validate(field, doc)
@@ -463,7 +454,7 @@ pub enum Validator {
     Array(ValidArray),
     Object(ValidObj),
     Hash(ValidHash),
-    Identity(ValidIdent),
+    Identity(ValidIdentity),
     Lockbox(ValidLock),
     Timestamp(ValidTime),
     Multi(ValidMulti),
@@ -506,7 +497,7 @@ impl Validator {
             },
             MarkerType::Identity(len) => {
                 let val = read_raw_id(raw, len)?;
-                Ok(Validator::Identity(ValidIdent::from_const(val, is_query)))
+                Ok(Validator::Identity(ValidIdentity::from_const(val, is_query)))
             }
             MarkerType::Lockbox(_) => {
                 Err(Error::new(InvalidData, "Lockbox cannot be used in a schema"))
@@ -532,7 +523,7 @@ impl Validator {
                     Validator::Array(ValidArray::new(is_query)),
                     Validator::Object(ValidObj::new(is_query)),
                     Validator::Hash(ValidHash::new(is_query)),
-                    Validator::Identity(ValidIdent::new(is_query)),
+                    Validator::Identity(ValidIdentity::new(is_query)),
                     Validator::Timestamp(ValidTime::new(is_query)),
                     Validator::Multi(ValidMulti::new(is_query)),
                 ];
@@ -661,6 +652,9 @@ impl Validator {
                 v.validate(field, doc)
             },
             Validator::Lockbox(v) => {
+                v.validate(field, doc)
+            },
+            Validator::Identity(v) => {
                 v.validate(field, doc)
             },
             _ => Err(Error::new(Other, "Can't validate this type yet")),
@@ -828,30 +822,6 @@ impl ValidHash {
 
     fn from_const(constant: Hash, is_query: bool) -> ValidHash {
         let mut v = ValidHash::new(is_query);
-        let mut in_vec = Vec::with_capacity(1);
-        in_vec.push(constant);
-        v.in_vec = in_vec;
-        v
-    }
-}
-
-pub struct ValidIdent {
-    in_vec: Vec<Identity>,
-    nin_vec: Vec<Identity>,
-    query: bool,
-}
-
-impl ValidIdent {
-    fn new(is_query: bool) -> ValidIdent {
-        ValidIdent {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            query: is_query,
-        }
-    }
-
-    fn from_const(constant: Identity, is_query: bool) -> ValidIdent {
-        let mut v = ValidIdent::new(is_query);
         let mut in_vec = Vec::with_capacity(1);
         in_vec.push(constant);
         v.in_vec = in_vec;

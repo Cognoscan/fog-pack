@@ -200,6 +200,7 @@ impl ValidF32 {
                 format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
         }
         else if self.in_vec.len() > 0 {
+            println!("Passed in_vec test with {}", value);
             Ok(())
         }
         else if value.is_nan() && !self.nan_ok
@@ -285,6 +286,8 @@ mod tests {
     use value::Value;
     use super::*;
     use rand::prelude::*;
+    use std::f32;
+    use rand::distributions::Uniform;
 
     fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidF32> {
         if let MarkerType::Object(len) = read_marker(raw)? {
@@ -311,11 +314,6 @@ mod tests {
         rng.gen()
     }
 
-    fn rand_i8<R: Rng>(rng: &mut R) -> f32 {
-        let v: i8 = rng.gen();
-        v.into()
-    }
-
     #[test]
     fn generate() {
         let valid_count = 10;
@@ -329,20 +327,26 @@ mod tests {
         // Test passing any integer
         test1.clear();
         encode::write_value(&mut test1, &msgpack!({
-            "type": "Int"
+            "type": "F32"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
         for _ in 0..test_count {
             val.clear();
-            encode::write_value(&mut val, &Value::from(rand_integer(&mut rng)));
+            encode::write_value(&mut val, &Value::from(rand_float(&mut rng)));
             validator.validate("", &mut &val[..]).unwrap();
         }
+        encode::write_value(&mut val, &Value::from(f32::NAN));
+        validator.validate("", &mut &val[..]).unwrap();
+        encode::write_value(&mut val, &Value::from(f32::INFINITY));
+        validator.validate("", &mut &val[..]).unwrap();
+        encode::write_value(&mut val, &Value::from(f32::NEG_INFINITY));
+        validator.validate("", &mut &val[..]).unwrap();
 
         // Test floats in a range
         for _ in 0..valid_count {
             test1.clear();
-            let val1 = rand_integer(&mut rng);
-            let val2 = rand_integer(&mut rng);
+            let val1 = rand_float(&mut rng);
+            let val2 = rand_float(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
@@ -351,20 +355,21 @@ mod tests {
             let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_integer(&mut rng);
+                let test_val = rand_float(&mut rng);
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
                     validator.validate("", &mut &val[..]).is_ok(),
-                    "{} was between {} and {} but failed validation", test_val, min, max);
+                    "{:e} was between {:e} and {:e} but failed validation", test_val, min, max);
             }
         }
 
         // Test i8 in a range
+        let range = Uniform::new(-10i8, 10i8); 
         for _ in 0..valid_count {
             test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
+            let val1 = rng.sample(range) as f32;
+            let val2 = rng.sample(range) as f32;
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
@@ -373,63 +378,84 @@ mod tests {
             let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_i8(&mut rng);
+                let test_val = rng.sample(range) as f32;
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
                     validator.validate("", &mut &val[..]).is_ok(),
                     "{} was between {} and {} but failed validation", test_val, min, max);
             }
+            val.clear();
+            let test_val = f32::NAN;
+            encode::write_value(&mut val, &Value::from(test_val.clone()));
+            assert!(validator.validate("", &mut &val[..]).is_err(), "NAN passed a F32 validator with range");
         }
 
-        // Test i8 with bitset / bitclear
+        // Test -10 to 10 with in/nin
         for _ in 0..valid_count {
+            let range = Uniform::new(-10i8, 10i8); 
             test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
+            let mut in_vec: Vec<f32> = Vec::with_capacity(valid_count);
+            let mut nin_vec: Vec<f32> = Vec::with_capacity(valid_count);
+            for _ in 0..valid_count {
+                in_vec.push(rng.sample(range) as f32);
+                nin_vec.push(rng.sample(range) as f32);
+            }
+            let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
+            let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
             encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
+                "in": in_vec_val,
+                "nin": nin_vec_val,
             }));
             let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_i8(&mut rng);
+                let test_val = rng.sample(range) as f32;
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
-                let test_val = test_val.as_bits();
                 assert_eq!(
-                    ((test_val & set) == set) && ((test_val & clr) == 0),
+                    in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
                     validator.validate("", &mut &val[..]).is_ok(),
-                    "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
+                    "{:e} was in `in` and not `nin` but failed validation", test_val);
             }
         }
 
-        // Test i8 with in/nin
+        // Test in with NAN & infinities
         test1.clear();
-        let mut in_vec: Vec<Integer> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Integer> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(rand_i8(&mut rng));
-            nin_vec.push(rand_i8(&mut rng));
-        }
-        let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
-        let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
         encode::write_value(&mut test1, &msgpack!({
-            "in": in_vec_val,
-            "nin": nin_vec_val,
+            "in": vec![Value::from(f32::NAN), Value::from(f32::INFINITY), Value::from(f32::NEG_INFINITY)]
         }));
         let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        for _ in 0..test_count {
-            val.clear();
-            let test_val = rand_i8(&mut rng);
-            encode::write_value(&mut val, &Value::from(test_val.clone()));
-            assert_eq!(
-                in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
-                validator.validate("", &mut &val[..]).is_ok(),
-                "{:X} was in `in` and not `nin` but failed validation", test_val);
-        }
+        val.clear();
+        encode::write_value(&mut val, &Value::from(f32::NAN));
+        assert!(validator.validate("", &mut &val[..]).is_ok(), "NAN was in `in` but failed validation");
+        val.clear();
+        encode::write_value(&mut val, &Value::from(f32::INFINITY));
+        assert!(validator.validate("", &mut &val[..]).is_ok(), "INFINITY was in `in` but failed validation");
+        val.clear();
+        encode::write_value(&mut val, &Value::from(f32::NEG_INFINITY));
+        assert!(validator.validate("", &mut &val[..]).is_ok(), "NEG_INFINITY was in `in` but failed validation");
+        val.clear();
+        encode::write_value(&mut val, &Value::from(0f32));
+        assert!(validator.validate("", &mut &val[..]).is_err(), "0 was not in `in` but passed validation");
+
+        // Test nin with NAN & infinities
+        test1.clear();
+        encode::write_value(&mut test1, &msgpack!({
+            "nin": vec![Value::from(f32::NAN), Value::from(f32::INFINITY), Value::from(f32::NEG_INFINITY)]
+        }));
+        let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
+        val.clear();
+        encode::write_value(&mut val, &Value::from(f32::NAN));
+        assert!(validator.validate("", &mut &val[..]).is_err(), "NAN was in `nin` but passed validation");
+        val.clear();
+        encode::write_value(&mut val, &Value::from(f32::INFINITY));
+        assert!(validator.validate("", &mut &val[..]).is_err(), "INFINITY was in `nin` but passed validation");
+        val.clear();
+        encode::write_value(&mut val, &Value::from(f32::NEG_INFINITY));
+        assert!(validator.validate("", &mut &val[..]).is_err(), "NEG_INFINITY was in `nin` but passed validation");
     }
 
+    /*
     #[test]
     fn intersect() {
         let valid_count = 10;
@@ -553,4 +579,5 @@ mod tests {
                 "Set intersection for Integer validators fails with {}", test_val);
         }
     }
+    */
 }

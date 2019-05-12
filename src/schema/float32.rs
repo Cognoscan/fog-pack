@@ -11,6 +11,8 @@ use decode::*;
 use super::{sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
 
+const MAX_VEC_RESERVE: usize = 2048;
+
 /// F32 type validator
 #[derive(Clone,Debug)]
 pub struct ValidF32 {
@@ -80,7 +82,7 @@ impl ValidF32 {
                         self.in_vec.push(v);
                     },
                     MarkerType::Array(len) => {
-                        self.in_vec.reserve_exact(len);
+                        self.in_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
                             self.in_vec.push(read_f32(raw)?);
                         };
@@ -129,7 +131,7 @@ impl ValidF32 {
                         self.nin_vec.push(v);
                     },
                     MarkerType::Array(len) => {
-                        self.nin_vec.reserve_exact(len);
+                        self.nin_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
                             self.nin_vec.push(read_f32(raw)?);
                         };

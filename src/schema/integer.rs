@@ -6,6 +6,8 @@ use super::{sorted_union, sorted_intersection, Validator};
 use integer::Integer;
 use marker::MarkerType;
 
+const MAX_VEC_RESERVE: usize = 2048;
+
 /// Integer type validator
 #[derive(Clone)]
 pub struct ValidInt {
@@ -94,7 +96,7 @@ impl ValidInt {
                         self.in_vec.push(v);
                     },
                     MarkerType::Array(len) => {
-                        self.in_vec.reserve_exact(len);
+                        self.in_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
                             self.in_vec.push(read_integer(raw)?);
                         };
@@ -141,7 +143,7 @@ impl ValidInt {
                         self.nin_vec.push(v);
                     },
                     MarkerType::Array(len) => {
-                        self.nin_vec.reserve_exact(len);
+                        self.nin_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
                             self.nin_vec.push(read_integer(raw)?);
                         };

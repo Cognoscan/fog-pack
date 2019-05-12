@@ -8,10 +8,8 @@ use byteorder::{ReadBytesExt, BigEndian};
 use ieee754::Ieee754;
 
 use decode::*;
-use super::{sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
-
-const MAX_VEC_RESERVE: usize = 2048;
 
 /// F32 type validator
 #[derive(Clone,Debug)]

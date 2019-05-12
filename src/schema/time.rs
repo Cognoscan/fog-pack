@@ -3,11 +3,9 @@ use std::io::Error;
 use std::io::ErrorKind::InvalidData;
 
 use decode::*;
-use super::{sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use timestamp::Timestamp;
 use marker::MarkerType;
-
-const MAX_VEC_RESERVE: usize = 2048;
 
 /// Timestamp type validator
 #[derive(Clone)]
@@ -265,12 +263,12 @@ mod tests {
     use super::*;
     use rand::prelude::*;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidInt> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidTime> {
         if let MarkerType::Object(len) = read_marker(raw)? {
-            let mut validator = ValidInt::new(is_query);
+            let mut validator = ValidTime::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Wasn't a valid integer validator"))
+                    Err(Error::new(InvalidData, "Wasn't a valid timestamp validator"))
                 }
                 else {
                     Ok(())
@@ -286,20 +284,16 @@ mod tests {
     }
 
 
-    fn rand_integer<R: Rng>(rng: &mut R) -> Integer {
-        if rng.gen() {
-            let v: i64 = rng.gen();
-            Integer::from(v)
-        }
-        else {
-            let v: u64 = rng.gen();
-            Integer::from(v)
-        }
+    fn rand_time<R: Rng>(rng: &mut R) -> Timestamp {
+        let sec: i64 = rng.gen();
+        let nano: u32 = rng.gen_range(0, 1_999_999_999);
+        Timestamp::from_raw(sec, nano).unwrap()
     }
 
-    fn rand_i8<R: Rng>(rng: &mut R) -> Integer {
-        let v: i8 = rng.gen();
-        Integer::from(v)
+    fn rand_limited_time<R: Rng>(rng: &mut R) -> Timestamp {
+        let sec: i64 = rng.gen_range(-5, 5);
+        let nano: u32 = if rng.gen() { 0 } else { 1_999_999_999 };
+        Timestamp::from_raw(sec, nano).unwrap()
     }
 
     #[test]
@@ -312,23 +306,23 @@ mod tests {
         let mut test1 = Vec::new();
         let mut val = Vec::with_capacity(9);
 
-        // Test passing any integer
+        // Test passing any timestamp
         test1.clear();
         encode::write_value(&mut test1, &msgpack!({
-            "type": "Int"
+            "type": "Time"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
         for _ in 0..test_count {
             val.clear();
-            encode::write_value(&mut val, &Value::from(rand_integer(&mut rng)));
+            encode::write_value(&mut val, &Value::from(rand_time(&mut rng)));
             validator.validate("", &mut &val[..]).unwrap();
         }
 
-        // Test integers in a range
+        // Test timestamps in a range
         for _ in 0..valid_count {
             test1.clear();
-            let val1 = rand_integer(&mut rng);
-            let val2 = rand_integer(&mut rng);
+            let val1 = rand_time(&mut rng);
+            let val2 = rand_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
@@ -337,7 +331,7 @@ mod tests {
             let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_integer(&mut rng);
+                let test_val = rand_time(&mut rng);
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
@@ -346,33 +340,11 @@ mod tests {
             }
         }
 
-        // Test integers with bitset / bitclear
+        // Test timestamps in a narrow range
         for _ in 0..valid_count {
             test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_integer(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                let test_val = test_val.as_bits();
-                assert_eq!(
-                    ((test_val & set) == set) && ((test_val & clr) == 0),
-                    validator.validate("", &mut &val[..]).is_ok(),
-                    "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
-            }
-        }
-
-        // Test i8 in a range
-        for _ in 0..valid_count {
-            test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
+            let val1 = rand_limited_time(&mut rng);
+            let val2 = rand_limited_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
@@ -381,7 +353,7 @@ mod tests {
             let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_i8(&mut rng);
+                let test_val = rand_limited_time(&mut rng);
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
@@ -390,51 +362,31 @@ mod tests {
             }
         }
 
-        // Test i8 with bitset / bitclear
+        // Test timestamps with in/nin
         for _ in 0..valid_count {
             test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
+            let mut in_vec: Vec<Timestamp> = Vec::with_capacity(valid_count);
+            let mut nin_vec: Vec<Timestamp> = Vec::with_capacity(valid_count);
+            for _ in 0..valid_count {
+                in_vec.push(rand_limited_time(&mut rng));
+                nin_vec.push(rand_limited_time(&mut rng));
+            }
+            let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
+            let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
             encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
+                "in": in_vec_val,
+                "nin": nin_vec_val,
             }));
             let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_i8(&mut rng);
+                let test_val = rand_limited_time(&mut rng);
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
-                let test_val = test_val.as_bits();
                 assert_eq!(
-                    ((test_val & set) == set) && ((test_val & clr) == 0),
+                    in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
                     validator.validate("", &mut &val[..]).is_ok(),
-                    "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
+                    "{} was in `in` and not `nin` but failed validation", test_val);
             }
-        }
-
-        // Test i8 with in/nin
-        test1.clear();
-        let mut in_vec: Vec<Integer> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Integer> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(rand_i8(&mut rng));
-            nin_vec.push(rand_i8(&mut rng));
-        }
-        let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
-        let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
-        encode::write_value(&mut test1, &msgpack!({
-            "in": in_vec_val,
-            "nin": nin_vec_val,
-        }));
-        let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        for _ in 0..test_count {
-            val.clear();
-            let test_val = rand_i8(&mut rng);
-            encode::write_value(&mut val, &Value::from(test_val.clone()));
-            assert_eq!(
-                in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
-                validator.validate("", &mut &val[..]).is_ok(),
-                "{:X} was in `in` and not `nin` but failed validation", test_val);
         }
     }
 
@@ -448,12 +400,11 @@ mod tests {
         let mut test1 = Vec::new();
         let mut val = Vec::with_capacity(9);
 
-        // Test passing any integer
-        // Test i8 in a range
+        // Test passing timestamp in a range
         for _ in 0..valid_count {
             test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
+            let val1 = rand_limited_time(&mut rng);
+            let val2 = rand_limited_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
@@ -461,65 +412,34 @@ mod tests {
             }));
             let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
+            let val1 = rand_limited_time(&mut rng);
+            let val2 = rand_limited_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
                 "max": max
             }));
             let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
+            let validi = valid1.intersect(&Validator::Timestamp(valid2.clone()), false).unwrap();
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_i8(&mut rng);
+                let test_val = rand_limited_time(&mut rng);
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     valid1.validate("", &mut &val[..]).is_ok()
                     && valid2.validate("", &mut &val[..]).is_ok(),
                     validi.validate("", &mut &val[..]).is_ok(),
-                    "Min/Max intersection for Integer validators fails");
+                    "Min/Max intersection for Timestamp validators fails");
             }
         }
 
-        // Test i8 with bitset / bitclear
-        for _ in 0..valid_count {
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_i8(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                assert_eq!(
-                    valid1.validate("", &mut &val[..]).is_ok()
-                    && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
-                    "Bit set/clear intersection for Integer validators fails");
-            }
-        }
-
-        // Test i8 with in/nin
+        // Test passing timestamp with in/nin
         test1.clear();
         let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
         let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
         for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_i8(&mut rng)));
-            nin_vec.push(Value::from(rand_i8(&mut rng)));
+            in_vec.push(Value::from(rand_limited_time(&mut rng)));
+            nin_vec.push(Value::from(rand_limited_time(&mut rng)));
         }
         encode::write_value(&mut test1, &msgpack!({
             "in": in_vec,
@@ -530,35 +450,24 @@ mod tests {
         let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
         let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
         for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_i8(&mut rng)));
-            nin_vec.push(Value::from(rand_i8(&mut rng)));
+            in_vec.push(Value::from(rand_limited_time(&mut rng)));
+            nin_vec.push(Value::from(rand_limited_time(&mut rng)));
         }
         encode::write_value(&mut test1, &msgpack!({
             "in": in_vec,
             "nin": nin_vec,
         }));
         let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
-        println!("Valid1_in = {:?}", valid1.in_vec);
-        println!("Valid1_nin = {:?}", valid1.nin_vec);
-        println!("Valid2_in = {:?}", valid2.in_vec);
-        println!("Valid2_nin = {:?}", valid2.nin_vec);
-        if let Validator::Integer(ref v) = validi {
-            println!("Validi_in = {:?}", v.in_vec);
-            println!("Validi_nin = {:?}", v.nin_vec);
-        }
-        else {
-            println!("Validi always false");
-        }
+        let validi = valid1.intersect(&Validator::Timestamp(valid2.clone()), false).unwrap();
         for _ in 0..(10*test_count) {
             val.clear();
-            let test_val = rand_i8(&mut rng);
+            let test_val = rand_limited_time(&mut rng);
             encode::write_value(&mut val, &Value::from(test_val.clone()));
             assert_eq!(
                 valid1.validate("", &mut &val[..]).is_ok()
                 && valid2.validate("", &mut &val[..]).is_ok(),
                 validi.validate("", &mut &val[..]).is_ok(),
-                "Set intersection for Integer validators fails with {}", test_val);
+                "Set intersection for Timestamp validators fails with {}", test_val);
         }
     }
 }

@@ -16,13 +16,16 @@ mod integer;
 mod float32;
 mod float64;
 mod time;
+mod lock;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
 use self::float32::ValidF32;
 use self::float64::ValidF64;
 use self::time::ValidTime;
+use self::lock::ValidLock;
 
+const MAX_VEC_RESERVE: usize = 2048;
 
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
 /// entry.
@@ -289,14 +292,7 @@ impl Schema {
                 }
             },
             Validator::Lockbox(v) => {
-                let value = read_lockbox(doc)?;
-                if value.len() > v.max_len {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains lockbox longer than max length of {}", field, v.max_len)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             },
             Validator::Timestamp(v) => {
                 v.validate(field, doc)
@@ -664,6 +660,9 @@ impl Validator {
             Validator::Timestamp(v) => {
                 v.validate(field, doc)
             },
+            Validator::Lockbox(v) => {
+                v.validate(field, doc)
+            },
             _ => Err(Error::new(Other, "Can't validate this type yet")),
         }
     }
@@ -857,21 +856,6 @@ impl ValidIdent {
         in_vec.push(constant);
         v.in_vec = in_vec;
         v
-    }
-}
-
-/// Lock type validator
-pub struct ValidLock {
-    max_len: usize,
-    query: bool,
-}
-
-impl ValidLock {
-    fn new(is_query: bool) -> ValidLock {
-        ValidLock {
-            max_len: usize::max_value(),
-            query: is_query
-        }
     }
 }
 

@@ -2,11 +2,9 @@ use std::io;
 use std::io::Error;
 use std::io::ErrorKind::InvalidData;
 use decode::*;
-use super::{sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use integer::Integer;
 use marker::MarkerType;
-
-const MAX_VEC_RESERVE: usize = 2048;
 
 /// Integer type validator
 #[derive(Clone)]

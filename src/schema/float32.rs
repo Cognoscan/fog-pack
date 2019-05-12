@@ -12,7 +12,7 @@ use super::{sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
 
 /// F32 type validator
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub struct ValidF32 {
     in_vec: Vec<f32>,
     nin_vec: Vec<f32>,
@@ -251,6 +251,9 @@ impl ValidF32 {
                     else {
                         other.in_vec.clone()
                     };
+                    if in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
+                        return Ok(Validator::Invalid);
+                    }
                     let mut new_validator = ValidF32 {
                         in_vec: in_vec,
                         nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.total_cmp(b)),
@@ -262,9 +265,6 @@ impl ValidF32 {
                         ex_min: false, // Doesn't get used by this point - for setup of validator only.
                         ex_max: false, // Doesn't get used by this point - for setup of validator only.
                     };
-                    if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        return Ok(Validator::Invalid);
-                    }
                     let valid = new_validator.finalize();
                     if !valid {
                         Ok(Validator::Invalid)
@@ -364,7 +364,7 @@ mod tests {
             }
         }
 
-        // Test i8 in a range
+        // Test -10 to 10 in a range
         let range = Uniform::new(-10i8, 10i8); 
         for _ in 0..valid_count {
             test1.clear();
@@ -453,9 +453,11 @@ mod tests {
         val.clear();
         encode::write_value(&mut val, &Value::from(f32::NEG_INFINITY));
         assert!(validator.validate("", &mut &val[..]).is_err(), "NEG_INFINITY was in `nin` but passed validation");
+        val.clear();
+        encode::write_value(&mut val, &Value::from(0f32));
+        assert!(validator.validate("", &mut &val[..]).is_ok(), "0 was not in `nin` but failed validation");
     }
 
-    /*
     #[test]
     fn intersect() {
         let valid_count = 10;
@@ -466,12 +468,12 @@ mod tests {
         let mut test1 = Vec::new();
         let mut val = Vec::with_capacity(9);
 
-        // Test passing any integer
-        // Test i8 in a range
+        // Test -10 to 10 in a range
+        let range = Uniform::new(-10i8, 10i8); 
         for _ in 0..valid_count {
             test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
+            let val1 = rng.sample(range) as f32;
+            let val2 = rng.sample(range) as f32;
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
@@ -479,65 +481,49 @@ mod tests {
             }));
             let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
             test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
+            let val1 = rng.sample(range) as f32;
+            let val2 = rng.sample(range) as f32;
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
             encode::write_value(&mut test1, &msgpack!({
                 "min": min,
                 "max": max
             }));
             let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
+            let validi = valid1.intersect(&Validator::F32(valid2.clone()), false).unwrap();
+            println!("Validator 1 = {:?}", valid1);
+            println!("Validator 2 = {:?}", valid2);
+            if let Validator::F32(ref v) = validi {
+                println!("Intersecton = {:?}", v);
+            }
+            else {
+                println!("Intersection always fails to validate");
+            }
             for _ in 0..test_count {
                 val.clear();
-                let test_val = rand_i8(&mut rng);
+                let test_val = rng.sample(range) as f32;
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
+                let res1 = valid1.validate("", &mut &val[..]);
+                let res2 = valid2.validate("", &mut &val[..]);
+                let resi = validi.validate("", &mut &val[..]);
+                if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
+                    println!("Valid 1   Err = {:?}", res1);
+                    println!("Valid 2   Err = {:?}", res2);
+                    println!("Intersect Err = {:?}", resi);
+                }
                 assert_eq!(
-                    valid1.validate("", &mut &val[..]).is_ok()
-                    && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
-                    "Min/Max intersection for Integer validators fails");
+                    res1.is_ok() && res2.is_ok(),
+                    resi.is_ok(),
+                    "Min/Max intersection for F32 validators fails with {}", test_val);
             }
         }
 
-        // Test i8 with bitset / bitclear
-        for _ in 0..valid_count {
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_i8(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                assert_eq!(
-                    valid1.validate("", &mut &val[..]).is_ok()
-                    && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
-                    "Bit set/clear intersection for Integer validators fails");
-            }
-        }
-
-        // Test i8 with in/nin
+        // Test -10 to 10 with in/nin
         test1.clear();
         let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
         let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
         for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_i8(&mut rng)));
-            nin_vec.push(Value::from(rand_i8(&mut rng)));
+            in_vec.push(Value::from(rng.sample(range) as f32));
+            nin_vec.push(Value::from(rng.sample(range) as f32));
         }
         encode::write_value(&mut test1, &msgpack!({
             "in": in_vec,
@@ -548,36 +534,31 @@ mod tests {
         let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
         let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
         for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_i8(&mut rng)));
-            nin_vec.push(Value::from(rand_i8(&mut rng)));
+            in_vec.push(Value::from(rng.sample(range) as f32));
+            nin_vec.push(Value::from(rng.sample(range) as f32));
         }
         encode::write_value(&mut test1, &msgpack!({
             "in": in_vec,
             "nin": nin_vec,
         }));
         let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
-        println!("Valid1_in = {:?}", valid1.in_vec);
-        println!("Valid1_nin = {:?}", valid1.nin_vec);
-        println!("Valid2_in = {:?}", valid2.in_vec);
-        println!("Valid2_nin = {:?}", valid2.nin_vec);
-        if let Validator::Integer(ref v) = validi {
-            println!("Validi_in = {:?}", v.in_vec);
-            println!("Validi_nin = {:?}", v.nin_vec);
-        }
-        else {
-            println!("Validi always false");
-        }
+        let validi = valid1.intersect(&Validator::F32(valid2.clone()), false).unwrap();
         for _ in 0..(10*test_count) {
             val.clear();
-            let test_val = rand_i8(&mut rng);
+            let test_val = rng.sample(range) as f32;
             encode::write_value(&mut val, &Value::from(test_val.clone()));
+            let res1 = valid1.validate("", &mut &val[..]);
+            let res2 = valid2.validate("", &mut &val[..]);
+            let resi = validi.validate("", &mut &val[..]);
+            if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
+                println!("Valid 1   Err = {:?}", res1);
+                println!("Valid 2   Err = {:?}", res2);
+                println!("Intersect Err = {:?}", resi);
+            }
             assert_eq!(
-                valid1.validate("", &mut &val[..]).is_ok()
-                && valid2.validate("", &mut &val[..]).is_ok(),
-                validi.validate("", &mut &val[..]).is_ok(),
-                "Set intersection for Integer validators fails with {}", test_val);
+                res1.is_ok() && res2.is_ok(),
+                resi.is_ok(),
+                "Set intersection for F32 validators fails with {}", test_val);
         }
     }
-    */
 }

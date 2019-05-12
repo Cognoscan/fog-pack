@@ -689,6 +689,9 @@ impl Validator {
             Validator::Integer(v) => {
                 v.validate(field, doc)
             },
+            Validator::F32(v) => {
+                v.validate(field, doc)
+            },
             _ => Err(Error::new(Other, "Can't validate this type yet")),
         }
     }

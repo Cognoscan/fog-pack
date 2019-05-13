@@ -36,11 +36,11 @@ const MAX_VEC_RESERVE: usize = 2048;
 pub struct Schema {
     min_fields: usize,
     max_fields: usize,
-    required: Vec<(String, Validator)>,
-    optional: Vec<(String, Validator)>,
-    entries: Vec<(String, Validator)>,
-    types: HashMap<String, Validator>,
-    field_type: Option<Validator>,
+    required: Vec<(String, usize)>,
+    optional: Vec<(String, usize)>,
+    entries: Vec<(String, usize)>,
+    types: Vec<Validator>,
+    field_type: Option<usize>,
     unknown_ok: bool
 }
 
@@ -51,7 +51,7 @@ impl Schema {
         let required = Vec::new();
         let optional = Vec::new();
         let entries = Vec::new();
-        let types = HashMap::new();
+        let types = Vec::new();
         let field_type = None;
         let unknown_ok = false;
 
@@ -109,36 +109,28 @@ impl Schema {
         let mut opt_index = 0;
         object_iterate(doc, num_fields, |field, doc| {
             // Check against required/optional/unknown types
-            let validator = 
-                if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
-                    let validator = &self.required[req_index].1;
-                    req_index += 1;
-                    validator
-                }
-                else if Some(field) == self.optional.get(opt_index).map(|x| x.0.as_str()) {
-                    let validator = &self.optional[opt_index].1;
-                    opt_index += 1;
-                    validator
-                }
-                else if self.unknown_ok {
-                    if let Some(ref validator) = self.field_type {
-                        validator
-                    }
-                    else {
-                        verify_value(doc)?;
-                        &Validator::Valid
-                    }
+            if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
+                let v_index = self.required[req_index].1;
+                req_index += 1;
+                self.run_validator(field, &self.types[v_index], doc)
+            }
+            else if Some(field) == self.optional.get(opt_index).map(|x| x.0.as_str()) {
+                let v_index = self.optional[opt_index].1;
+                opt_index += 1;
+                self.run_validator(field, &self.types[v_index], doc)
+            }
+            else if self.unknown_ok {
+                if let Some(v_index) = self.field_type {
+                    self.run_validator(field, &self.types[v_index], doc)
                 }
                 else {
-                    return Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)));
-                };
-
-            // Run check
-            let validator = self.fetch_validator(validator);
-            if let Err(e) = self.run_validator(field, validator, doc) {
-                return Err(e);
+                    verify_value(doc)?;
+                    Ok(())
+                }
             }
-            Ok(())
+            else {
+                Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)))
+            }
         })?;
 
         if req_index >= self.required.len() {
@@ -148,16 +140,6 @@ impl Schema {
             Err(Error::new(InvalidData,
                 format!("Missing required fields, starting with {}", self.required[req_index].0.as_str())))
         }
-    }
-
-    fn fetch_validator<'a>(&'a self, v: &'a Validator) -> &'a Validator {
-        if let &Validator::Type(ref s) = v {
-            if let Some(ty) = self.types.get(s) {
-                ty
-            }
-            else { &Validator::Invalid }
-        }
-        else { v }
     }
 
     fn run_validator(&self, field: &str, validator: &Validator, doc: &mut &[u8]) -> io::Result<()> {
@@ -171,10 +153,13 @@ impl Schema {
                 read_null(doc)?;
                 Ok(())
             },
+            Validator::Type(type_name) => {
+                Err(Error::new(Other,
+                    format!("Logical error: Validator::Type({}) should never exist after creation", type_name)))
+            },
             Validator::Multi(v) => {
-                if v.any_of.iter().any(|validator| {
-                    let validator = self.fetch_validator(validator);
-                    if let Err(_) = self.run_validator(field, validator, doc) {
+                if v.any_of.iter().any(|v_index| {
+                    if let Err(_) = self.run_validator(field, &self.types[*v_index], doc) {
                         false
                     }
                     else {
@@ -189,8 +174,6 @@ impl Schema {
                         format!("Field \"{}\" failed against all allowed types.", field)))
                 }
             },
-            Validator::Type(_) => Err(Error::new(Other,
-                format!("Shouldn't happen: didn't get validator for Field \"{}\"", field))),
             Validator::Boolean(v) => {
                 v.validate(field, doc)
             },
@@ -287,36 +270,28 @@ impl Schema {
                 let mut opt_index = 0;
                 object_iterate(doc, num_fields, |field, doc| {
                     // Check against required/optional/unknown types
-                    let validator = 
-                        if Some(field) == v.required.get(req_index).map(|x| x.0.as_str()) {
-                            let validator = &v.required[req_index].1;
-                            req_index += 1;
-                            validator
-                        }
-                        else if Some(field) == v.optional.get(opt_index).map(|x| x.0.as_str()) {
-                            let validator = &v.optional[opt_index].1;
-                            opt_index += 1;
-                            validator
-                        }
-                        else if v.unknown_ok {
-                            if let Some(ref validator) = v.field_type {
-                                validator
-                            }
-                            else {
-                                verify_value(doc)?;
-                                &Validator::Valid
-                            }
+                    if Some(field) == v.required.get(req_index).map(|x| x.0.as_str()) {
+                        let v_index = v.required[req_index].1;
+                        req_index += 1;
+                        self.run_validator(field, &self.types[v_index], doc)
+                    }
+                    else if Some(field) == v.optional.get(opt_index).map(|x| x.0.as_str()) {
+                        let v_index = v.optional[opt_index].1;
+                        opt_index += 1;
+                        self.run_validator(field, &self.types[v_index], doc)
+                    }
+                    else if v.unknown_ok {
+                        if let Some(v_index) = v.field_type {
+                            self.run_validator(field, &self.types[v_index], doc)
                         }
                         else {
-                            return Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)));
-                        };
-                    
-                    // Run check
-                    let validator = self.fetch_validator(validator);
-                    if let Err(e) = self.run_validator(field, validator, doc) {
-                        return Err(e);
+                            verify_value(doc)?;
+                            Ok(())
+                        }
                     }
-                    Ok(())
+                    else {
+                        Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)))
+                    }
                 })?;
 
                 let (obj_start, _) = obj_start.split_at(obj_start.len()-doc.len());
@@ -368,15 +343,13 @@ impl Schema {
                 for i in 0..num_items {
                     // Validate as appropriate
                     let item_start = doc.clone();
-                    if let Some(item_validator) = v.items.get(i) {
-                        let item_validator = self.fetch_validator(item_validator);
-                        if let Err(e) = self.run_validator(field, item_validator, doc) {
+                    if let Some(v_index) = v.items.get(i) {
+                        if let Err(e) = self.run_validator(field, &self.types[*v_index], doc) {
                             return Err(e);
                         }
                     }
-                    else if let Some(ref item_validator) = v.extra_items {
-                        let item_validator = self.fetch_validator(item_validator);
-                        if let Err(e) = self.run_validator(field, item_validator, doc) {
+                    else if let Some(v_index) = v.extra_items {
+                        if let Err(e) = self.run_validator(field, &self.types[v_index], doc) {
                             return Err(e);
                         }
                     }
@@ -397,8 +370,7 @@ impl Schema {
                         .zip(v.contains.iter())
                         .filter(|(checked,_)| !**checked)
                         .for_each(|(checked,contains_item)| {
-                            let item_validator = self.fetch_validator(contains_item);
-                            if let Ok(()) = self.run_validator(field, item_validator, &mut item.clone()) {
+                            if let Ok(()) = self.run_validator(field, &self.types[*contains_item], &mut item.clone()) {
                                 *checked = true;
                             }
                         });
@@ -681,9 +653,9 @@ pub struct ValidArray {
     nin_vec: Vec<Vec<u8>>,
     min_len: usize,
     max_len: usize,
-    items: Vec<Validator>,
-    extra_items: Option<Box<Validator>>,
-    contains: Vec<Validator>,
+    items: Vec<usize>,
+    extra_items: Option<usize>,
+    contains: Vec<usize>,
     unique: bool,
     query: bool,
     array: bool,
@@ -711,11 +683,11 @@ impl ValidArray {
 pub struct ValidObj {
     in_vec: Vec<Vec<u8>>,
     nin_vec: Vec<Vec<u8>>,
-    required: Vec<(String, Validator)>,
-    optional: Vec<(String, Validator)>,
+    required: Vec<(String, usize)>,
+    optional: Vec<(String, usize)>,
     min_fields: usize,
     max_fields: usize,
-    field_type: Option<Box<Validator>>,
+    field_type: Option<usize>,
     unknown_ok: bool,
     query: bool,
 }
@@ -771,7 +743,7 @@ impl ValidHash {
 
 /// Container for multiple accepted Validators
 pub struct ValidMulti {
-    any_of: Vec<Validator>,
+    any_of: Vec<usize>,
 }
 
 impl ValidMulti {

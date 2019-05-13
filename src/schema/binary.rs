@@ -2,6 +2,7 @@
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::InvalidData;
+use std::iter::repeat;
 use decode::*;
 use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
@@ -13,8 +14,8 @@ pub struct ValidBin {
     nin_vec: Vec<Box<[u8]>>,
     min_len: usize,
     max_len: usize,
-    bit_set: Vec<u8>,
-    bit_clear: Vec<u8>,
+    bits_set: Vec<u8>,
+    bits_clr: Vec<u8>,
     query: bool,
     ord: bool,
     bit: bool,
@@ -27,8 +28,8 @@ impl ValidBin {
             nin_vec: Vec::with_capacity(0),
             min_len: usize::min_value(),
             max_len: usize::max_value(),
-            bit_set: Vec::with_capacity(0),
-            bit_clear: Vec::with_capacity(0),
+            bits_set: Vec::with_capacity(0),
+            bits_clr: Vec::with_capacity(0),
             query: is_query,
             ord: is_query,
             bit: is_query,
@@ -56,13 +57,13 @@ impl ValidBin {
                 Ok(true)
             },
             "bits_clr" => {
-                self.bit_clear = read_vec(raw)?;
+                self.bits_clr = read_vec(raw)?;
                 Ok(true)
             },
             "bits_set" => {
-                self.bit_set = read_vec(raw)?;
-                Ok(self.bit_set.iter()
-                   .zip(self.bit_clear.iter())
+                self.bits_set = read_vec(raw)?;
+                Ok(self.bits_set.iter()
+                   .zip(self.bits_clr.iter())
                    .all(|(set,clr)| (set & clr) == 0))
             },
             "default" => {
@@ -101,7 +102,7 @@ impl ValidBin {
             }
             "min_len" => {
                 if let Some(len) = read_integer(raw)?.as_u64() {
-                    self.max_len = len as usize;
+                    self.min_len = len as usize;
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
@@ -137,7 +138,7 @@ impl ValidBin {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => Ok("Int" == read_str(raw)?),
+            "type" => Ok("Bin" == read_str(raw)?),
             _ => Ok(false),
         }
     }
@@ -156,8 +157,12 @@ impl ValidBin {
                     if nin == val { continue; }
                 }
                 if (val.len() >= self.min_len) && (val.len() <= self.max_len) 
-                    && self.bit_set.iter().zip(val.iter()).all(|(bit, val)| (bit & val) == *bit)
-                    && self.bit_clear.iter().zip(val.iter()).all(|(bit, val)| (bit & val) == 0)
+                    && self.bits_set.iter()
+                        .zip(val.iter().chain(repeat(&0u8)))
+                        .all(|(bit, val)| (bit & val) == *bit)
+                    && self.bits_clr.iter()
+                        .zip(val.iter().chain(repeat(&0u8)))
+                        .all(|(bit, val)| (bit & val) == 0)
                 {
                     in_vec.push(val.clone());
                 }
@@ -170,13 +175,17 @@ impl ValidBin {
         else {
             let min_len = self.min_len;
             let max_len = self.max_len;
-            let bit_set = self.bit_set.clone();
-            let bit_clear = self.bit_clear.clone();
+            let bits_set = self.bits_set.clone();
+            let bits_clr = self.bits_clr.clone();
             // Only keep `nin` values that would otherwise pass
             self.nin_vec.retain(|val| {
                 (val.len() >= min_len) && (val.len() <= max_len) 
-                    && bit_set.iter().zip(val.iter()).all(|(bit, val)| (bit & val) == *bit)
-                    && bit_clear.iter().zip(val.iter()).all(|(bit, val)| (bit & val) == 0)
+                    && bits_set.iter()
+                        .zip(val.iter().chain(repeat(&0u8)))
+                        .all(|(bit, val)| (bit & val) == *bit)
+                    && bits_clr.iter()
+                        .zip(val.iter().chain(repeat(&0u8)))
+                        .all(|(bit, val)| (bit & val) == 0)
             });
             self.nin_vec.shrink_to_fit();
             true
@@ -200,11 +209,17 @@ impl ValidBin {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains binary longer than max length of {}", field, self.min_len)))
         }
-        else if self.bit_set.iter().zip(value).any(|(bit, val)| (bit & val) != *bit) {
+        else if self.bits_set.iter()
+            .zip(value.iter().chain(repeat(&0u8)))
+            .any(|(bit, val)| (bit & val) != *bit)
+        {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" does not have all required bits set", field)))
         }
-        else if self.bit_clear.iter().zip(value).any(|(bit, val)| (bit & val) != 0) {
+        else if self.bits_clr.iter()
+            .zip(value.iter().chain(repeat(&0u8)))
+            .any(|(bit, val)| (bit & val) != 0)
+        {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" does not have all required bits cleared", field)))
         }
@@ -226,13 +241,13 @@ impl ValidBin {
                 if query && (
                     (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
                     || (!self.ord && ((other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
-                    || (!self.bit && ((other.bit_set.len() > 0) || (other.bit_clear.len() > 0))))
+                    || (!self.bit && ((other.bits_set.len() > 0) || (other.bits_clr.len() > 0))))
                 {
                     Err(())
                 }
                 else if (self.min_len > other.max_len) || (self.max_len < other.min_len) 
-                    || self.bit_set.iter().zip(other.bit_clear.iter()).any(|(a,b)| (a&b) != 0)
-                    || self.bit_clear.iter().zip(other.bit_set.iter()).any(|(a,b)| (a&b) != 0)
+                    || self.bits_set.iter().zip(other.bits_clr.iter()).any(|(a,b)| (a&b) != 0)
+                    || self.bits_clr.iter().zip(other.bits_set.iter()).any(|(a,b)| (a&b) != 0)
                 {
                     Ok(Validator::Invalid)
                 }
@@ -251,8 +266,8 @@ impl ValidBin {
                         nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
                         min_len: self.min_len.max(other.min_len),
                         max_len: self.max_len.min(other.max_len),
-                        bit_set: self.bit_set.iter().zip(other.bit_set.iter()).map(|(a,b)| a | b).collect(),
-                        bit_clear: self.bit_clear.iter().zip(other.bit_clear.iter()).map(|(a,b)| a | b).collect(),
+                        bits_set: self.bits_set.iter().zip(other.bits_set.iter()).map(|(a,b)| a | b).collect(),
+                        bits_clr: self.bits_clr.iter().zip(other.bits_clr.iter()).map(|(a,b)| a | b).collect(),
                         query: self.query && other.query,
                         ord: self.ord && other.ord,
                         bit: self.bit && other.bit,
@@ -280,14 +295,13 @@ mod tests {
     use encode;
     use value::Value;
     use super::*;
-    use rand::prelude::*;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidInt> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidBin> {
         if let MarkerType::Object(len) = read_marker(raw)? {
-            let mut validator = ValidInt::new(is_query);
+            let mut validator = ValidBin::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Wasn't a valid integer validator"))
+                    Err(Error::new(InvalidData, "Not a valid binary validator"))
                 }
                 else {
                     Ok(())
@@ -302,280 +316,162 @@ mod tests {
         }
     }
 
-
-    fn rand_integer<R: Rng>(rng: &mut R) -> Integer {
-        if rng.gen() {
-            let v: i64 = rng.gen();
-            Integer::from(v)
-        }
-        else {
-            let v: u64 = rng.gen();
-            Integer::from(v)
-        }
-    }
-
-    fn rand_i8<R: Rng>(rng: &mut R) -> Integer {
-        let v: i8 = rng.gen();
-        Integer::from(v)
+    fn validate_bin(bin: Vec<u8>, validator: &ValidBin) -> io::Result<()> {
+        let mut val = Vec::with_capacity(3+bin.len());
+        encode::write_value(&mut val, &Value::from(bin));
+        validator.validate("", &mut &val[..])
     }
 
     #[test]
-    fn generate() {
-        let valid_count = 10;
-        let test_count = 100;
+    fn any_bin() {
 
-        // Variables used in all tests
-        let mut rng = rand::thread_rng();
         let mut test1 = Vec::new();
-        let mut val = Vec::with_capacity(9);
 
-        // Test passing any integer
-        test1.clear();
+        // Test passing any binary data
         encode::write_value(&mut test1, &msgpack!({
-            "type": "Int"
+            "type": "Bin"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
-        for _ in 0..test_count {
-            val.clear();
-            encode::write_value(&mut val, &Value::from(rand_integer(&mut rng)));
-            validator.validate("", &mut &val[..]).unwrap();
-        }
-
-        // Test integers in a range
-        for _ in 0..valid_count {
-            test1.clear();
-            let val1 = rand_integer(&mut rng);
-            let val2 = rand_integer(&mut rng);
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
-                "min": min,
-                "max": max
-            }));
-            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_integer(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                assert_eq!(
-                    (test_val >= min) && (test_val <= max),
-                    validator.validate("", &mut &val[..]).is_ok(),
-                    "{} was between {} and {} but failed validation", test_val, min, max);
-            }
-        }
-
-        // Test integers with bitset / bitclear
-        for _ in 0..valid_count {
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_integer(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                let test_val = test_val.as_bits();
-                assert_eq!(
-                    ((test_val & set) == set) && ((test_val & clr) == 0),
-                    validator.validate("", &mut &val[..]).is_ok(),
-                    "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
-            }
-        }
-
-        // Test i8 in a range
-        for _ in 0..valid_count {
-            test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
-                "min": min,
-                "max": max
-            }));
-            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_i8(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                assert_eq!(
-                    (test_val >= min) && (test_val <= max),
-                    validator.validate("", &mut &val[..]).is_ok(),
-                    "{} was between {} and {} but failed validation", test_val, min, max);
-            }
-        }
-
-        // Test i8 with bitset / bitclear
-        for _ in 0..valid_count {
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_i8(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                let test_val = test_val.as_bits();
-                assert_eq!(
-                    ((test_val & set) == set) && ((test_val & clr) == 0),
-                    validator.validate("", &mut &val[..]).is_ok(),
-                    "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
-            }
-        }
-
-        // Test i8 with in/nin
-        test1.clear();
-        let mut in_vec: Vec<Integer> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Integer> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(rand_i8(&mut rng));
-            nin_vec.push(rand_i8(&mut rng));
-        }
-        let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
-        let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
-        encode::write_value(&mut test1, &msgpack!({
-            "in": in_vec_val,
-            "nin": nin_vec_val,
-        }));
-        let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        for _ in 0..test_count {
-            val.clear();
-            let test_val = rand_i8(&mut rng);
-            encode::write_value(&mut val, &Value::from(test_val.clone()));
-            assert_eq!(
-                in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
-                validator.validate("", &mut &val[..]).is_ok(),
-                "{:X} was in `in` and not `nin` but failed validation", test_val);
-        }
+        assert!(validate_bin(vec![0,1,2,3,4,5], &validator).is_ok());
+        assert!(validate_bin(Vec::new(), &validator).is_ok());
+        assert!(validate_bin(vec![0], &validator).is_ok());
+        assert!(validate_bin(vec![0,0,0,0,0,0], &validator).is_ok());
+        assert!(validate_bin(vec![255,255,255,255], &validator).is_ok());
+        let mut val = Vec::with_capacity(1);
+        encode::write_value(&mut val, &Value::from(0u8));
+        assert!(validator.validate("", &mut &val[..]).is_err());
+        val.clear();
+        encode::write_value(&mut val, &Value::from(false));
+        assert!(validator.validate("", &mut &val[..]).is_err());
     }
 
     #[test]
-    fn intersect() {
-        let valid_count = 10;
-        let test_count = 1000;
-
-        // Variables used in all tests
-        let mut rng = rand::thread_rng();
+    fn range() {
         let mut test1 = Vec::new();
-        let mut val = Vec::with_capacity(9);
 
-        // Test passing any integer
-        // Test i8 in a range
-        for _ in 0..valid_count {
-            test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
-                "min": min,
-                "max": max
-            }));
-            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            test1.clear();
-            let val1 = rand_i8(&mut rng);
-            let val2 = rand_i8(&mut rng);
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
-                "min": min,
-                "max": max
-            }));
-            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_i8(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                assert_eq!(
-                    valid1.validate("", &mut &val[..]).is_ok()
-                    && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
-                    "Min/Max intersection for Integer validators fails");
-            }
-        }
-
-        // Test i8 with bitset / bitclear
-        for _ in 0..valid_count {
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            test1.clear();
-            let set: u64 = rng.gen();
-            let clr: u64 = rng.gen::<u64>() & !set;
-            encode::write_value(&mut test1, &msgpack!({
-                "bits_set": set,
-                "bits_clr": clr
-            }));
-            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_i8(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                assert_eq!(
-                    valid1.validate("", &mut &val[..]).is_ok()
-                    && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
-                    "Bit set/clear intersection for Integer validators fails");
-            }
-        }
-
-        // Test i8 with in/nin
-        test1.clear();
-        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_i8(&mut rng)));
-            nin_vec.push(Value::from(rand_i8(&mut rng)));
-        }
+        // Test min/max length
         encode::write_value(&mut test1, &msgpack!({
-            "in": in_vec,
-            "nin": nin_vec,
+            "min_len": 3,
+            "max_len": 6
         }));
-        let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        test1.clear();
-        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_i8(&mut rng)));
-            nin_vec.push(Value::from(rand_i8(&mut rng)));
-        }
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0,1,2], &validator).is_ok());
+        assert!(validate_bin(vec![0,1,2,3,4,5], &validator).is_ok());
+        assert!(validate_bin(Vec::new(), &validator).is_err());
+        assert!(validate_bin(vec![0], &validator).is_err());
+        assert!(validate_bin(vec![0,0,0,0,0,0,0], &validator).is_err());
+    }
+
+    #[test]
+    fn bits() {
+        let mut test1 = Vec::new();
+
+        let bits_set: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
+        let bits_clr: Vec<u8> = vec![0x05, 0x30, 0x0C];
         encode::write_value(&mut test1, &msgpack!({
-            "in": in_vec,
-            "nin": nin_vec,
+            "bits_set": bits_set,
+            "bits_clr": bits_clr
         }));
-        let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        let validi = valid1.intersect(&Validator::Integer(valid2.clone()), false).unwrap();
-        println!("Valid1_in = {:?}", valid1.in_vec);
-        println!("Valid1_nin = {:?}", valid1.nin_vec);
-        println!("Valid2_in = {:?}", valid2.in_vec);
-        println!("Valid2_nin = {:?}", valid2.nin_vec);
-        if let Validator::Integer(ref v) = validi {
-            println!("Validi_in = {:?}", v.in_vec);
-            println!("Validi_nin = {:?}", v.nin_vec);
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0xAA], &validator).is_err());
+        assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
+        assert!(validate_bin(vec![0xAA, 0xCF, 0xF3], &validator).is_ok());
+        assert!(validate_bin(vec![0xAA, 0xCF, 0xF3, 0xBE], &validator).is_ok());
+        assert!(validate_bin(vec![0xAA, 0x3F, 0xFC], &validator).is_err());
+        assert!(validate_bin(vec![0x5A, 0xC0, 0x33], &validator).is_err());
+    }
+
+    #[test]
+    fn in_nin_sets() {
+        let mut test1 = Vec::new();
+
+        let in_vec: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
+        let nin_vec: Vec<u8> = vec![0x05, 0x30, 0x0C];
+        encode::write_value(&mut test1, &msgpack!({
+            "in": vec![Value::from(in_vec)],
+            "nin": vec![Value::from(nin_vec)]
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
+        assert!(validate_bin(vec![0xAA, 0x0F], &validator).is_err());
+        assert!(validate_bin(vec![0x05, 0x30, 0x0C], &validator).is_err());
+        assert!(validate_bin(vec![0xAA, 0x0F, 0xF1], &validator).is_err());
+
+        let nin_vec: Vec<u8> = vec![0x05, 0x30, 0x0C];
+        test1.clear();
+        encode::write_value(&mut test1, &msgpack!({
+            "nin": vec![Value::from(nin_vec)]
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
+        assert!(validate_bin(vec![0x05, 0x30], &validator).is_ok());
+        assert!(validate_bin(vec![0x05, 0x30, 0x0C], &validator).is_err());
+        assert!(validate_bin(vec![0x05, 0x30, 0x0C, 0x01], &validator).is_ok());
+    }
+
+    #[test]
+    fn range_intersect() {
+        let mut test1 = Vec::new();
+
+        // Test min/max length
+        encode::write_value(&mut test1, &msgpack!({
+            "min_len": 2,
+            "max_len": 6
+        }));
+        let valid1 = read_it(&mut &test1[..], false).unwrap();
+        test1.clear();
+        encode::write_value(&mut test1, &msgpack!({
+            "min_len": 3,
+            "max_len": 10
+        }));
+        let valid2 = read_it(&mut &test1[..], false).unwrap();
+        let validi = valid1.intersect(&Validator::Binary(valid2), false).unwrap();
+        let validi = if let Validator::Binary(v) = validi {
+            v
         }
         else {
-            println!("Validi always false");
-        }
-        for _ in 0..(10*test_count) {
-            val.clear();
-            let test_val = rand_i8(&mut rng);
-            encode::write_value(&mut val, &Value::from(test_val.clone()));
-            assert_eq!(
-                valid1.validate("", &mut &val[..]).is_ok()
-                && valid2.validate("", &mut &val[..]).is_ok(),
-                validi.validate("", &mut &val[..]).is_ok(),
-                "Set intersection for Integer validators fails with {}", test_val);
-        }
+            panic!("Intersection invalid");
+        };
+        assert!(validate_bin(vec![0,1], &validi).is_err());
+        assert!(validate_bin(vec![0,1,2], &validi).is_ok());
+        assert!(validate_bin(vec![0,1,2,3,4,5], &validi).is_ok());
+        assert!(validate_bin(Vec::new(), &validi).is_err());
+        assert!(validate_bin(vec![0], &validi).is_err());
+        assert!(validate_bin(vec![0,0,0,0,0,0,0], &validi).is_err());
     }
+
+    #[test]
+    fn bits_intersect() {
+        let mut test1 = Vec::new();
+
+        let bits_set: Vec<u8> = vec![0x0A];
+        let bits_clr: Vec<u8> = vec![0x50];
+        encode::write_value(&mut test1, &msgpack!({
+            "bits_set": bits_set,
+            "bits_clr": bits_clr
+        }));
+        let valid1 = read_it(&mut &test1[..], false).unwrap();
+        test1.clear();
+        let bits_set: Vec<u8> = vec![0xA0];
+        let bits_clr: Vec<u8> = vec![0x05];
+        encode::write_value(&mut test1, &msgpack!({
+            "bits_set": bits_set,
+            "bits_clr": bits_clr
+        }));
+        let valid2 = read_it(&mut &test1[..], false).unwrap();
+        let validi = valid1.intersect(&Validator::Binary(valid2), false).unwrap();
+        let validi = if let Validator::Binary(v) = validi {
+            v
+        }
+        else {
+            panic!("Intersection invalid");
+        };
+        assert!(validate_bin(vec![0xAA], &validi).is_ok());
+        assert!(validate_bin(vec![0xAA, 0x55], &validi).is_ok());
+        assert!(validate_bin(vec![0x55], &validi).is_err());
+        assert!(validate_bin(vec![0xFF], &validi).is_err());
+        assert!(validate_bin(vec![0x00], &validi).is_err());
+        assert!(validate_bin(Vec::new(), &validi).is_err());
+    }
+
 }

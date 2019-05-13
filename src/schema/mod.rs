@@ -18,6 +18,7 @@ mod float64;
 mod time;
 mod lock;
 mod identity;
+mod binary;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
@@ -26,6 +27,7 @@ use self::float64::ValidF64;
 use self::time::ValidTime;
 use self::lock::ValidLock;
 use self::identity::ValidIdentity;
+use self::binary::ValidBin;
 
 const MAX_VEC_RESERVE: usize = 2048;
 
@@ -228,34 +230,7 @@ impl Schema {
                 }
             }
             Validator::Binary(v) => {
-                let value = read_bin(doc)?;
-                if value.len() < v.min_len {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains binary shorter than min length of {}", field, v.min_len)))
-                }
-                else if value.len() > v.max_len {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains binary longer than max length of {}", field, v.min_len)))
-                }
-                else if v.bit_set.iter().zip(value).any(|(bit, val)| (bit & val) != *bit) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" does not have all required bits set", field)))
-                }
-                else if v.bit_clear.iter().zip(value).any(|(bit, val)| (bit & val) != 0) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" does not have all required bits cleared", field)))
-                }
-                else if v.nin_vec.iter().any(|x| value == &x[..]) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains binary on the `nin` list", field)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.iter().any(|x| value == &x[..]) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains binary not on the `in` list", field)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             }
             Validator::Hash(v) => {
                 let value = read_hash(doc)?;
@@ -648,13 +623,16 @@ impl Validator {
             Validator::F64(v) => {
                 v.validate(field, doc)
             },
-            Validator::Timestamp(v) => {
+            Validator::Binary(v) => {
+                v.validate(field, doc)
+            },
+            Validator::Identity(v) => {
                 v.validate(field, doc)
             },
             Validator::Lockbox(v) => {
                 v.validate(field, doc)
             },
-            Validator::Identity(v) => {
+            Validator::Timestamp(v) => {
                 v.validate(field, doc)
             },
             _ => Err(Error::new(Other, "Can't validate this type yet")),
@@ -696,44 +674,6 @@ impl ValidStr {
         v
     }
 }
-
-/// Binary type validator
-pub struct ValidBin {
-    in_vec: Vec<Vec<u8>>,
-    nin_vec: Vec<Vec<u8>>,
-    min_len: usize,
-    max_len: usize,
-    bit_set: Vec<u8>,
-    bit_clear: Vec<u8>,
-    query: bool,
-    ord: bool,
-    bit: bool,
-}
-
-impl ValidBin {
-    fn new(is_query: bool) -> ValidBin {
-        ValidBin {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            min_len: usize::min_value(),
-            max_len: usize::max_value(),
-            bit_set: Vec::with_capacity(0),
-            bit_clear: Vec::with_capacity(0),
-            query: is_query,
-            ord: is_query,
-            bit: is_query,
-        }
-    }
-
-    fn from_const(constant: &[u8], is_query: bool) -> ValidBin {
-        let mut v = ValidBin::new(is_query);
-        let mut in_vec = Vec::with_capacity(1);
-        in_vec.push(constant.to_vec());
-        v.in_vec = in_vec;
-        v
-    }
-}
-
 
 pub struct ValidArray {
     /// Raw msgpack to compare against

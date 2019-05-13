@@ -1,11 +1,10 @@
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::cmp::Ordering;
 
 use byteorder::{ReadBytesExt, BigEndian};
-use regex::Regex;
 
 use super::Hash;
 use MarkerType;
@@ -19,6 +18,7 @@ mod time;
 mod lock;
 mod identity;
 mod binary;
+mod string;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
@@ -28,6 +28,7 @@ use self::time::ValidTime;
 use self::lock::ValidLock;
 use self::identity::ValidIdentity;
 use self::binary::ValidBin;
+use self::string::ValidStr;
 
 const MAX_VEC_RESERVE: usize = 2048;
 
@@ -187,30 +188,7 @@ impl Schema {
                 v.validate(field, doc)
             },
             Validator::String(v) => {
-                let value = read_str(doc)?;
-                if value.len() < v.min_len {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains string shorter than min length of {}", field, v.min_len)))
-                }
-                else if value.len() > v.max_len {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains string longer than max length of {}", field, v.min_len)))
-                }
-                else if v.nin_vec.iter().any(|x| x == value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains string on the `nin` list", field)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.iter().any(|x| x == value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains string not on the `in` list", field)))
-                }
-                else if v.matches.iter().any(|reg| !reg.is_match(value)) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" fails regex check", field)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             }
             Validator::Binary(v) => {
                 v.validate(field, doc)
@@ -609,41 +587,6 @@ impl Validator {
             },
             _ => Err(Error::new(Other, "Can't validate this type yet")),
         }
-    }
-}
-
-/// String type validator
-pub struct ValidStr {
-    in_vec: Vec<String>,
-    nin_vec: Vec<String>,
-    min_len: usize,
-    max_len: usize,
-    matches: Vec<Regex>,
-    query: bool,
-    ord: bool,
-    regex: bool,
-}
-
-impl ValidStr {
-    fn new(is_query: bool) -> ValidStr {
-        ValidStr {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            min_len: usize::min_value(),
-            max_len: usize::max_value(),
-            matches: Vec::with_capacity(0),
-            query: is_query,
-            ord: is_query,
-            regex: is_query,
-        }
-    }
-
-    fn from_const(constant: &str, is_query: bool) -> ValidStr {
-        let mut v = ValidStr::new(is_query);
-        let mut in_vec = Vec::with_capacity(1);
-        in_vec.push(constant.to_string());
-        v.in_vec = in_vec;
-        v
     }
 }
 

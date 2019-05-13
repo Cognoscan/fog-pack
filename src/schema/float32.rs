@@ -226,7 +226,7 @@ impl ValidF32 {
 
     }
 
-    /// Intersection of Integer with other Validators. Returns Err only if `query` is true and the 
+    /// Intersection of F32 with other Validators. Returns Err only if `query` is true and the 
     /// other validator contains non-allowed query parameters.
     fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
         if query && !self.query && !self.ord { return Err(()); }
@@ -324,7 +324,7 @@ mod tests {
         let mut test1 = Vec::new();
         let mut val = Vec::with_capacity(9);
 
-        // Test passing any integer
+        // Test passing any f32
         test1.clear();
         encode::write_value(&mut test1, &msgpack!({
             "type": "F32"

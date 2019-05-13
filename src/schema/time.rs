@@ -202,7 +202,7 @@ impl ValidTime {
 
     }
 
-    /// Intersection of Integer with other Validators. Returns Err only if `query` is true and the 
+    /// Intersection of Timestamp with other Validators. Returns Err only if `query` is true and the 
     /// other validator contains non-allowed query parameters.
     fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
         if query && !self.query && !self.ord { return Err(()); }

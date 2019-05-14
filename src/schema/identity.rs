@@ -87,7 +87,7 @@ impl ValidIdentity {
                 Ok(true)
             }
             "type" => Ok("Ident" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Identity validator")),
         }
     }
 

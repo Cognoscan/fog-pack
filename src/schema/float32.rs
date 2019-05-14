@@ -151,7 +151,7 @@ impl ValidF32 {
                 Ok(true)
             }
             "type" => Ok("F32" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in f32 validator")),
         }
     }
 

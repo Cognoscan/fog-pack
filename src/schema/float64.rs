@@ -151,7 +151,7 @@ impl ValidF64 {
                 Ok(true)
             }
             "type" => Ok("F64" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in f64 validator")),
         }
     }
 

@@ -139,7 +139,7 @@ impl ValidBin {
                 Ok(true)
             }
             "type" => Ok("Bin" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in binary validator")),
         }
     }
 

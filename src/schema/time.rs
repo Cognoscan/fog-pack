@@ -136,7 +136,7 @@ impl ValidTime {
                 Ok(true)
             }
             "type" => Ok("Time" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Timestamp validator")),
         }
     }
 

@@ -45,7 +45,7 @@ impl ValidBool {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in boolean validator")),
         }
     }
 

@@ -165,7 +165,7 @@ impl ValidStr {
                 Ok(true)
             },
             "type" => Ok("Bin" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in string validator")),
         }
     }
 
@@ -212,7 +212,7 @@ impl ValidStr {
         let value = read_str(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
             Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains binary not on the `in` list", field)))
+                format!("Field \"{}\" contains string not on the `in` list", field)))
         }
         else if self.in_vec.len() > 0 {
             Ok(())
@@ -238,7 +238,7 @@ impl ValidStr {
         }
     }
 
-    /// Intersection of Binary with other Validators. Returns Err only if `query` is true and the 
+    /// Intersection of String with other Validators. Returns Err only if `query` is true and the 
     /// other validator contains non-allowed query parameters.
     fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
         if query && !self.query && !self.ord && !self.regex { return Err(()); }
@@ -301,12 +301,12 @@ mod tests {
     use value::Value;
     use super::*;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidBin> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidStr> {
         if let MarkerType::Object(len) = read_marker(raw)? {
-            let mut validator = ValidBin::new(is_query);
+            let mut validator = ValidStr::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Not a valid binary validator"))
+                    Err(Error::new(InvalidData, "Not a valid string validator"))
                 }
                 else {
                     Ok(())
@@ -328,11 +328,11 @@ mod tests {
     }
 
     #[test]
-    fn any_bin() {
+    fn any_str() {
 
         let mut test1 = Vec::new();
 
-        // Test passing any binary data
+        // Test passing any string data
         encode::write_value(&mut test1, &msgpack!({
             "type": "Bin"
         }));

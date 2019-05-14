@@ -42,7 +42,7 @@ impl ValidLock {
                 Ok(true)
             }
             "type" => Ok("Lock" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Lockbox validator")),
         }
     }
 

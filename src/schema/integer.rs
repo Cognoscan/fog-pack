@@ -163,7 +163,7 @@ impl ValidInt {
                 Ok(true)
             }
             "type" => Ok("Int" == read_str(raw)?),
-            _ => Ok(false),
+            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Integer validator")),
         }
     }
 

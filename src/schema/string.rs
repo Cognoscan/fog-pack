@@ -164,7 +164,7 @@ impl ValidStr {
                 self.regex = read_bool(raw)?;
                 Ok(true)
             },
-            "type" => Ok("Bin" == read_str(raw)?),
+            "type" => Ok("Str" == read_str(raw)?),
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in string validator")),
         }
     }
@@ -321,9 +321,9 @@ mod tests {
         }
     }
 
-    fn validate_bin(bin: Vec<u8>, validator: &ValidBin) -> io::Result<()> {
-        let mut val = Vec::with_capacity(3+bin.len());
-        encode::write_value(&mut val, &Value::from(bin));
+    fn validate_str(s: &str, validator: &ValidStr) -> io::Result<()> {
+        let mut val = Vec::with_capacity(1+s.len());
+        encode::write_value(&mut val, &Value::from(s));
         validator.validate("", &mut &val[..])
     }
 
@@ -334,14 +334,11 @@ mod tests {
 
         // Test passing any string data
         encode::write_value(&mut test1, &msgpack!({
-            "type": "Bin"
+            "type": "Str"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
-        assert!(validate_bin(vec![0,1,2,3,4,5], &validator).is_ok());
-        assert!(validate_bin(Vec::new(), &validator).is_ok());
-        assert!(validate_bin(vec![0], &validator).is_ok());
-        assert!(validate_bin(vec![0,0,0,0,0,0], &validator).is_ok());
-        assert!(validate_bin(vec![255,255,255,255], &validator).is_ok());
+        assert!(validate_str("String", &validator).is_ok());
+        assert!(validate_str("", &validator).is_ok());
         let mut val = Vec::with_capacity(1);
         encode::write_value(&mut val, &Value::from(0u8));
         assert!(validator.validate("", &mut &val[..]).is_err());
@@ -360,58 +357,34 @@ mod tests {
             "max_len": 6
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
-        assert!(validate_bin(vec![0,1,2], &validator).is_ok());
-        assert!(validate_bin(vec![0,1,2,3,4,5], &validator).is_ok());
-        assert!(validate_bin(Vec::new(), &validator).is_err());
-        assert!(validate_bin(vec![0], &validator).is_err());
-        assert!(validate_bin(vec![0,0,0,0,0,0,0], &validator).is_err());
+        assert!(validate_str("", &validator).is_err());
+        assert!(validate_str("Te", &validator).is_err());
+        assert!(validate_str("Tes", &validator).is_ok());
+        assert!(validate_str("Test", &validator).is_ok());
+        assert!(validate_str("TestSt", &validator).is_ok());
+        assert!(validate_str("TestStr", &validator).is_err());
+        assert!(validate_str("TestString", &validator).is_err());
     }
 
     #[test]
-    fn bits() {
+    fn matches() {
         let mut test1 = Vec::new();
 
-        let bits_set: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
-        let bits_clr: Vec<u8> = vec![0x05, 0x30, 0x0C];
+        // Test min/max length
         encode::write_value(&mut test1, &msgpack!({
-            "bits_set": bits_set,
-            "bits_clr": bits_clr
+            "matches": "test",
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
-        assert!(validate_bin(vec![0xAA], &validator).is_err());
-        assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
-        assert!(validate_bin(vec![0xAA, 0xCF, 0xF3], &validator).is_ok());
-        assert!(validate_bin(vec![0xAA, 0xCF, 0xF3, 0xBE], &validator).is_ok());
-        assert!(validate_bin(vec![0xAA, 0x3F, 0xFC], &validator).is_err());
-        assert!(validate_bin(vec![0x5A, 0xC0, 0x33], &validator).is_err());
-    }
-
-    #[test]
-    fn in_nin_sets() {
-        let mut test1 = Vec::new();
-
-        let in_vec: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
-        let nin_vec: Vec<u8> = vec![0x05, 0x30, 0x0C];
-        encode::write_value(&mut test1, &msgpack!({
-            "in": vec![Value::from(in_vec)],
-            "nin": vec![Value::from(nin_vec)]
-        }));
-        let validator = read_it(&mut &test1[..], false).unwrap();
-        assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
-        assert!(validate_bin(vec![0xAA, 0x0F], &validator).is_err());
-        assert!(validate_bin(vec![0x05, 0x30, 0x0C], &validator).is_err());
-        assert!(validate_bin(vec![0xAA, 0x0F, 0xF1], &validator).is_err());
-
-        let nin_vec: Vec<u8> = vec![0x05, 0x30, 0x0C];
-        test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
-            "nin": vec![Value::from(nin_vec)]
-        }));
-        let validator = read_it(&mut &test1[..], false).unwrap();
-        assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
-        assert!(validate_bin(vec![0x05, 0x30], &validator).is_ok());
-        assert!(validate_bin(vec![0x05, 0x30, 0x0C], &validator).is_err());
-        assert!(validate_bin(vec![0x05, 0x30, 0x0C, 0x01], &validator).is_ok());
+        assert!(validate_str("", &validator).is_err());
+        assert!(validate_str("te", &validator).is_err());
+        assert!(validate_str("tes", &validator).is_err());
+        assert!(validate_str("test", &validator).is_ok());
+        assert!(validate_str("testSt", &validator).is_ok());
+        assert!(validate_str("testStr", &validator).is_ok());
+        assert!(validate_str("testString", &validator).is_ok());
+        assert!(validate_str("Other", &validator).is_err());
+        assert!(validate_str("noTest", &validator).is_err());
+        assert!(validate_str("notest", &validator).is_ok());
     }
 
     #[test]
@@ -420,63 +393,63 @@ mod tests {
 
         // Test min/max length
         encode::write_value(&mut test1, &msgpack!({
+            "type": "Str",
             "min_len": 2,
             "max_len": 6
         }));
         let valid1 = read_it(&mut &test1[..], false).unwrap();
         test1.clear();
         encode::write_value(&mut test1, &msgpack!({
+            "type": "Str",
             "min_len": 3,
             "max_len": 10
         }));
         let valid2 = read_it(&mut &test1[..], false).unwrap();
-        let validi = valid1.intersect(&Validator::Binary(valid2), false).unwrap();
-        let validi = if let Validator::Binary(v) = validi {
+        let validi = valid1.intersect(&Validator::String(valid2), false).unwrap();
+        let validi = if let Validator::String(v) = validi {
             v
         }
         else {
             panic!("Intersection invalid");
         };
-        assert!(validate_bin(vec![0,1], &validi).is_err());
-        assert!(validate_bin(vec![0,1,2], &validi).is_ok());
-        assert!(validate_bin(vec![0,1,2,3,4,5], &validi).is_ok());
-        assert!(validate_bin(Vec::new(), &validi).is_err());
-        assert!(validate_bin(vec![0], &validi).is_err());
-        assert!(validate_bin(vec![0,0,0,0,0,0,0], &validi).is_err());
+        assert!(validate_str("", &validi).is_err());
+        assert!(validate_str("Te", &validi).is_err());
+        assert!(validate_str("Tes", &validi).is_ok());
+        assert!(validate_str("Test", &validi).is_ok());
+        assert!(validate_str("TestSt", &validi).is_ok());
+        assert!(validate_str("TestStr", &validi).is_err());
+        assert!(validate_str("TestString", &validi).is_err());
     }
 
     #[test]
-    fn bits_intersect() {
+    fn regex_intersect() {
         let mut test1 = Vec::new();
 
-        let bits_set: Vec<u8> = vec![0x0A];
-        let bits_clr: Vec<u8> = vec![0x50];
+        // Test min/max length
         encode::write_value(&mut test1, &msgpack!({
-            "bits_set": bits_set,
-            "bits_clr": bits_clr
+            "matches": "test",
         }));
         let valid1 = read_it(&mut &test1[..], false).unwrap();
         test1.clear();
-        let bits_set: Vec<u8> = vec![0xA0];
-        let bits_clr: Vec<u8> = vec![0x05];
         encode::write_value(&mut test1, &msgpack!({
-            "bits_set": bits_set,
-            "bits_clr": bits_clr
+            "matches": "str",
         }));
         let valid2 = read_it(&mut &test1[..], false).unwrap();
-        let validi = valid1.intersect(&Validator::Binary(valid2), false).unwrap();
-        let validi = if let Validator::Binary(v) = validi {
+        let validi = valid1.intersect(&Validator::String(valid2), false).unwrap();
+        let validi = if let Validator::String(v) = validi {
             v
         }
         else {
             panic!("Intersection invalid");
         };
-        assert!(validate_bin(vec![0xAA], &validi).is_ok());
-        assert!(validate_bin(vec![0xAA, 0x55], &validi).is_ok());
-        assert!(validate_bin(vec![0x55], &validi).is_err());
-        assert!(validate_bin(vec![0xFF], &validi).is_err());
-        assert!(validate_bin(vec![0x00], &validi).is_err());
-        assert!(validate_bin(Vec::new(), &validi).is_err());
+        assert!(validate_str("", &validi).is_err());
+        assert!(validate_str("te", &validi).is_err());
+        assert!(validate_str("tes", &validi).is_err());
+        assert!(validate_str("test", &validi).is_err());
+        assert!(validate_str("testst", &validi).is_err());
+        assert!(validate_str("teststr", &validi).is_ok());
+        assert!(validate_str("teststring", &validi).is_ok());
+        assert!(validate_str("string", &validi).is_err());
     }
 
 }

@@ -1,12 +1,11 @@
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::cmp::Ordering;
 
 use byteorder::{ReadBytesExt, BigEndian};
 
-use super::Hash;
 use MarkerType;
 use decode::*;
 
@@ -19,6 +18,7 @@ mod lock;
 mod identity;
 mod binary;
 mod string;
+mod hash;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
@@ -29,6 +29,7 @@ use self::lock::ValidLock;
 use self::identity::ValidIdentity;
 use self::binary::ValidBin;
 use self::string::ValidStr;
+use self::hash::ValidHash;
 
 const MAX_VEC_RESERVE: usize = 2048;
 
@@ -52,9 +53,10 @@ impl Schema {
         let required = Vec::new();
         let optional = Vec::new();
         let entries = Vec::new();
-        let types = Vec::new();
+        let mut types = Vec::with_capacity(1);
         let field_type = None;
         let unknown_ok = false;
+        types.push(Validator::Invalid);
 
         let num_fields = match read_marker(raw)? {
             MarkerType::Object(len) => len,
@@ -194,26 +196,7 @@ impl Schema {
                 v.validate(field, doc)
             }
             Validator::Hash(v) => {
-                let value = read_hash(doc)?;
-                if v.nin_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains hash on the `nin` list", field)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.contains(&value) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains hash not on the `in` list", field)))
-                }
-                else if let Some(_) = v.link {
-                    Err(Error::new(Other,
-                        format!("Field \"{}\" requires checking with `link`, which isn't implemented", field)))
-                }
-                else if v.schema.len() > 0 {
-                    Err(Error::new(Other,
-                        format!("Field \"{}\" requires checking with `schema`, which isn't implemented", field)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc)
             }
             Validator::Identity(v) => {
                 v.validate(field, doc)
@@ -386,53 +369,55 @@ pub enum Validator {
 }
 
 impl Validator {
-    pub fn read_validator(raw: &mut &[u8], is_query: bool) -> io::Result<Validator> {
-        match read_marker(raw)? {
-            MarkerType::Null => Ok(Validator::Valid),
+    pub fn read_validator(raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String, usize>)
+        -> io::Result<usize>
+    {
+        let validator = match read_marker(raw)? {
+            MarkerType::Null => Validator::Valid,
             MarkerType::Boolean(v) => {
-                Ok(Validator::Boolean(ValidBool::from_const(v, is_query)))
+                Validator::Boolean(ValidBool::from_const(v, is_query))
             },
             MarkerType::NegInt((len, v)) => {
                 let val = read_neg_int(raw, len, v)?;
-                Ok(Validator::Integer(ValidInt::from_const(val, is_query)))
+                Validator::Integer(ValidInt::from_const(val, is_query))
             },
             MarkerType::PosInt((len, v)) => {
                 let val = read_pos_int(raw, len, v)?;
-                Ok(Validator::Integer(ValidInt::from_const(val, is_query)))
+                Validator::Integer(ValidInt::from_const(val, is_query))
             },
             MarkerType::String(len) => {
                 let val = read_raw_str(raw, len)?;
-                Ok(Validator::String(ValidStr::from_const(val, is_query)))
+                Validator::String(ValidStr::from_const(val, is_query))
             },
             MarkerType::F32 => {
                 let val = raw.read_f32::<BigEndian>()?;
-                Ok(Validator::F32(ValidF32::from_const(val, is_query)))
+                Validator::F32(ValidF32::from_const(val, is_query))
             },
             MarkerType::F64 => {
                 let val = raw.read_f64::<BigEndian>()?;
-                Ok(Validator::F64(ValidF64::from_const(val, is_query)))
+                Validator::F64(ValidF64::from_const(val, is_query))
             },
             MarkerType::Binary(len) => {
                 let val = read_raw_bin(raw, len)?;
-                Ok(Validator::Binary(ValidBin::from_const(val, is_query)))
+                Validator::Binary(ValidBin::from_const(val, is_query))
             },
             MarkerType::Hash(len) => {
                 let val = read_raw_hash(raw, len)?;
-                Ok(Validator::Hash(ValidHash::from_const(val, is_query)))
+                Validator::Hash(ValidHash::from_const(val, is_query))
             },
             MarkerType::Identity(len) => {
                 let val = read_raw_id(raw, len)?;
-                Ok(Validator::Identity(ValidIdentity::from_const(val, is_query)))
+                Validator::Identity(ValidIdentity::from_const(val, is_query))
             }
             MarkerType::Lockbox(_) => {
-                Err(Error::new(InvalidData, "Lockbox cannot be used in a schema"))
+                return Err(Error::new(InvalidData, "Lockbox cannot be used in a schema"));
             }
             MarkerType::Timestamp(len) => {
                 let val = read_raw_time(raw, len)?;
-                Ok(Validator::Timestamp(ValidTime::from_const(val, is_query)))
+                Validator::Timestamp(ValidTime::from_const(val, is_query))
             },
             MarkerType::Array(_len) => {
-                Err(Error::new(Other, "Can't yet decode this validator type"))
+                return Err(Error::new(Other, "Can't yet decode this validator type"));
             }
             MarkerType::Object(len) => {
                 // Create new validators and try them all.
@@ -522,9 +507,22 @@ impl Validator {
                 // | version      | Integer                      |
 
 
-                Err(Error::new(Other, "Can't yet decode this validator type"))
+                return Err(Error::new(Other, "Can't yet decode this validator type"));
             }
+        };
+
+        if let Validator::Type(name) = validator {
+            let index = type_names.entry(name).or_insert(types.len());
+            if *index == types.len() {
+                types.push(Validator::Invalid);
+            }
+            Ok(*index)
         }
+        else {
+            types.push(validator);
+            Ok(types.len()-1)
+        }
+
     }
 
     fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
@@ -574,6 +572,9 @@ impl Validator {
                 v.validate(field, doc)
             },
             Validator::Binary(v) => {
+                v.validate(field, doc)
+            },
+            Validator::Hash(v) => {
                 v.validate(field, doc)
             },
             Validator::Identity(v) => {
@@ -653,43 +654,13 @@ impl ValidObj {
     }
 }
 
-/// Hash type validator
-pub struct ValidHash {
-    in_vec: Vec<Hash>,
-    nin_vec: Vec<Hash>,
-    link: Option<Box<Validator>>,
-    schema: Vec<Hash>,
-    query: bool,
-    link_ok: bool,
-}
-
-impl ValidHash {
-    fn new(is_query: bool) -> ValidHash {
-        ValidHash {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            link: None,
-            schema: Vec::with_capacity(0),
-            query: is_query,
-            link_ok: is_query,
-        }
-    }
-
-    fn from_const(constant: Hash, is_query: bool) -> ValidHash {
-        let mut v = ValidHash::new(is_query);
-        let mut in_vec = Vec::with_capacity(1);
-        in_vec.push(constant);
-        v.in_vec = in_vec;
-        v
-    }
-}
-
 /// Container for multiple accepted Validators
 pub struct ValidMulti {
     any_of: Vec<usize>,
 }
 
 impl ValidMulti {
+    // When implementing this, figure out how to handle mergine `link` field in ValidHash too
     fn new(_is_query: bool) -> ValidMulti {
         ValidMulti {
             any_of: Vec::with_capacity(0)

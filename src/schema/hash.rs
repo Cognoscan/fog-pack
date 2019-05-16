@@ -190,7 +190,15 @@ impl ValidHash {
 
     /// Intersection of Hash with other Validators. Returns Err only if `query` is true and the 
     /// other validator contains non-allowed query parameters.
-    fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
+    pub fn intersect(&self,
+                 other: &Validator,
+                 query: bool,
+                 self_types: &Vec<Validator>,
+                 other_types: &Vec<Validator>,
+                 new_types: &mut Vec<Validator>
+                 )
+        -> Result<Validator, ()>
+    {
         if query && !self.query && !self.link_ok && !self.schema_ok{ return Err(()); }
         match other {
             Validator::Hash(other) => {
@@ -223,14 +231,27 @@ impl ValidHash {
                         other.schema.clone()
                     };
                     // Get link
-                    let link = if self.link.is_some() && other.link.is_some() {
-                        return Err(()); // Don't know how to handle this yet.
+                    let link = if let (Some(self_link), Some(other_link)) = (self.link,other.link) {
+                        match self_types[self_link]
+                            .intersect(&other_types[other_link], query, self_types, other_types, new_types)
+                        {
+                            Ok(new_type) => {
+                                new_types.push(new_type);
+                                Some(new_types.len() - 1)
+                            }
+                            Err(e) => { return Err(e); }
+                        }
                     }
-                    else if self.link.is_some() {
-                        self.link.clone()
+                    else if let Some(link) = self.link {
+                        new_types.push(self_types[link].clone());
+                        Some(new_types.len() - 1)
+                    }
+                    else if let Some(link) = other.link {
+                        new_types.push(other_types[link].clone());
+                        Some(new_types.len() - 1)
                     }
                     else {
-                        other.link.clone()
+                        None
                     };
                     // Create new Validator
                     let mut new_validator = ValidHash {

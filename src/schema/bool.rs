@@ -68,7 +68,7 @@ impl ValidBool {
         }
     }
 
-    pub fn intersect(&self, other: Validator, query: bool) -> Result<Validator, ()> {
+    pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
         if !self.query && query { return Err(()); }
         match other {
             Validator::Boolean(other) => {

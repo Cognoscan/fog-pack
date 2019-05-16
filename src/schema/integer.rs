@@ -246,7 +246,7 @@ impl ValidInt {
 
     /// Intersection of Integer with other Validators. Returns Err only if `query` is true and the 
     /// other validator contains non-allowed query parameters.
-    fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
+    pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
         if query && !self.query && !self.ord && !self.bit { return Err(()); }
         match other {
             Validator::Integer(other) => {

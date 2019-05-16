@@ -348,6 +348,7 @@ impl Schema {
     }
 }
 
+#[derive(Clone)]
 pub enum Validator {
     Invalid,
     Valid,
@@ -451,7 +452,7 @@ impl Validator {
                                 .filter(|(check,_)| !**check)
                                 .for_each(|(check,validator)| {
                                     let mut raw_local = &raw_now[..];
-                                    let result = validator.update(field, &mut raw_local).unwrap_or(false);
+                                    let result = validator.update(field, &mut raw_local, is_query, types, type_names).unwrap_or(false);
                                     if result {
                                         *raw = raw_local;
                                     }
@@ -462,49 +463,30 @@ impl Validator {
                     Ok(())
                 })?;
 
-                    // For each validator, check to see if it can parse this field.
-                // | Field        | Content                      |
-                // | --           | --                           |
+                // Multi
                 // | any          | Array of Validators          |
+                //
+                // Array
                 // | array        | non-negative integer         |
-                // | bit          | non-negative integer         |
-                // | bits_clr     | Integer/Binary               |
-                // | bits_set     | Integer/Binary               |
-                // | comment      | String                       |
                 // | contains     | Array of Validators          |
                 // | contains_num | non-negative integer         |
-                // | default      | Any                          |
+                // | extra_items  | Validator                    |
+                // | items        | Array of Validators          |
+                // | unique       | Boolean                      |
+                //
+                // Object
+                // | field_type   | Validator                    |
+                // | max_fields   | Non-negative Integer         |
+                // | min_fields   | Non-negative Integer         |
+                // | opt          | Object with Validator Values |
+                // | req          | Object with Validator Values |
+                // | unknown_ok   | Boolean                      |
+                //
+                // | name         | String                       |
+                // | version      | Integer                      |
+                // | types        | Object                       |
                 // | description  | String                       |
                 // | entries      | Object                       |
-                // | ex_max       | Boolean                      |
-                // | ex_min       | Boolean                      |
-                // | extra_items  | Validator                    |
-                // | field_type   | Validator                    |
-                // | in           | Array of type                |
-                // | items        | Array of Validators          |
-                // | link         | Validator                    |
-                // | link_ok      | bool                         |
-                // | match        | String Array                 |
-                // | max          | Numeric type                 |
-                // | max_fields   | Non-negative Integer         |
-                // | max_len      | Non-negative Integer         |
-                // | min          | Numeric type                 |
-                // | min_fields   | Non-negative Integer         |
-                // | min_len      | Non-negative Integer         |
-                // | name         | String                       |
-                // | nin          | Array of type                |
-                // | opt          | Object with Validator Values |
-                // | ord          | bool                         |
-                // | query        | bool                         |
-                // | regex        | non-negative integer         |
-                // | req          | Object with Validator Values |
-                // | schema       | Array of Hashes              |
-                // | set          | non-negative integer         |
-                // | type         | String                       |
-                // | types        | Object                       |
-                // | unique       | Boolean                      |
-                // | unknown_ok   | Boolean                      |
-                // | version      | Integer                      |
 
 
                 return Err(Error::new(Other, "Can't yet decode this validator type"));
@@ -525,7 +507,19 @@ impl Validator {
 
     }
 
-    fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    fn update(&mut self,
+              field: &str,
+              raw: &mut &[u8],
+              is_query: bool,
+              types: &mut Vec<Validator>,
+              type_names: &mut HashMap<String,usize>
+    )
+        -> io::Result<bool>
+    {
+        if field == "comment" {
+            read_str(raw).map_err(|_e| Error::new(InvalidData, "`comment` field didn't contain string"))?;
+            return Ok(true);
+        }
         match self {
             Validator::Type(ref mut v) => {
                 match field {
@@ -533,18 +527,51 @@ impl Validator {
                         v.push_str(read_str(raw)?);
                         Ok(true)
                     },
-                    _ => Ok(false),
+                    _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Type validator")),
                 }
             },
             Validator::Null => {
                 match field {
                     "type" => Ok("Null" == read_str(raw)?),
-                    _ => Ok(false)
+                    _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Null validator")),
                 }
             },
             Validator::Boolean(v) => v.update(field, raw),
             Validator::Integer(v) => v.update(field, raw),
+            Validator::String(v) => v.update(field, raw),
+            Validator::F32(v) => v.update(field, raw),
+            Validator::F64(v) => v.update(field, raw),
+            Validator::Binary(v) => v.update(field, raw),
+            Validator::Array(_) => Err(Error::new(Other, "Validator not supported yet")),
+            Validator::Object(_) => Err(Error::new(Other, "Validator not supported yet")),
+            Validator::Hash(v) => v.update(field, raw, is_query, types, type_names),
+            Validator::Identity(v) => v.update(field, raw),
+            Validator::Lockbox(v) => v.update(field, raw),
+            Validator::Timestamp(v) => v.update(field, raw),
+            Validator::Multi(_) => Err(Error::new(Other, "Validator not supported yet")),
             _ => Ok(false),
+        }
+    }
+
+    pub fn finalize(&mut self) -> bool {
+        match self {
+            Validator::Invalid => false,
+            Validator::Valid => true,
+            Validator::Null => true,
+            Validator::Type(_) => true,
+            Validator::Boolean(v) => v.finalize(),
+            Validator::Integer(v) => v.finalize(),
+            Validator::String(v) => v.finalize(),
+            Validator::F32(v) => v.finalize(),
+            Validator::F64(v) => v.finalize(),
+            Validator::Binary(v) => v.finalize(),
+            Validator::Array(_) => false, //v.finalize(),
+            Validator::Object(_) => false, //v.finalize(),
+            Validator::Hash(v) => v.finalize(),
+            Validator::Identity(v) => v.finalize(),
+            Validator::Lockbox(v) => v.finalize(),
+            Validator::Timestamp(v) => v.finalize(),
+            Validator::Multi(_) => false, //v.finalize(),
         }
     }
 
@@ -574,6 +601,9 @@ impl Validator {
             Validator::Binary(v) => {
                 v.validate(field, doc)
             },
+            Validator::String(v) => {
+                v.validate(field, doc)
+            },
             Validator::Hash(v) => {
                 v.validate(field, doc)
             },
@@ -589,8 +619,46 @@ impl Validator {
             _ => Err(Error::new(Other, "Can't validate this type yet")),
         }
     }
+
+    pub fn intersect(&self,
+                 other: &Validator,
+                 query: bool,
+                 self_types: &Vec<Validator>,
+                 other_types: &Vec<Validator>,
+                 new_types: &mut Vec<Validator>
+                 )
+        -> Result<Validator, ()>
+    {
+        match self {
+            Validator::Invalid => Ok(Validator::Invalid),
+            Validator::Valid => Ok(other.clone()),
+            Validator::Null => {
+                if let Validator::Null = other {
+                    Ok(Validator::Null)
+                }
+                else {
+                    Ok(Validator::Invalid)
+                }
+            },
+            Validator::Type(_) => Err(()),
+            Validator::Boolean(v) => v.intersect(other, query),
+            Validator::Integer(v) => v.intersect(other, query),
+            Validator::String(v) => v.intersect(other, query),
+            Validator::F32(v) => v.intersect(other, query),
+            Validator::F64(v) => v.intersect(other, query),
+            Validator::Binary(v) => v.intersect(other, query),
+            Validator::Array(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
+            Validator::Object(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
+            Validator::Hash(v) => v.intersect(other, query, self_types, other_types, new_types),
+            Validator::Identity(v) => v.intersect(other, query),
+            Validator::Lockbox(v) => v.intersect(other, query),
+            Validator::Timestamp(v) => v.intersect(other, query),
+            Validator::Multi(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct ValidArray {
     /// Raw msgpack to compare against
     in_vec: Vec<Vec<u8>>,
@@ -624,6 +692,7 @@ impl ValidArray {
 }
 
 /// Object type validator
+#[derive(Clone)]
 pub struct ValidObj {
     in_vec: Vec<Vec<u8>>,
     nin_vec: Vec<Vec<u8>>,
@@ -655,6 +724,7 @@ impl ValidObj {
 }
 
 /// Container for multiple accepted Validators
+#[derive(Clone)]
 pub struct ValidMulti {
     any_of: Vec<usize>,
 }

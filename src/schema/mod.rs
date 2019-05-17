@@ -611,7 +611,14 @@ impl Validator {
         }
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self,
+                    field: &str,
+                    doc: &mut &[u8],
+                    types: &Vec<Validator>,
+                    index: usize,
+                    list: &mut Checklist,
+                    ) -> io::Result<()>
+    {
         match self {
             Validator::Invalid => Err(Error::new(InvalidData, format!("Field \"{}\" is always invalid", field))),
             Validator::Valid => {
@@ -641,7 +648,9 @@ impl Validator {
                 v.validate(field, doc)
             },
             Validator::Hash(v) => {
-                let _hash = v.validate(field, doc)?;
+                if let Some(hash) = v.validate(field, doc)? {
+                    list.add(hash, index);
+                }
                 Ok(())
             },
             Validator::Identity(v) => {

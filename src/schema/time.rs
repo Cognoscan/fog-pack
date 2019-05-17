@@ -260,6 +260,7 @@ impl ValidTime {
 mod tests {
     use encode;
     use value::Value;
+    use super::super::Checklist;
     use super::*;
     use rand::prelude::*;
 
@@ -428,7 +429,7 @@ mod tests {
                 assert_eq!(
                     valid1.validate("", &mut &val[..]).is_ok()
                     && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
+                    validi.validate("", &mut &val[..], &Vec::new(), 0, &mut Checklist::new()).is_ok(),
                     "Min/Max intersection for Timestamp validators fails");
             }
         }
@@ -466,7 +467,7 @@ mod tests {
             assert_eq!(
                 valid1.validate("", &mut &val[..]).is_ok()
                 && valid2.validate("", &mut &val[..]).is_ok(),
-                validi.validate("", &mut &val[..]).is_ok(),
+                validi.validate("", &mut &val[..], &Vec::new(), 0, &mut Checklist::new()).is_ok(),
                 "Set intersection for Timestamp validators fails with {}", test_val);
         }
     }

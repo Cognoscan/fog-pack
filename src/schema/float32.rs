@@ -285,6 +285,7 @@ mod tests {
     use encode;
     use value::Value;
     use super::*;
+    use super::super::Checklist;
     use rand::prelude::*;
     use std::f32;
     use rand::distributions::Uniform;
@@ -504,7 +505,7 @@ mod tests {
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 let res1 = valid1.validate("", &mut &val[..]);
                 let res2 = valid2.validate("", &mut &val[..]);
-                let resi = validi.validate("", &mut &val[..]);
+                let resi = validi.validate("", &mut &val[..], &Vec::new(), 0, &mut Checklist::new());
                 if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
                     println!("Valid 1   Err = {:?}", res1);
                     println!("Valid 2   Err = {:?}", res2);
@@ -549,7 +550,7 @@ mod tests {
             encode::write_value(&mut val, &Value::from(test_val.clone()));
             let res1 = valid1.validate("", &mut &val[..]);
             let res2 = valid2.validate("", &mut &val[..]);
-            let resi = validi.validate("", &mut &val[..]);
+            let resi = validi.validate("", &mut &val[..], &Vec::new(), 0, &mut Checklist::new());
             if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
                 println!("Valid 1   Err = {:?}", res1);
                 println!("Valid 2   Err = {:?}", res2);

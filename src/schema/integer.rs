@@ -308,6 +308,7 @@ mod tests {
     use encode;
     use value::Value;
     use super::*;
+    use super::super::Checklist;
     use rand::prelude::*;
 
     fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidInt> {
@@ -522,7 +523,7 @@ mod tests {
                 assert_eq!(
                     valid1.validate("", &mut &val[..]).is_ok()
                     && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
+                    validi.validate("", &mut &val[..], &Vec::new(), 0, &mut Checklist::new()).is_ok(),
                     "Min/Max intersection for Integer validators fails");
             }
         }
@@ -553,7 +554,7 @@ mod tests {
                 assert_eq!(
                     valid1.validate("", &mut &val[..]).is_ok()
                     && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..]).is_ok(),
+                    validi.validate("", &mut &val[..], &Vec::new(), 0, &mut Checklist::new()).is_ok(),
                     "Bit set/clear intersection for Integer validators fails");
             }
         }
@@ -602,7 +603,7 @@ mod tests {
             assert_eq!(
                 valid1.validate("", &mut &val[..]).is_ok()
                 && valid2.validate("", &mut &val[..]).is_ok(),
-                validi.validate("", &mut &val[..]).is_ok(),
+                validi.validate("", &mut &val[..], &Vec::new(), 0, &mut Checklist::new()).is_ok(),
                 "Set intersection for Integer validators fails with {}", test_val);
         }
     }

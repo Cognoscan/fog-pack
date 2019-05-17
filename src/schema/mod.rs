@@ -8,6 +8,7 @@ use byteorder::{ReadBytesExt, BigEndian};
 
 use MarkerType;
 use decode::*;
+use crypto::Hash;
 
 mod bool;
 mod integer;
@@ -32,6 +33,35 @@ use self::string::ValidStr;
 use self::hash::ValidHash;
 
 const MAX_VEC_RESERVE: usize = 2048;
+
+pub struct Checklist {
+    list: HashMap<Hash, Vec<usize>>
+}
+
+impl Checklist {
+    pub fn new() -> Checklist {
+        Checklist { list: HashMap::new() }
+    }
+
+    pub fn add(&mut self, hash: Hash, index: usize) {
+        self.list
+            .entry(hash)
+            .or_insert(Vec::with_capacity(1))
+            .push(index)
+    }
+
+    pub fn get_list(&self, hash: &Hash) -> Option<&Vec<usize>> {
+        self.list.get(hash)
+    }
+
+    pub fn check_off(&mut self, hash: &Hash) {
+        self.list.remove(hash);
+    }
+
+    pub fn list_size(&self) -> usize {
+        self.list.len()
+    }
+}
 
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
 /// entry.
@@ -90,7 +120,8 @@ impl Schema {
     }
 
     /// Validates a document against this schema. Does not check the schema field itself.
-    pub fn validate_doc(&self, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate_doc(&self, doc: &mut &[u8]) -> io::Result<Checklist> {
+        let mut checklist = Checklist::new();
         let num_fields = match read_marker(doc)? {
             MarkerType::Object(len) => len,
             _ => return Err(Error::new(InvalidData, "Document wasn't an object")),
@@ -100,7 +131,7 @@ impl Schema {
                 format!("Document contains {} fields, less than the {} required",
                     num_fields, self.min_fields)));
         }
-        if num_fields == 0 && self.required.len() == 0 { return Ok(()); }
+        if num_fields == 0 && self.required.len() == 0 { return Ok(checklist); }
         if num_fields > self.max_fields {
             return Err(Error::new(InvalidData,
                 format!("Document contains {} fields, more than the {} allowed",
@@ -115,16 +146,16 @@ impl Schema {
             if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
                 let v_index = self.required[req_index].1;
                 req_index += 1;
-                self.run_validator(field, &self.types[v_index], doc)
+                self.run_validator(field, &self.types[v_index], doc, v_index, &mut checklist)
             }
             else if Some(field) == self.optional.get(opt_index).map(|x| x.0.as_str()) {
                 let v_index = self.optional[opt_index].1;
                 opt_index += 1;
-                self.run_validator(field, &self.types[v_index], doc)
+                self.run_validator(field, &self.types[v_index], doc, v_index, &mut checklist)
             }
             else if self.unknown_ok {
                 if let Some(v_index) = self.field_type {
-                    self.run_validator(field, &self.types[v_index], doc)
+                    self.run_validator(field, &self.types[v_index], doc, v_index, &mut checklist)
                 }
                 else {
                     verify_value(doc)?;
@@ -137,7 +168,7 @@ impl Schema {
         })?;
 
         if req_index >= self.required.len() {
-            Ok(())
+            Ok(checklist)
         }
         else {
             Err(Error::new(InvalidData,
@@ -145,8 +176,8 @@ impl Schema {
         }
     }
 
-    fn run_validator(&self, field: &str, validator: &Validator, doc: &mut &[u8]) -> io::Result<()> {
-        match validator {
+    fn run_validator(&self, field: &str, validator: &Validator, doc: &mut &[u8], index: usize, list: &mut Checklist) -> io::Result<()> {
+        let result = match validator {
             Validator::Invalid => Err(Error::new(InvalidData, format!("Field \"{}\" is always invalid", field))),
             Validator::Valid => {
                 verify_value(doc)?;
@@ -162,7 +193,7 @@ impl Schema {
             },
             Validator::Multi(v) => {
                 if v.any_of.iter().any(|v_index| {
-                    if let Err(_) = self.run_validator(field, &self.types[*v_index], doc) {
+                    if let Err(_) = self.run_validator(field, &self.types[*v_index], doc, *v_index, list) {
                         false
                     }
                     else {
@@ -196,7 +227,10 @@ impl Schema {
                 v.validate(field, doc)
             }
             Validator::Hash(v) => {
-                v.validate(field, doc)
+                if let Some(hash) = v.validate(field, doc)? {
+                    list.add(hash, index);
+                }
+                Ok(())
             }
             Validator::Identity(v) => {
                 v.validate(field, doc)
@@ -234,16 +268,16 @@ impl Schema {
                     if Some(field) == v.required.get(req_index).map(|x| x.0.as_str()) {
                         let v_index = v.required[req_index].1;
                         req_index += 1;
-                        self.run_validator(field, &self.types[v_index], doc)
+                        self.run_validator(field, &self.types[v_index], doc, v_index, list)
                     }
                     else if Some(field) == v.optional.get(opt_index).map(|x| x.0.as_str()) {
                         let v_index = v.optional[opt_index].1;
                         opt_index += 1;
-                        self.run_validator(field, &self.types[v_index], doc)
+                        self.run_validator(field, &self.types[v_index], doc, v_index, list)
                     }
                     else if v.unknown_ok {
                         if let Some(v_index) = v.field_type {
-                            self.run_validator(field, &self.types[v_index], doc)
+                            self.run_validator(field, &self.types[v_index], doc, v_index, list)
                         }
                         else {
                             verify_value(doc)?;
@@ -305,12 +339,12 @@ impl Schema {
                     // Validate as appropriate
                     let item_start = doc.clone();
                     if let Some(v_index) = v.items.get(i) {
-                        if let Err(e) = self.run_validator(field, &self.types[*v_index], doc) {
+                        if let Err(e) = self.run_validator(field, &self.types[*v_index], doc, *v_index, list) {
                             return Err(e);
                         }
                     }
                     else if let Some(v_index) = v.extra_items {
-                        if let Err(e) = self.run_validator(field, &self.types[v_index], doc) {
+                        if let Err(e) = self.run_validator(field, &self.types[v_index], doc, v_index, list) {
                             return Err(e);
                         }
                     }
@@ -331,7 +365,7 @@ impl Schema {
                         .zip(v.contains.iter())
                         .filter(|(checked,_)| !**checked)
                         .for_each(|(checked,contains_item)| {
-                            if let Ok(()) = self.run_validator(field, &self.types[*contains_item], &mut item.clone()) {
+                            if let Ok(()) = self.run_validator(field, &self.types[*contains_item], &mut item.clone(), *contains_item, list) {
                                 *checked = true;
                             }
                         });
@@ -344,7 +378,9 @@ impl Schema {
                     Ok(())
                 }
             },
-        }
+        };
+        if let Err(e) = result { return Err(e); }
+        Ok(())
     }
 }
 
@@ -605,7 +641,8 @@ impl Validator {
                 v.validate(field, doc)
             },
             Validator::Hash(v) => {
-                v.validate(field, doc)
+                let _hash = v.validate(field, doc)?;
+                Ok(())
             },
             Validator::Identity(v) => {
                 v.validate(field, doc)

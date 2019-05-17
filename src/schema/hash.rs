@@ -1,6 +1,6 @@
 use std::io;
 use std::io::Error;
-use std::io::ErrorKind::{InvalidData, Other};
+use std::io::ErrorKind::InvalidData;
 use std::collections::HashMap;
 
 use decode::*;
@@ -162,29 +162,35 @@ impl ValidHash {
         }
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn schema_in_set(&self, hash: &Hash) -> bool {
+        self.schema.contains(hash)
+    }
+
+    pub fn link(&self) -> Option<usize> {
+        self.link
+    }
+
+    /// Validates that the next value is a Hash that meets the validator requirements. Fails if the 
+    /// requirements are not met. If it passes, the optional returned Hash indicates that an 
+    /// additional document (referenced by the Hash) needs to be checked.
+    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<Option<Hash>> {
         let value = read_hash(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains Hash not on the `in` list", field)))
-        }
-        else if self.in_vec.len() > 0 {
-            Ok(())
         }
         else if self.nin_vec.binary_search(&value).is_ok() {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains Hash on the `nin` list", field)))
         }
         else if let Some(_) = self.link {
-            Err(Error::new(Other,
-                format!("Field \"{}\" requires checking with `link`, which isn't implemented", field)))
+            Ok(Some(value))
         }
         else if self.schema.len() > 0 {
-            Err(Error::new(Other,
-                format!("Field \"{}\" requires checking with `schema`, which isn't implemented", field)))
+            Ok(Some(value))
         }
         else {
-            Ok(())
+            Ok(None)
         }
     }
 

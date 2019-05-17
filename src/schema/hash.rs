@@ -53,7 +53,7 @@ impl ValidHash {
         // match statement are either executed sequentially or are skipped.
         match field {
             "default" => {
-                read_id(raw)?;
+                read_hash(raw)?;
                 Ok(true)
             }
             "in" => {
@@ -201,7 +201,9 @@ impl ValidHash {
                  query: bool,
                  self_types: &Vec<Validator>,
                  other_types: &Vec<Validator>,
-                 new_types: &mut Vec<Validator>
+                 new_types: &mut Vec<Validator>,
+                 self_map: &mut Vec<usize>,
+                 other_map: &mut Vec<usize>
                  )
         -> Result<Validator, ()>
     {
@@ -239,7 +241,7 @@ impl ValidHash {
                     // Get link
                     let link = if let (Some(self_link), Some(other_link)) = (self.link,other.link) {
                         match self_types[self_link]
-                            .intersect(&other_types[other_link], query, self_types, other_types, new_types)
+                            .intersect(&other_types[other_link], query, self_types, other_types, new_types, self_map, other_map)
                         {
                             Ok(new_type) => {
                                 new_types.push(new_type);

@@ -1,7 +1,7 @@
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::cmp::Ordering;
 
 use byteorder::{ReadBytesExt, BigEndian};
@@ -20,6 +20,7 @@ mod identity;
 mod binary;
 mod string;
 mod hash;
+mod array;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
@@ -31,6 +32,7 @@ use self::identity::ValidIdentity;
 use self::binary::ValidBin;
 use self::string::ValidStr;
 use self::hash::ValidHash;
+use self::array::ValidArray;
 
 const MAX_VEC_RESERVE: usize = 2048;
 
@@ -87,6 +89,7 @@ impl Schema {
         let field_type = None;
         let unknown_ok = false;
         types.push(Validator::Invalid);
+        types.push(Validator::Valid);
 
         let num_fields = match read_marker(raw)? {
             MarkerType::Object(len) => len,
@@ -307,80 +310,35 @@ impl Schema {
                 }
             },
             Validator::Array(v) => {
-                let num_items = match read_marker(doc)? {
-                    MarkerType::Array(len) => len,
-                    _ => return Err(Error::new(InvalidData, format!("Array for field \"{}\"not found", field))),
-                };
-                if num_items == 0 && v.min_len == 0 && v.items.len() == 0 && v.contains.len() == 0 {
-                    return Ok(());
-                }
-
-                // Size checks
-                if num_items < v.min_len {
-                    return Err(Error::new(InvalidData,
-                        format!("Field {} contains array with {} items, less than minimum of {}", field, num_items, v.min_len)));
-                }
-                if num_items > v.max_len {
-                    return Err(Error::new(InvalidData,
-                        format!("Field {} contains array with {} items, greater than maximum of {}", field, num_items, v.max_len)));
-                }
-
-                // Setup for iterating over array
-                let mut unique_set: HashSet<&[u8]> = if v.unique {
-                    HashSet::with_capacity(num_items)
-                }
-                else {
-                    HashSet::with_capacity(0)
-                };
-                let mut contain_set: Vec<bool> = vec![false; v.contains.len()];
-
-                // Run through the whole array
-                for i in 0..num_items {
-                    // Validate as appropriate
-                    let item_start = doc.clone();
-                    if let Some(v_index) = v.items.get(i) {
-                        if let Err(e) = self.run_validator(field, &self.types[*v_index], doc, *v_index, list) {
-                            return Err(e);
-                        }
-                    }
-                    else if let Some(v_index) = v.extra_items {
-                        if let Err(e) = self.run_validator(field, &self.types[v_index], doc, v_index, list) {
-                            return Err(e);
-                        }
-                    }
-                    else {
-                        verify_value(doc)?;
-                    }
-                    let (item, _) = item_start.split_at(item_start.len()-doc.len());
-
-                    // Check for uniqueness
-                    if v.unique {
-                        if !unique_set.insert(item) {
-                            return Err(Error::new(InvalidData,
-                                format!("Field {} contains a repeated item at index {}", field, i)));
-                        }
-                    }
-                    // Check to see if any `contains` requirements are met
-                    contain_set.iter_mut()
-                        .zip(v.contains.iter())
-                        .filter(|(checked,_)| !**checked)
-                        .for_each(|(checked,contains_item)| {
-                            if let Ok(()) = self.run_validator(field, &self.types[*contains_item], &mut item.clone(), *contains_item, list) {
-                                *checked = true;
-                            }
-                        });
-                }
-                if contain_set.contains(&false) {
-                    Err(Error::new(InvalidData,
-                        format!("Field {} does not satisfy all `contains` requirements", field)))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc, &self.types, list)
             },
         };
         if let Err(e) = result { return Err(e); }
         Ok(())
+    }
+
+}
+
+fn add_validator(list: &mut Vec<Validator>, v: Validator) -> usize {
+    if let Validator::Invalid = v {
+        0
+    }
+    else {
+        list.push(v);
+        list.len() - 1
+    }
+}
+
+fn clone_validator(old_list: &Vec<Validator>, new_list: &mut Vec<Validator>, map: &mut Vec<usize>, index: usize) -> usize {
+    if index <= 1 { return index; }
+    if map[index] == 0 {
+        new_list.push(old_list[index].clone());
+        let new_index = new_list.len() - 1;
+        map[index] = new_index;
+        new_index
+    }
+    else {
+        map[index]
     }
 }
 
@@ -635,6 +593,9 @@ impl Validator {
             Validator::Integer(v) => {
                 v.validate(field, doc)
             },
+            Validator::String(v) => {
+                v.validate(field, doc)
+            },
             Validator::F32(v) => {
                 v.validate(field, doc)
             },
@@ -644,8 +605,8 @@ impl Validator {
             Validator::Binary(v) => {
                 v.validate(field, doc)
             },
-            Validator::String(v) => {
-                v.validate(field, doc)
+            Validator::Array(v) => {
+                v.validate(field, doc, types, list)
             },
             Validator::Hash(v) => {
                 if let Some(hash) = v.validate(field, doc)? {
@@ -671,7 +632,9 @@ impl Validator {
                  query: bool,
                  self_types: &Vec<Validator>,
                  other_types: &Vec<Validator>,
-                 new_types: &mut Vec<Validator>
+                 new_types: &mut Vec<Validator>,
+                 self_map: &mut Vec<usize>,
+                 other_map: &mut Vec<usize>,
                  )
         -> Result<Validator, ()>
     {
@@ -693,46 +656,13 @@ impl Validator {
             Validator::F32(v) => v.intersect(other, query),
             Validator::F64(v) => v.intersect(other, query),
             Validator::Binary(v) => v.intersect(other, query),
-            Validator::Array(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
+            Validator::Array(v) => v.intersect(other, query, self_types, other_types, new_types, self_map, other_map),
             Validator::Object(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
-            Validator::Hash(v) => v.intersect(other, query, self_types, other_types, new_types),
+            Validator::Hash(v) => v.intersect(other, query, self_types, other_types, new_types, self_map, other_map),
             Validator::Identity(v) => v.intersect(other, query),
             Validator::Lockbox(v) => v.intersect(other, query),
             Validator::Timestamp(v) => v.intersect(other, query),
             Validator::Multi(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ValidArray {
-    /// Raw msgpack to compare against
-    in_vec: Vec<Vec<u8>>,
-    nin_vec: Vec<Vec<u8>>,
-    min_len: usize,
-    max_len: usize,
-    items: Vec<usize>,
-    extra_items: Option<usize>,
-    contains: Vec<usize>,
-    unique: bool,
-    query: bool,
-    array: bool,
-}
-
-/// Array type validator
-impl ValidArray {
-    fn new(is_query: bool) -> ValidArray {
-        ValidArray {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            min_len: usize::min_value(),
-            max_len: usize::max_value(),
-            items: Vec::with_capacity(0),
-            extra_items: None,
-            contains: Vec::with_capacity(0),
-            unique: false,
-            query: is_query,
-            array: is_query,
         }
     }
 }

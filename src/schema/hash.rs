@@ -4,7 +4,7 @@ use std::io::ErrorKind::InvalidData;
 use std::collections::HashMap;
 
 use decode::*;
-use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator, ValidBuilder};
 use marker::MarkerType;
 use crypto::Hash;
 
@@ -199,17 +199,14 @@ impl ValidHash {
     pub fn intersect(&self,
                  other: &Validator,
                  query: bool,
-                 self_types: &Vec<Validator>,
-                 other_types: &Vec<Validator>,
-                 new_types: &mut Vec<Validator>,
-                 self_map: &mut Vec<usize>,
-                 other_map: &mut Vec<usize>
+                 builder: &mut ValidBuilder
                  )
         -> Result<Validator, ()>
     {
         if query && !self.query && !self.link_ok && !self.schema_ok{ return Err(()); }
         match other {
             Validator::Hash(other) => {
+                let builder_len = builder.len();
                 if query && (
                     (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
                     || (!self.link_ok && other.link.is_some())
@@ -240,23 +237,13 @@ impl ValidHash {
                     };
                     // Get link
                     let link = if let (Some(self_link), Some(other_link)) = (self.link,other.link) {
-                        match self_types[self_link]
-                            .intersect(&other_types[other_link], query, self_types, other_types, new_types, self_map, other_map)
-                        {
-                            Ok(new_type) => {
-                                new_types.push(new_type);
-                                Some(new_types.len() - 1)
-                            }
-                            Err(e) => { return Err(e); }
-                        }
+                        Some(builder.intersect(query, self_link, other_link)?)
                     }
                     else if let Some(link) = self.link {
-                        new_types.push(self_types[link].clone());
-                        Some(new_types.len() - 1)
+                        Some(builder.intersect(query, link, 1)?)
                     }
                     else if let Some(link) = other.link {
-                        new_types.push(other_types[link].clone());
-                        Some(new_types.len() - 1)
+                        Some(builder.intersect(query, 1, link)?)
                     }
                     else {
                         None
@@ -272,13 +259,16 @@ impl ValidHash {
                         schema_ok: self.schema_ok && other.schema_ok,
                     };
                     if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
+                        builder.undo_to(builder_len);
                         return Ok(Validator::Invalid);
                     }
                     if new_validator.schema.len() == 0 && (self.schema.len()+other.schema.len() > 0) {
+                        builder.undo_to(builder_len);
                         return Ok(Validator::Invalid);
                     }
                     let valid = new_validator.finalize();
                     if !valid {
+                        builder.undo_to(builder_len);
                         Ok(Validator::Invalid)
                     }
                     else {

@@ -65,6 +65,82 @@ impl Checklist {
     }
 }
 
+pub struct ValidBuilder<'a> {
+    types1: &'a [Validator],
+    types2: &'a [Validator],
+    dest: Vec<Validator>,
+    map1: Vec<usize>,
+    map2: Vec<usize>
+}
+
+impl <'a> ValidBuilder<'a> {
+    fn init(types1: &'a [Validator], types2: &'a [Validator]) -> ValidBuilder<'a> {
+        ValidBuilder {
+            types1,
+            types2,
+            dest: Vec::new(),
+            map1: vec![0; types1.len()],
+            map2: vec![0; types2.len()],
+        }
+    }
+
+    fn intersect(&mut self, query: bool, type1: usize, type2: usize) -> Result<usize,()> {
+        Ok(if ((type1 <= 1) && (type2 <= 1)) || (type1 == 0) || (type2 == 0) {
+            // Only Valid if both valid, else invalid
+            type1 & type2
+        }
+        else if type1 == 1 {
+            // Clone type2 into the new validator list
+            if self.map2[type2] == 0 {
+                self.dest.push(self.types2[type2].clone());
+                let new_index = self.dest.len() - 1;
+                self.map2[type2] = new_index;
+                new_index
+            }
+            else {
+                self.map2[type2]
+            }
+        }
+        else if type2 == 1 {
+            // Clone type1 into the new validator list
+            if self.map1[type1] == 0 {
+                self.dest.push(self.types1[type1].clone());
+                let new_index = self.dest.len() - 1;
+                self.map1[type1] = new_index;
+                new_index
+            }
+            else {
+                self.map1[type1]
+            }
+        }
+        else {
+            // Actual new validator; perform instersection and add
+            let v = self.types1[type1].intersect(&self.types2[type2], query, self)?;
+            if let Validator::Invalid = v {
+                0
+            }
+            else {
+                self.dest.push(v);
+                self.dest.len() - 1
+            }
+        })
+    }
+
+    fn len(&self) -> usize {
+        self.dest.len()
+    }
+
+    fn undo_to(&mut self, len: usize) {
+        self.dest.truncate(len);
+        self.map1.iter_mut().for_each(|x| if *x >= len { *x = 0; });
+        self.map2.iter_mut().for_each(|x| if *x >= len { *x = 0; });
+    }
+
+    fn build(self) -> Vec<Validator> {
+        self.dest
+    }
+}
+
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
 /// entry.
 pub struct Schema {
@@ -317,29 +393,6 @@ impl Schema {
         Ok(())
     }
 
-}
-
-fn add_validator(list: &mut Vec<Validator>, v: Validator) -> usize {
-    if let Validator::Invalid = v {
-        0
-    }
-    else {
-        list.push(v);
-        list.len() - 1
-    }
-}
-
-fn clone_validator(old_list: &Vec<Validator>, new_list: &mut Vec<Validator>, map: &mut Vec<usize>, index: usize) -> usize {
-    if index <= 1 { return index; }
-    if map[index] == 0 {
-        new_list.push(old_list[index].clone());
-        let new_index = new_list.len() - 1;
-        map[index] = new_index;
-        new_index
-    }
-    else {
-        map[index]
-    }
 }
 
 #[derive(Clone)]
@@ -630,11 +683,7 @@ impl Validator {
     pub fn intersect(&self,
                  other: &Validator,
                  query: bool,
-                 self_types: &Vec<Validator>,
-                 other_types: &Vec<Validator>,
-                 new_types: &mut Vec<Validator>,
-                 self_map: &mut Vec<usize>,
-                 other_map: &mut Vec<usize>,
+                 builder: &mut ValidBuilder
                  )
         -> Result<Validator, ()>
     {
@@ -656,9 +705,9 @@ impl Validator {
             Validator::F32(v) => v.intersect(other, query),
             Validator::F64(v) => v.intersect(other, query),
             Validator::Binary(v) => v.intersect(other, query),
-            Validator::Array(v) => v.intersect(other, query, self_types, other_types, new_types, self_map, other_map),
+            Validator::Array(v) => v.intersect(other, query, builder),
             Validator::Object(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
-            Validator::Hash(v) => v.intersect(other, query, self_types, other_types, new_types, self_map, other_map),
+            Validator::Hash(v) => v.intersect(other, query, builder),
             Validator::Identity(v) => v.intersect(other, query),
             Validator::Lockbox(v) => v.intersect(other, query),
             Validator::Timestamp(v) => v.intersect(other, query),

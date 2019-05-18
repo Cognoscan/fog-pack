@@ -287,15 +287,11 @@ impl ValidArray {
     pub fn intersect(&self,
                  other: &Validator,
                  query: bool,
-                 self_types: &Vec<Validator>,
-                 other_types: &Vec<Validator>,
-                 new_types: &mut Vec<Validator>,
-                 self_map: &mut Vec<usize>,
-                 other_map: &mut Vec<usize>,
+                 builder: &mut ValidBuilder
                  )
         -> Result<Validator, ()>
     {
-        let new_types_len = new_types.len();
+        let builder_len = builder.len();
         if query && !self.query && !self.array && !self.contains_ok { return Err(()); }
         match other {
             Validator::Array(other) => {
@@ -310,7 +306,7 @@ impl ValidArray {
                     Err(())
                 }
                 else {
-                    // Get instersection of `in` vectors
+                    // Get intersection of `in` vectors
                     let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
                         sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
                     }
@@ -344,31 +340,18 @@ impl ValidArray {
                             1
                         };
 
-                        let v = if self_index == 1 {
-                            clone_validator(other_types, new_types, other_map, other_index)
-                        }
-                        else if other_index == 1 {
-                            clone_validator(self_types, new_types, self_map, self_index)
-                        }
-                        else {
-                            let v = self_types[self_index]
-                                .intersect(&other_types[other_index], query, self_types, other_types, new_types, self_map, other_map)?;
-                            add_validator(new_types, v)
-                        };
-                        items.push(v);
+                        items.push(builder.intersect(query, self_index, other_index)?);
                     }
 
                     // Get extra items
                     let extra_items = if let (Some(self_extra), Some(other_extra)) = (self.extra_items,other.extra_items) {
-                        let v = self_types[self_extra]
-                            .intersect(&other_types[other_extra], query, self_types, other_types, new_types, self_map, other_map)?;
-                        Some(add_validator(new_types, v))
+                        Some(builder.intersect(query, self_extra, other_extra)?)
                     }
                     else if let Some(extra_items) = self.extra_items {
-                        Some(clone_validator(self_types, new_types, self_map, extra_items))
+                        Some(builder.intersect(query, extra_items, 1)?)
                     }
                     else if let Some(extra_items) = other.extra_items {
-                        Some(clone_validator(other_types, new_types, other_map, extra_items))
+                        Some(builder.intersect(query, 1, extra_items)?)
                     }
                     else {
                         None
@@ -376,15 +359,15 @@ impl ValidArray {
 
                     // Check that this isn't an invalid validator before proceeding
                     if items.contains(&0) {
-                        new_types.truncate(new_types_len);
+                        builder.undo_to(builder_len);
                         return Ok(Validator::Invalid);
                     }
 
                     let mut contains: Vec<usize> = Vec::with_capacity(self.contains.len() + other.contains.len());
                     contains.extend(self.contains.iter()
-                        .map(|x| clone_validator(self_types, new_types, self_map, *x)));
+                        .map(|x| builder.intersect(query, *x, 1).unwrap()));
                     contains.extend(other.contains.iter()
-                        .map(|x| clone_validator(other_types, new_types, other_map, *x)));
+                        .map(|x| builder.intersect(query, 1, *x).unwrap()));
 
                     // Create new Validator
                     let mut new_validator = ValidArray {
@@ -401,11 +384,12 @@ impl ValidArray {
                         contains_ok: self.contains_ok && other.contains_ok,
                     };
                     if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
+                        builder.undo_to(builder_len);
                         return Ok(Validator::Invalid);
                     }
                     let valid = new_validator.finalize();
                     if !valid {
-                        new_types.truncate(new_types_len);
+                        builder.undo_to(builder_len);
                         Ok(Validator::Invalid)
                     }
                     else {

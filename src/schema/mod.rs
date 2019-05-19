@@ -3,6 +3,7 @@ use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
 use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::mem;
 
 use byteorder::{ReadBytesExt, BigEndian};
 
@@ -21,6 +22,8 @@ mod binary;
 mod string;
 mod hash;
 mod array;
+mod object;
+mod multi;
 
 use self::bool::ValidBool;
 use self::integer::ValidInt;
@@ -33,8 +36,12 @@ use self::binary::ValidBin;
 use self::string::ValidStr;
 use self::hash::ValidHash;
 use self::array::ValidArray;
+use self::object::ValidObj;
+use self::multi::ValidMulti;
 
 const MAX_VEC_RESERVE: usize = 2048;
+const INVALID: usize = 0;
+const VALID: usize = 1;
 
 pub struct Checklist {
     list: HashMap<Hash, Vec<usize>>
@@ -52,6 +59,15 @@ impl Checklist {
             .push(index)
     }
 
+    pub fn merge(&mut self, mut other: Checklist) {
+        for (hash, mut items) in other.list.drain() {
+            self.list
+                .entry(hash)
+                .and_modify(|i| i.append(&mut items))
+                .or_insert(items);
+        }
+    }
+
     pub fn get_list(&self, hash: &Hash) -> Option<&Vec<usize>> {
         self.list.get(hash)
     }
@@ -60,7 +76,7 @@ impl Checklist {
         self.list.remove(hash);
     }
 
-    pub fn list_size(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.list.len()
     }
 }
@@ -84,6 +100,11 @@ impl <'a> ValidBuilder<'a> {
         }
     }
 
+    fn push(&mut self, new_type: Validator) -> usize {
+        self.dest.push(new_type);
+        self.len() - 1
+    }
+
     fn intersect(&mut self, query: bool, type1: usize, type2: usize) -> Result<usize,()> {
         Ok(if ((type1 <= 1) && (type2 <= 1)) || (type1 == 0) || (type2 == 0) {
             // Only Valid if both valid, else invalid
@@ -92,7 +113,8 @@ impl <'a> ValidBuilder<'a> {
         else if type1 == 1 {
             // Clone type2 into the new validator list
             if self.map2[type2] == 0 {
-                self.dest.push(self.types2[type2].clone());
+                let v = self.types2[type2].intersect(&Validator::Valid, query, self)?;
+                self.dest.push(v);
                 let new_index = self.dest.len() - 1;
                 self.map2[type2] = new_index;
                 new_index
@@ -104,7 +126,8 @@ impl <'a> ValidBuilder<'a> {
         else if type2 == 1 {
             // Clone type1 into the new validator list
             if self.map1[type1] == 0 {
-                self.dest.push(self.types1[type1].clone());
+                let v = self.types1[type1].intersect(&Validator::Valid, query, self)?;
+                self.dest.push(v);
                 let new_index = self.dest.len() - 1;
                 self.map1[type1] = new_index;
                 new_index
@@ -124,6 +147,11 @@ impl <'a> ValidBuilder<'a> {
                 self.dest.len() - 1
             }
         })
+    }
+
+    fn swap(&mut self) {
+        mem::swap(&mut self.types1, &mut self.types2);
+        mem::swap(&mut self.map1, &mut self.map2);
     }
 
     fn len(&self) -> usize {
@@ -271,21 +299,7 @@ impl Schema {
                     format!("Logical error: Validator::Type({}) should never exist after creation", type_name)))
             },
             Validator::Multi(v) => {
-                if v.any_of.iter().any(|v_index| {
-                    if let Err(_) = self.run_validator(field, &self.types[*v_index], doc, *v_index, list) {
-                        false
-                    }
-                    else {
-                        true
-                    }
-                })
-                {
-                    Ok(())
-                }
-                else {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" failed against all allowed types.", field)))
-                }
+                v.validate(field, doc, &self.types, list)
             },
             Validator::Boolean(v) => {
                 v.validate(field, doc)
@@ -321,69 +335,7 @@ impl Schema {
                 v.validate(field, doc)
             },
             Validator::Object(v) => {
-                let num_fields = match read_marker(doc)? {
-                    MarkerType::Object(len) => len,
-                    _ => return Err(Error::new(InvalidData, "Object not found")),
-                };
-                if num_fields < v.min_fields {
-                    return Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains object with {} fields, less than the {} required",
-                            field, num_fields, v.min_fields)));
-                }
-                if num_fields == 0 && v.required.len() == 0 { return Ok(()); }
-                if num_fields > v.max_fields {
-                    return Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains object with {} fields, more than the {} required",
-                            field, num_fields, v.max_fields)));
-                }
-
-                // Setup for loop
-                let parent_field = field;
-                let obj_start = doc.clone();
-                let mut req_index = 0;
-                let mut opt_index = 0;
-                object_iterate(doc, num_fields, |field, doc| {
-                    // Check against required/optional/unknown types
-                    if Some(field) == v.required.get(req_index).map(|x| x.0.as_str()) {
-                        let v_index = v.required[req_index].1;
-                        req_index += 1;
-                        self.run_validator(field, &self.types[v_index], doc, v_index, list)
-                    }
-                    else if Some(field) == v.optional.get(opt_index).map(|x| x.0.as_str()) {
-                        let v_index = v.optional[opt_index].1;
-                        opt_index += 1;
-                        self.run_validator(field, &self.types[v_index], doc, v_index, list)
-                    }
-                    else if v.unknown_ok {
-                        if let Some(v_index) = v.field_type {
-                            self.run_validator(field, &self.types[v_index], doc, v_index, list)
-                        }
-                        else {
-                            verify_value(doc)?;
-                            Ok(())
-                        }
-                    }
-                    else {
-                        Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)))
-                    }
-                })?;
-
-                let (obj_start, _) = obj_start.split_at(obj_start.len()-doc.len());
-                if v.nin_vec.iter().any(|x| obj_start == &x[..]) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains object on the `nin` list", parent_field)))
-                }
-                else if (v.in_vec.len() > 0) && !v.in_vec.iter().any(|x| obj_start == &x[..]) {
-                    Err(Error::new(InvalidData,
-                        format!("Field \"{}\" contains object not in the `in` list", parent_field)))
-                }
-                else if req_index < v.required.len() {
-                    Err(Error::new(InvalidData,
-                        format!("Missing required fields, starting with {}", v.required[req_index].0.as_str())))
-                }
-                else {
-                    Ok(())
-                }
+                v.validate(field, doc, &self.types, list)
             },
             Validator::Array(v) => {
                 v.validate(field, doc, &self.types, list)
@@ -513,18 +465,8 @@ impl Validator {
                 // Multi
                 // | any          | Array of Validators          |
                 //
-                // Array
-                // | array        | non-negative integer         |
-                // | contains     | Array of Validators          |
-                // | contains_num | non-negative integer         |
-                // | extra_items  | Validator                    |
-                // | items        | Array of Validators          |
-                // | unique       | Boolean                      |
-                //
                 // Object
                 // | field_type   | Validator                    |
-                // | max_fields   | Non-negative Integer         |
-                // | min_fields   | Non-negative Integer         |
                 // | opt          | Object with Validator Values |
                 // | req          | Object with Validator Values |
                 // | unknown_ok   | Boolean                      |
@@ -661,6 +603,9 @@ impl Validator {
             Validator::Array(v) => {
                 v.validate(field, doc, types, list)
             },
+            Validator::Object(v) => {
+                v.validate(field, doc, types, list)
+            },
             Validator::Hash(v) => {
                 if let Some(hash) = v.validate(field, doc)? {
                     list.add(hash, index);
@@ -712,53 +657,6 @@ impl Validator {
             Validator::Lockbox(v) => v.intersect(other, query),
             Validator::Timestamp(v) => v.intersect(other, query),
             Validator::Multi(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
-        }
-    }
-}
-
-/// Object type validator
-#[derive(Clone)]
-pub struct ValidObj {
-    in_vec: Vec<Vec<u8>>,
-    nin_vec: Vec<Vec<u8>>,
-    required: Vec<(String, usize)>,
-    optional: Vec<(String, usize)>,
-    min_fields: usize,
-    max_fields: usize,
-    field_type: Option<usize>,
-    unknown_ok: bool,
-    query: bool,
-}
-
-impl ValidObj {
-    fn new(is_query: bool) -> ValidObj {
-        // For `unknown_ok`, default to no unknowns allowed, the only time we are not permissive by 
-        // default in schema validators.
-        ValidObj {
-            in_vec: Vec::with_capacity(0),
-            nin_vec: Vec::with_capacity(0),
-            required: Vec::with_capacity(0),
-            optional: Vec::with_capacity(0),
-            min_fields: usize::min_value(),
-            max_fields: usize::max_value(),
-            field_type: None,
-            unknown_ok: is_query,
-            query: is_query,
-        }
-    }
-}
-
-/// Container for multiple accepted Validators
-#[derive(Clone)]
-pub struct ValidMulti {
-    any_of: Vec<usize>,
-}
-
-impl ValidMulti {
-    // When implementing this, figure out how to handle mergine `link` field in ValidHash too
-    fn new(_is_query: bool) -> ValidMulti {
-        ValidMulti {
-            any_of: Vec::with_capacity(0)
         }
     }
 }

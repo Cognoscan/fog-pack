@@ -10,8 +10,8 @@ use marker::MarkerType;
 #[derive(Clone)]
 pub struct ValidArray {
     /// Raw msgpack to compare against
-    in_vec: Vec<Vec<u8>>,
-    nin_vec: Vec<Vec<u8>>,
+    in_vec: Vec<Box<[u8]>>,
+    nin_vec: Vec<Box<[u8]>>,
     min_len: usize,
     max_len: usize,
     items: Vec<usize>,
@@ -148,10 +148,10 @@ impl ValidArray {
                         else {
                             return Err(Error::new(InvalidData, "Array validator expected array of arrays for `in` field"));
                         };
-                        self.in_vec.push(v);
+                        self.nin_vec.push(v);
                     };
-                    self.in_vec.sort_unstable();
-                    self.in_vec.dedup();
+                    self.nin_vec.sort_unstable();
+                    self.nin_vec.dedup();
                 }
                 else {
                     return Err(Error::new(InvalidData, "Array validator expected array of arrays for `in` field"));
@@ -175,7 +175,7 @@ impl ValidArray {
     /// validator. We do not check the `in` and `nin` against all validation parts
     pub fn finalize(&mut self) -> bool {
         if self.in_vec.len() > 0 {
-            let mut in_vec: Vec<Vec<u8>> = Vec::with_capacity(self.in_vec.len());
+            let mut in_vec: Vec<Box<[u8]>> = Vec::with_capacity(self.in_vec.len());
             let mut nin_index = 0;
             for val in self.in_vec.iter() {
                 while let Some(nin) = self.nin_vec.get(nin_index) {
@@ -217,6 +217,8 @@ impl ValidArray {
         if num_items == 0 && self.min_len == 0 && self.items.len() == 0 && self.contains.len() == 0 {
             return Ok(());
         }
+
+        let array_start = doc.clone();
 
         // Size checks
         if num_items < self.min_len {
@@ -273,9 +275,19 @@ impl ValidArray {
                     }
                 });
         }
+
+        let (array, _) = array_start.split_at(array_start.len()-doc.len());
         if contain_set.contains(&false) {
             Err(Error::new(InvalidData,
                 format!("Field {} does not satisfy all `contains` requirements", field)))
+        }
+        else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(array)).is_ok() {
+            Err(Error::new(InvalidData,
+                format!("Field \"{}\" contains array on `nin` list", field)))
+        }
+        else if (self.in_vec.len() > 0) && !self.in_vec.binary_search_by(|probe| (**probe).cmp(array)).is_err() {
+            Err(Error::new(InvalidData,
+                format!("Field \"{}\" contains array not on `in` list", field)))
         }
         else {
             Ok(())
@@ -397,19 +409,36 @@ impl ValidArray {
                     }
                 }
             },
-            Validator::Valid => Ok(Validator::Array(self.clone())),
+            Validator::Valid => {
+                // Get intersection of items
+                let mut v = self.clone();
+                let mut items = Vec::with_capacity(self.items.len());
+                items.extend(self.items.iter()
+                    .map(|x| builder.intersect(query, *x, 1).unwrap()));
+                v.items = items;
+
+                if let Some(extra) = self.extra_items {
+                    v.extra_items = Some(builder.intersect(query, extra, 1).unwrap());
+                }
+
+                let mut contains: Vec<usize> = Vec::with_capacity(self.contains.len());
+                contains.extend(self.contains.iter()
+                    .map(|x| builder.intersect(query, *x, 1).unwrap()));
+                v.contains = contains;
+                Ok(Validator::Array(v))
+            }
             _ => Ok(Validator::Invalid),
         }
     }
 }
 
-fn get_raw_array(raw: &mut &[u8], len: usize) -> io::Result<Vec<u8>> {
+fn get_raw_array(raw: &mut &[u8], len: usize) -> io::Result<Box<[u8]>> {
     let start = raw.clone();
     for _ in 0..len {
         verify_value(raw)?;
     }
     let (array, _) = start.split_at(start.len()-raw.len());
-    Ok(array.to_vec())
+    Ok(array.to_vec().into_boxed_slice())
 }
 
 

@@ -276,7 +276,14 @@ impl ValidHash {
                     }
                 }
             },
-            Validator::Valid => Ok(Validator::Hash(self.clone())),
+            Validator::Valid => {
+                // Copy link
+                let mut v = self.clone();
+                if let Some(link) = self.link {
+                    v.link = Some(builder.intersect(query, link, 1)?);
+                }
+                Ok(Validator::Hash(v))
+            }
             _ => Ok(Validator::Invalid),
         }
     }

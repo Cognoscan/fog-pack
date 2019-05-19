@@ -281,8 +281,11 @@ Array types describe a field that contain an array of values. They have the
 following optional fields:
 
 - `const`: an array the described field must be set to.
-- `in`: an array of arrays the described field must be among.
-- `nin`: an array of arrays the described field must not be among.
+- `in`: an array of arrays the described field must be among. :warning: Unlike 
+	other `in` fields, this must be an array of arrays, not a single array.
+- `nin`: an array of arrays the described field must not be among. :warning: 
+	Unlike other `nin` fields, this must be an array of arrays, not a single 
+	array.
 - `min_len`: a non-negative integer specifying the minimum number of values 
 	allowed in the array.
 - `max_len`: a non-negative integer specifying the maximum number of values 
@@ -321,7 +324,9 @@ optional fields:
 - `required`: an object listing unique Data Types that must be present in the 
 	object, where each field is the name of a field in the object.
 - `optional`: an object listing unique Data Types that may optionally be present 
-	in the object, where each type name is the name of a field in the object.
+	in the object, where each field name is the name of a field in the object. If 
+	a field is named both here and in `required`, the `required` definition is 
+	used and the `optional` one is ignored.
 - `min_fields`: a non-negative integer specifying the minimum number of fields 
 	allowed in the object.
 - `min_fields`: a non-negative integer specifying the maximum number of fields 
@@ -332,7 +337,7 @@ optional fields:
 - `default`: specifies a default object that implementations may use if the 
 	field is not present.
 - `unknown_ok`: specifies if fields not specified in `required` or `optional` 
-	are allowed in the object.
+	are allowed in the object. Required for `field_type` to be used.
 
 Validation fails if the described field is not an object or does not meet any of 
 the optional requirements listed.

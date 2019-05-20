@@ -172,26 +172,17 @@ impl <'a> ValidBuilder<'a> {
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
 /// entry.
 pub struct Schema {
-    min_fields: usize,
-    max_fields: usize,
-    required: Vec<(String, usize)>,
-    optional: Vec<(String, usize)>,
+    object: ValidObj,
     entries: Vec<(String, usize)>,
     types: Vec<Validator>,
-    field_type: Option<usize>,
-    unknown_ok: bool
 }
 
 impl Schema {
     pub fn from_raw(raw: &mut &[u8]) -> io::Result<Schema> {
-        let min_fields = usize::min_value();
-        let max_fields = usize::max_value();
-        let required = Vec::new();
-        let optional = Vec::new();
-        let entries = Vec::new();
-        let mut types = Vec::with_capacity(1);
-        let field_type = None;
-        let unknown_ok = false;
+        let mut entries = Vec::new();
+        let mut types = Vec::with_capacity(2);
+        let mut type_names = HashMap::new();
+        let mut object = ValidObj::new(true); // Documents can always be queried, hence "true"
         types.push(Validator::Invalid);
         types.push(Validator::Valid);
 
@@ -199,152 +190,61 @@ impl Schema {
             MarkerType::Object(len) => len,
             _ => return Err(Error::new(InvalidData, "Schema wasn't an object")),
         };
-        if num_fields > 8 {
-            return Err(Error::new(InvalidData, "Schema has more fields than it should"));
-        }
-
-        // Read entries
-        // Read field_type
-        // Read min_fields
-        // Read max_fields
-        // Read optional
-        // Read required
-        // Read types
-        // Read unknown_ok
-        // Optimize
-
+        object_iterate(raw, num_fields, |field, raw| {
+            match field {
+                "description" => {
+                    read_str(raw).map_err(|_e| Error::new(InvalidData, "`description` field didn't contain string"))?;
+                },
+                "name" => {
+                    read_str(raw).map_err(|_e| Error::new(InvalidData, "`name` field didn't contain string"))?;
+                },
+                "version" => {
+                    read_integer(raw).map_err(|_e| Error::new(InvalidData, "`name` field didn't contain integer"))?;
+                },
+                "entries" => {
+                    if let MarkerType::Object(len) = read_marker(raw)? {
+                        object_iterate(raw, len, |field, raw| {
+                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
+                            entries.push((field.to_string(), v));
+                            Ok(())
+                        })?;
+                    }
+                    else {
+                        return Err(Error::new(InvalidData, "`entries` field doesn't contain an Object"));
+                    }
+                }
+               "field_type" | "max_fields" | "min_fields" | "req" | "opt" | "unknown_ok" => {
+                   object.update(field, raw, false, &mut types, &mut type_names)?;
+                },
+                _ => {
+                    return Err(Error::new(InvalidData, "Unrecognized field in schema document"));
+                }
+            }
+            Ok(())
+        })?;
 
         Ok(Schema {
-            min_fields,
-            max_fields,
-            required,
-            optional,
+            object,
             entries,
             types,
-            field_type,
-            unknown_ok,
         })
     }
 
     /// Validates a document against this schema. Does not check the schema field itself.
-    pub fn validate_doc(&self, doc: &mut &[u8]) -> io::Result<Checklist> {
+    pub fn validate_doc(&self, doc: &mut &[u8]) -> io::Result<()> {
         let mut checklist = Checklist::new();
-        let num_fields = match read_marker(doc)? {
-            MarkerType::Object(len) => len,
-            _ => return Err(Error::new(InvalidData, "Document wasn't an object")),
-        };
-        if num_fields < self.min_fields {
-            return Err(Error::new(InvalidData,
-                format!("Document contains {} fields, less than the {} required",
-                    num_fields, self.min_fields)));
-        }
-        if num_fields == 0 && self.required.len() == 0 { return Ok(checklist); }
-        if num_fields > self.max_fields {
-            return Err(Error::new(InvalidData,
-                format!("Document contains {} fields, more than the {} allowed",
-                    num_fields, self.max_fields)));
-        }
-
-        // Setup for loop
-        let mut req_index = 0;
-        let mut opt_index = 0;
-        object_iterate(doc, num_fields, |field, doc| {
-            // Check against required/optional/unknown types
-            if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
-                let v_index = self.required[req_index].1;
-                req_index += 1;
-                self.run_validator(field, &self.types[v_index], doc, v_index, &mut checklist)
-            }
-            else if Some(field) == self.optional.get(opt_index).map(|x| x.0.as_str()) {
-                let v_index = self.optional[opt_index].1;
-                opt_index += 1;
-                self.run_validator(field, &self.types[v_index], doc, v_index, &mut checklist)
-            }
-            else if self.unknown_ok {
-                if let Some(v_index) = self.field_type {
-                    self.run_validator(field, &self.types[v_index], doc, v_index, &mut checklist)
-                }
-                else {
-                    verify_value(doc)?;
-                    Ok(())
-                }
-            }
-            else {
-                Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)))
-            }
-        })?;
-
-        if req_index >= self.required.len() {
-            Ok(checklist)
-        }
-        else {
-            Err(Error::new(InvalidData,
-                format!("Missing required fields, starting with {}", self.required[req_index].0.as_str())))
-        }
+        self.object.validate("", doc, &self.types, &mut checklist, true).and(Ok(()))
     }
 
-    fn run_validator(&self, field: &str, validator: &Validator, doc: &mut &[u8], index: usize, list: &mut Checklist) -> io::Result<()> {
-        let result = match validator {
-            Validator::Invalid => Err(Error::new(InvalidData, format!("Field \"{}\" is always invalid", field))),
-            Validator::Valid => {
-                verify_value(doc)?;
-                Ok(())
-            },
-            Validator::Null => {
-                read_null(doc)?;
-                Ok(())
-            },
-            Validator::Type(type_name) => {
-                Err(Error::new(Other,
-                    format!("Logical error: Validator::Type({}) should never exist after creation", type_name)))
-            },
-            Validator::Multi(v) => {
-                v.validate(field, doc, &self.types, list)
-            },
-            Validator::Boolean(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Integer(v) => {
-                v.validate(field, doc)
-            },
-            Validator::F32(v) => {
-                v.validate(field, doc)
-            },
-            Validator::F64(v) => {
-                v.validate(field, doc)
-            },
-            Validator::String(v) => {
-                v.validate(field, doc)
-            }
-            Validator::Binary(v) => {
-                v.validate(field, doc)
-            }
-            Validator::Hash(v) => {
-                if let Some(hash) = v.validate(field, doc)? {
-                    list.add(hash, index);
-                }
-                Ok(())
-            }
-            Validator::Identity(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Lockbox(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Timestamp(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Object(v) => {
-                v.validate(field, doc, &self.types, list)
-            },
-            Validator::Array(v) => {
-                v.validate(field, doc, &self.types, list)
-            },
-        };
-        if let Err(e) = result { return Err(e); }
-        Ok(())
+    /// Validates a given entry against this schema.
+    pub fn validate_entry(&self, entry: &str, doc: &mut &[u8]) -> io::Result<Checklist> {
+        let mut checklist = Checklist::new();
+        let v = self.entries.binary_search_by(|x| x.0.as_str().cmp(entry));
+        if v.is_err() { return Err(Error::new(InvalidData, "Entry field type doesn't exist in schema")); }
+        let v = self.entries[v.unwrap()].1;
+        self.types[v].validate("", doc, &self.types, 0, &mut checklist)?;
+        Ok(checklist)
     }
-
 }
 
 #[derive(Clone)]
@@ -462,22 +362,6 @@ impl Validator {
                     Ok(())
                 })?;
 
-                // Multi
-                // | any          | Array of Validators          |
-                //
-                // Object
-                // | field_type   | Validator                    |
-                // | opt          | Object with Validator Values |
-                // | req          | Object with Validator Values |
-                // | unknown_ok   | Boolean                      |
-                //
-                // | name         | String                       |
-                // | version      | Integer                      |
-                // | types        | Object                       |
-                // | description  | String                       |
-                // | entries      | Object                       |
-
-
                 return Err(Error::new(Other, "Can't yet decode this validator type"));
             }
         };
@@ -531,14 +415,15 @@ impl Validator {
             Validator::F32(v) => v.update(field, raw),
             Validator::F64(v) => v.update(field, raw),
             Validator::Binary(v) => v.update(field, raw),
-            Validator::Array(_) => Err(Error::new(Other, "Validator not supported yet")),
-            Validator::Object(_) => Err(Error::new(Other, "Validator not supported yet")),
+            Validator::Array(v) => v.update(field, raw, is_query, types, type_names),
+            Validator::Object(v) => v.update(field, raw, is_query, types, type_names),
             Validator::Hash(v) => v.update(field, raw, is_query, types, type_names),
             Validator::Identity(v) => v.update(field, raw),
             Validator::Lockbox(v) => v.update(field, raw),
             Validator::Timestamp(v) => v.update(field, raw),
-            Validator::Multi(_) => Err(Error::new(Other, "Validator not supported yet")),
-            _ => Ok(false),
+            Validator::Multi(v) => v.update(field, raw, is_query, types, type_names),
+            Validator::Valid => Err(Error::new(InvalidData, "Fields not allowed in Valid validator")),
+            Validator::Invalid => Err(Error::new(InvalidData, "Fields not allowed in Invalid validator")),
         }
     }
 
@@ -554,13 +439,13 @@ impl Validator {
             Validator::F32(v) => v.finalize(),
             Validator::F64(v) => v.finalize(),
             Validator::Binary(v) => v.finalize(),
-            Validator::Array(_) => false, //v.finalize(),
-            Validator::Object(_) => false, //v.finalize(),
+            Validator::Array(v) => v.finalize(),
+            Validator::Object(v) => v.finalize(),
             Validator::Hash(v) => v.finalize(),
             Validator::Identity(v) => v.finalize(),
             Validator::Lockbox(v) => v.finalize(),
             Validator::Timestamp(v) => v.finalize(),
-            Validator::Multi(_) => false, //v.finalize(),
+            Validator::Multi(v) => v.finalize(),
         }
     }
 
@@ -582,46 +467,25 @@ impl Validator {
                 read_null(doc)?;
                 Ok(())
             },
-            Validator::Boolean(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Integer(v) => {
-                v.validate(field, doc)
-            },
-            Validator::String(v) => {
-                v.validate(field, doc)
-            },
-            Validator::F32(v) => {
-                v.validate(field, doc)
-            },
-            Validator::F64(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Binary(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Array(v) => {
-                v.validate(field, doc, types, list)
-            },
-            Validator::Object(v) => {
-                v.validate(field, doc, types, list)
-            },
+            Validator::Type(_) => Err(Error::new(Other, "Should never be validating a `Type` validator directly")),
+            Validator::Boolean(v) => v.validate(field, doc),
+            Validator::Integer(v) => v.validate(field, doc),
+            Validator::String(v) => v.validate(field, doc),
+            Validator::F32(v) => v.validate(field, doc),
+            Validator::F64(v) => v.validate(field, doc),
+            Validator::Binary(v) => v.validate(field, doc),
+            Validator::Array(v) => v.validate(field, doc, types, list),
+            Validator::Object(v) => v.validate(field, doc, types, list, false),
             Validator::Hash(v) => {
                 if let Some(hash) = v.validate(field, doc)? {
                     list.add(hash, index);
                 }
                 Ok(())
             },
-            Validator::Identity(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Lockbox(v) => {
-                v.validate(field, doc)
-            },
-            Validator::Timestamp(v) => {
-                v.validate(field, doc)
-            },
-            _ => Err(Error::new(Other, "Can't validate this type yet")),
+            Validator::Identity(v) => v.validate(field, doc),
+            Validator::Lockbox(v) => v.validate(field, doc),
+            Validator::Timestamp(v) => v.validate(field, doc),
+            Validator::Multi(v) => v.validate(field, doc, types, list),
         }
     }
 
@@ -651,12 +515,12 @@ impl Validator {
             Validator::F64(v) => v.intersect(other, query),
             Validator::Binary(v) => v.intersect(other, query),
             Validator::Array(v) => v.intersect(other, query, builder),
-            Validator::Object(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
+            Validator::Object(v) => v.intersect(other, query, builder),
             Validator::Hash(v) => v.intersect(other, query, builder),
             Validator::Identity(v) => v.intersect(other, query),
             Validator::Lockbox(v) => v.intersect(other, query),
             Validator::Timestamp(v) => v.intersect(other, query),
-            Validator::Multi(_) => Err(()), //v.intersect(other, query, self_types, other_types, new_types),
+            Validator::Multi(v) => v.intersect(other, query, builder),
         }
     }
 }

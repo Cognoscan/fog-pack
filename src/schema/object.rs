@@ -188,13 +188,20 @@ impl ValidObj {
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
                     list: &mut Checklist,
+                    top_schema: bool
                     ) -> io::Result<()>
     {
         let obj_start = doc.clone();
-        let num_fields = match read_marker(doc)? {
+        let mut num_fields = match read_marker(doc)? {
             MarkerType::Object(len) => len,
             _ => return Err(Error::new(InvalidData, "Object not found")),
         };
+        if top_schema {
+            if num_fields == 0 {
+                return Err(Error::new(InvalidData, "Document doesn't include schema"));
+            }
+            num_fields -= 1;
+        }
         if num_fields < self.min_fields {
             return Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains object with {} fields, less than the {} required",
@@ -205,6 +212,15 @@ impl ValidObj {
             return Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains object with {} fields, more than the {} required",
                     field, num_fields, self.max_fields)));
+        }
+
+        if top_schema {
+            if read_str(doc)?.len() != 0 {
+                return Err(Error::new(InvalidData, "Document doesn't include schema"));
+            }
+            if read_hash(doc).is_err() {
+                return Err(Error::new(InvalidData, "Document schema field doesn't contain a Hash"));
+            }
         }
 
         // Setup for loop

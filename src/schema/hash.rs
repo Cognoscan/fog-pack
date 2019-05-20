@@ -9,7 +9,7 @@ use marker::MarkerType;
 use crypto::Hash;
 
 /// Hash type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidHash {
     in_vec: Vec<Hash>,
     nin_vec: Vec<Hash>,
@@ -164,6 +164,10 @@ impl ValidHash {
 
     pub fn schema_in_set(&self, hash: &Hash) -> bool {
         self.schema.contains(hash)
+    }
+
+    pub fn schema_required(&self) -> bool {
+        self.schema.len() > 0
     }
 
     pub fn link(&self) -> Option<usize> {

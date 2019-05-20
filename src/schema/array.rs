@@ -7,7 +7,7 @@ use decode::*;
 use super::*;
 use marker::MarkerType;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidArray {
     /// Raw msgpack to compare against
     in_vec: Vec<Box<[u8]>>,
@@ -39,6 +39,14 @@ impl ValidArray {
             array: is_query,
             contains_ok: is_query,
         }
+    }
+
+    pub fn from_const(constant: Box<[u8]>, is_query: bool) -> ValidArray {
+        let mut v = ValidArray::new(is_query);
+        let mut in_vec = Vec::with_capacity(1);
+        in_vec.push(constant);
+        v.in_vec = in_vec;
+        v
     }
 
     /// Update the validator. Returns `Ok(true)` if everything is read out Ok, `Ok(false)` if we 
@@ -184,15 +192,12 @@ impl ValidArray {
                 if let Some(nin) = self.nin_vec.get(nin_index) {
                     if nin == val { continue; }
                 }
-                if (val.len() >= self.min_len) && (val.len() <= self.max_len) 
-                {
-                    in_vec.push(val.clone());
-                }
+                in_vec.push(val.clone());
             }
             in_vec.shrink_to_fit();
             self.in_vec = in_vec;
             self.nin_vec = Vec::with_capacity(0);
-            self.in_vec.len() > 0
+            (self.in_vec.len() > 0) && (self.min_len <= self.max_len)
         }
         else {
             self.nin_vec.shrink_to_fit();
@@ -285,7 +290,7 @@ impl ValidArray {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains array on `nin` list", field)))
         }
-        else if (self.in_vec.len() > 0) && !self.in_vec.binary_search_by(|probe| (**probe).cmp(array)).is_err() {
+        else if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(array)).is_err() {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains array not on `in` list", field)))
         }
@@ -432,7 +437,7 @@ impl ValidArray {
     }
 }
 
-fn get_raw_array(raw: &mut &[u8], len: usize) -> io::Result<Box<[u8]>> {
+pub fn get_raw_array(raw: &mut &[u8], len: usize) -> io::Result<Box<[u8]>> {
     let start = raw.clone();
     for _ in 0..len {
         verify_value(raw)?;

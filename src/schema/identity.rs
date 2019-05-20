@@ -8,7 +8,7 @@ use marker::MarkerType;
 use crypto::Identity;
 
 /// Identity type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidIdentity {
     in_vec: Vec<Identity>,
     nin_vec: Vec<Identity>,

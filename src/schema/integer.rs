@@ -7,7 +7,7 @@ use integer::Integer;
 use marker::MarkerType;
 
 /// Integer type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidInt {
     in_vec: Vec<Integer>,
     nin_vec: Vec<Integer>,

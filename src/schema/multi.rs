@@ -1,7 +1,7 @@
 use super::*;
 
 /// Container for multiple accepted Validators
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidMulti {
     any_of: Vec<Vec<usize>>,
 }

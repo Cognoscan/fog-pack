@@ -10,7 +10,7 @@ use super::*;
 use marker::MarkerType;
 
 /// Object type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidObj {
     in_vec: Vec<Box<[u8]>>,
     nin_vec: Vec<Box<[u8]>>,
@@ -137,7 +137,7 @@ impl ValidObj {
                     Ok(valid)
                 }
                 else {
-                    Err(Error::new(InvalidData, "`req` field must contain an object."))
+                    Err(Error::new(InvalidData, "`opt` field must contain an object."))
                 }
             }
             "query" => {
@@ -196,12 +196,22 @@ impl ValidObj {
             MarkerType::Object(len) => len,
             _ => return Err(Error::new(InvalidData, "Object not found")),
         };
+
+        // Read out the schema field if this is a Document, and don't count it towards the field 
+        // limit
         if top_schema {
-            if num_fields == 0 {
-                return Err(Error::new(InvalidData, "Document doesn't include schema"));
+            let mut schema = &doc[..];
+            if read_str(&mut schema)?.len() == 0 {
+                if read_hash(&mut schema).is_err() {
+                    return Err(Error::new(InvalidData, "Document schema field doesn't contain a Hash"));
+                }
+                else {
+                    *doc = schema;
+                    num_fields -= 1;
+                }
             }
-            num_fields -= 1;
         }
+
         if num_fields < self.min_fields {
             return Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains object with {} fields, less than the {} required",
@@ -212,15 +222,6 @@ impl ValidObj {
             return Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains object with {} fields, more than the {} required",
                     field, num_fields, self.max_fields)));
-        }
-
-        if top_schema {
-            if read_str(doc)?.len() != 0 {
-                return Err(Error::new(InvalidData, "Document doesn't include schema"));
-            }
-            if read_hash(doc).is_err() {
-                return Err(Error::new(InvalidData, "Document schema field doesn't contain a Hash"));
-            }
         }
 
         // Setup for loop
@@ -492,4 +493,100 @@ fn get_obj(raw: &mut &[u8]) -> io::Result<Box<[u8]>> {
     }
     let (obj, _) = start.split_at(start.len()-raw.len());
     Ok(obj.to_vec().into_boxed_slice())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use encode;
+    use value::Value;
+    use crypto::Hash;
+    use timestamp::Timestamp;
+    //use super::super::Checklist;
+    use super::*;
+    
+    #[test]
+    fn basic_tests() {
+        let now = Timestamp::now().unwrap();
+        let mut raw_schema = Vec::new();
+        let schema: Value = msgpack!({
+            "type": "Obj",
+            "req": {
+                "test": true
+            },
+            "opt": {
+                "boolean": true,
+                "positive": 1,
+                "negative": -1,
+                "string": "string",
+                "float32": 1.0f32,
+                "float64": 1.0f64,
+                "binary": vec![0u8,1u8,2u8],
+                "hash": Hash::new_empty(),
+                "timestamp": now,
+                "array": [Value::from(0), Value::from("an_array")] 
+            }
+        });
+        encode::write_value(&mut raw_schema, &schema);
+        println!("Schema = {}", &schema);
+
+        let mut types = Vec::new();
+        types.push(Validator::Invalid);
+        types.push(Validator::Valid);
+        let mut type_names = HashMap::new();
+        let validator = Validator::read_validator(&mut &raw_schema[..], false, &mut types, &mut type_names).unwrap();
+        for (i, v) in types.iter().enumerate() {
+            println!("{}: {:?}", i, v);
+        }
+        match types[validator] {
+            Validator::Object(_) => (),
+            _ => panic!("Parsing an object validator didn't yield an object validator!"),
+        }
+
+        // Should pass with all fields
+        let mut raw_test = Vec::new();
+        let test: Value = msgpack!({
+            "test": true,
+            "boolean": true,
+            "positive": 1,
+            "negative": -1,
+            "string": "string",
+            "float32": 1.0f32,
+            "float64": 1.0f64,
+            "binary": vec![0u8,1u8,2u8],
+            "hash": Hash::new_empty(),
+            "timestamp": now,
+            "array": [Value::from(0), Value::from("an_array")] 
+        });
+        encode::write_value(&mut raw_test, &test);
+        let mut list = Checklist::new();
+        assert!(types[validator].validate("", &mut &raw_test[..], &types, validator, &mut list).is_ok());
+
+        // Should pass with only required fields
+        raw_test.clear();
+        let test: Value = msgpack!({
+            "test": true,
+        });
+        encode::write_value(&mut raw_test, &test);
+        let mut list = Checklist::new();
+        assert!(types[validator].validate("", &mut &raw_test[..], &types, validator, &mut list).is_ok());
+
+        // Should fail if we remove one of the required fields
+        raw_test.clear();
+        let test: Value = msgpack!({
+            "boolean": true,
+            "positive": 1,
+            "negative": -1,
+            "string": "string",
+            "float32": 1.0f32,
+            "float64": 1.0f64,
+            "binary": vec![0u8,1u8,2u8],
+            "hash": Hash::new_empty(),
+            "timestamp": now,
+            "array": [Value::from(0), Value::from("an_array")] 
+        });
+        encode::write_value(&mut raw_test, &test);
+        let mut list = Checklist::new();
+        assert!(types[validator].validate("", &mut &raw_test[..], &types, validator, &mut list).is_err());
+    }
 }

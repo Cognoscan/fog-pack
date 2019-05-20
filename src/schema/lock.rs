@@ -6,7 +6,7 @@ use decode::*;
 use super::Validator;
 
 /// Lock type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidLock {
     max_len: usize,
     query: bool,

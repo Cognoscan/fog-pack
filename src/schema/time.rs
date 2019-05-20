@@ -8,7 +8,7 @@ use timestamp::Timestamp;
 use marker::MarkerType;
 
 /// Timestamp type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidTime {
     in_vec: Vec<Timestamp>,
     nin_vec: Vec<Timestamp>,

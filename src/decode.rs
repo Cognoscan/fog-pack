@@ -220,11 +220,12 @@ pub fn read_i64(buf: &mut &[u8]) -> io::Result<i64> {
 
 /// Attempt to read a str from a msgpack data structure. Fails if str wasn't present/valid.
 pub fn read_str<'a>(buf: &mut &'a [u8]) -> io::Result<&'a str> {
-    if let MarkerType::String(len) = read_marker(buf)? {
+    let marker = read_marker(buf)?;
+    if let MarkerType::String(len) = marker {
         read_raw_str(buf, len)
     }
     else {
-        Err(Error::new(InvalidData, "Object field was not a String"))
+        Err(Error::new(InvalidData, format!("Expected a string, got {:?}", marker)))
     }
 }
 

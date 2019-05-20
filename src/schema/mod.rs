@@ -27,6 +27,7 @@ use byteorder::{ReadBytesExt, BigEndian};
 use MarkerType;
 use decode::*;
 use crypto::Hash;
+use document::extract_schema;
 
 mod bool;
 mod integer;
@@ -52,7 +53,7 @@ use self::identity::ValidIdentity;
 use self::binary::ValidBin;
 use self::string::ValidStr;
 use self::hash::ValidHash;
-use self::array::ValidArray;
+use self::array::{ValidArray, get_raw_array};
 use self::object::ValidObj;
 use self::multi::ValidMulti;
 
@@ -279,9 +280,46 @@ impl Schema {
         self.types[v].validate("", doc, &self.types, 0, &mut checklist)?;
         Ok(checklist)
     }
+
+    /// Validates a document against a specific Hash Validator. Should be used in conjunction with 
+    /// a Checklist returned from `validate_entry` to confirm that all documents referenced in an 
+    /// entry meet the schema's criteria.
+    pub fn validate_checklist_item(&self, index: usize, doc: &mut &[u8]) -> io::Result<()> {
+        if let Validator::Hash(ref v) = self.types[index] {
+            // Extract schema. Also verifies we are dealing with an Object (an actual document)
+            let doc_schema = extract_schema(&doc.clone())?;
+            // Check against acceptable schemas
+            if v.schema_required() {
+                if let Some(hash) = doc_schema {
+                    if !v.schema_in_set(&hash) {
+                        return Err(Error::new(InvalidData, "Document uses unrecognized schema"));
+                    }
+                }
+                else {
+                    return Err(Error::new(InvalidData, "Document doesn't have schema, but needs one"));
+                }
+            }
+            if let Some(link) = v.link() {
+                let mut checklist = Checklist::new();
+                if let Validator::Object(ref v) = self.types[link] {
+                    v.validate("", doc, &self.types, &mut checklist, true).and(Ok(()))
+                }
+                else {
+                    Err(Error::new(Other, "Can't validate a document against a non-object validator"))
+                }
+            }
+            else {
+                Ok(())
+            }
+        }
+        else {
+            Err(Error::new(Other, "Can't validate against non-hash validator"))
+        }
+
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub enum Validator {
     Invalid,
     Valid,
@@ -350,8 +388,9 @@ impl Validator {
                 let val = read_raw_time(raw, len)?;
                 Validator::Timestamp(ValidTime::from_const(val, is_query))
             },
-            MarkerType::Array(_len) => {
-                return Err(Error::new(Other, "Can't yet decode this validator type"));
+            MarkerType::Array(len) => {
+                let val = get_raw_array(raw, len)?;
+                Validator::Array(ValidArray::from_const(val, is_query))
             }
             MarkerType::Object(len) => {
                 // Create new validators and try them all.
@@ -373,6 +412,8 @@ impl Validator {
                 ];
                 let mut possible_check = vec![2u8; possible.len()];
 
+                let mut type_seen = false;
+
                 // Try all of the possible validators on each field
                 object_iterate(raw, len, |field, raw| {
                     match field {
@@ -380,6 +421,7 @@ impl Validator {
                             read_str(raw).map_err(|_e| Error::new(InvalidData, "`comment` field didn't contain string"))?;
                         },
                         _ => {
+                            if field == "type" { type_seen = true; }
                             let mut raw_now = &raw[..];
                             possible_check.iter_mut()
                                 .zip(possible.iter_mut())
@@ -388,7 +430,7 @@ impl Validator {
                                     let mut raw_local = &raw_now[..];
                                     let result = validator.update(field, &mut raw_local, is_query, types, type_names)
                                         .and_then(|x| if x { Ok(2) } else { Ok(1) })
-                                        .unwrap_or(2);
+                                        .unwrap_or(0);
                                     if result != 0 {
                                         *raw = raw_local;
                                     }
@@ -422,7 +464,18 @@ impl Validator {
                             break;
                         }
                     }
-                    possible[index].clone()
+                    if type_seen {
+                        let valid = possible[index].finalize();
+                        if possible_check[index] == 1 || !valid {
+                            Validator::Invalid
+                        }
+                        else {
+                            possible[index].clone()
+                        }
+                    }
+                    else {
+                        return Err(Error::new(InvalidData, "Validator needs to include `type` field"));
+                    }
                 }
                 else {
                     return Err(Error::new(InvalidData, "Not a recognized validator"));
@@ -431,15 +484,37 @@ impl Validator {
         };
 
         if let Validator::Type(name) = validator {
-            let index = type_names.entry(name).or_insert(types.len());
+            let index = type_names.entry(name.clone()).or_insert(types.len());
             if *index == types.len() {
-                types.push(Validator::Invalid);
+                types.push(match name.as_str() {
+                    "Null"  => Validator::Null,
+                    "Bool"  => Validator::Boolean(ValidBool::new(is_query)),
+                    "Int"   => Validator::Integer(ValidInt::new(is_query)),
+                    "Str"   => Validator::String(ValidStr::new(is_query)),
+                    "F32"   => Validator::F32(ValidF32::new(is_query)),
+                    "F64"   => Validator::F64(ValidF64::new(is_query)),
+                    "Bin"   => Validator::Binary(ValidBin::new(is_query)),
+                    "Array" => Validator::Array(ValidArray::new(is_query)),
+                    "Obj"   => Validator::Object(ValidObj::new(is_query)),
+                    "Hash"  => Validator::Hash(ValidHash::new(is_query)),
+                    "Ident" => Validator::Identity(ValidIdentity::new(is_query)),
+                    "Lock"  => Validator::Lockbox(ValidLock::new(is_query)),
+                    "Time"  => Validator::Timestamp(ValidTime::new(is_query)),
+                    "Multi" => Validator::Invalid,
+                    _ => Validator::Invalid,
+                });
             }
             Ok(*index)
         }
         else {
-            types.push(validator);
-            Ok(types.len()-1)
+            match validator {
+                Validator::Invalid => Ok(INVALID),
+                Validator::Valid => Ok(VALID),
+                _ => {
+                    types.push(validator);
+                    Ok(types.len()-1)
+                },
+            }
         }
 
     }
@@ -562,7 +637,18 @@ impl Validator {
     {
         match self {
             Validator::Invalid => Ok(Validator::Invalid),
-            Validator::Valid => Ok(other.clone()),
+            Validator::Valid => {
+                if query { return Err(()); } // Can't query a generic "Valid" validator
+                // Check if other is also Valid to avoid infinite recursion
+                if let Validator::Valid = other {
+                    return Ok(Validator::Valid);
+                }
+                // Swap the builder's contents and intersect the other validator.
+                builder.swap();
+                let v = other.intersect(self, query, builder)?;
+                builder.swap();
+                Ok(v)
+            }
             Validator::Null => {
                 if let Validator::Null = other {
                     Ok(Validator::Null)

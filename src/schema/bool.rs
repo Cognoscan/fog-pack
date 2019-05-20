@@ -5,7 +5,7 @@ use decode::*;
 use super::Validator;
 
 /// Boolean type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidBool {
     constant: Option<bool>,
     query: bool,

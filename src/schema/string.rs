@@ -9,7 +9,7 @@ use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
 
 /// String type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidStr {
     in_vec: Vec<String>,
     nin_vec: Vec<String>,

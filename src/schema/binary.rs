@@ -8,7 +8,7 @@ use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
 
 /// Binary type validator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidBin {
     in_vec: Vec<Box<[u8]>>,
     nin_vec: Vec<Box<[u8]>>,

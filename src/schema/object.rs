@@ -159,7 +159,7 @@ impl ValidObj {
                     Err(Error::new(InvalidData, "`req` field must contain an object."))
                 }
             }
-            "type" => Ok("Obj" == read_str(raw)?),
+            "type" => if "Obj" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Obj")) },
             "unknown_ok" => {
                 self.unknown_ok = read_bool(raw)?;
                 Ok(true)

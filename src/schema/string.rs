@@ -164,7 +164,7 @@ impl ValidStr {
                 self.regex = read_bool(raw)?;
                 Ok(true)
             },
-            "type" => Ok("Str" == read_str(raw)?),
+            "type" => if "Str" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Str")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in string validator")),
         }
     }

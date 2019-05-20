@@ -189,6 +189,7 @@ impl <'a> ValidBuilder<'a> {
 
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
 /// entry.
+#[derive(Clone, Debug)]
 pub struct Schema {
     object: ValidObj,
     entries: Vec<(String, usize)>,
@@ -210,6 +211,9 @@ impl Schema {
         };
         object_iterate(raw, num_fields, |field, raw| {
             match field {
+                "" => {
+                    read_hash(raw).map_err(|_e| Error::new(InvalidData, "Schema's empty field didn't contain root Schema Hash"))?;
+                },
                 "description" => {
                     read_str(raw).map_err(|_e| Error::new(InvalidData, "`description` field didn't contain string"))?;
                 },
@@ -240,8 +244,14 @@ impl Schema {
                             let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
                             if v == (types.len() - 1) {
                                 let v = types.pop();
-                                if let Some(index) = type_names.get(field) {
-                                    types[*index] = v.unwrap();
+                                match field {
+                                    "Null" | "Bool" | "Int" | "Str" | "F32" | "F64" | "Bin" |
+                                    "Array" | "Obj" | "Hash" | "Ident" | "Lock" | "Time" | "Multi" => (),
+                                    _ => {
+                                        if let Some(index) = type_names.get(field) {
+                                            types[*index] = v.unwrap();
+                                        }
+                                    }
                                 }
                             }
                             Ok(())
@@ -544,7 +554,7 @@ impl Validator {
             },
             Validator::Null => {
                 match field {
-                    "type" => Ok("Null" == read_str(raw)?),
+                    "type" => if "Null" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Null")) },
                     _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Null validator")),
                 }
             },

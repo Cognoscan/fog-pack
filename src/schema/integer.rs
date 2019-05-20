@@ -162,7 +162,7 @@ impl ValidInt {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => Ok("Int" == read_str(raw)?),
+            "type" => if "Int" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Int")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Integer validator")),
         }
     }

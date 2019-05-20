@@ -138,7 +138,7 @@ impl ValidBin {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => Ok("Bin" == read_str(raw)?),
+            "type" => if "Bin" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Bin")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in binary validator")),
         }
     }

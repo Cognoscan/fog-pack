@@ -37,7 +37,7 @@ impl ValidMulti {
                     Err(Error::new(InvalidData, "Multi `any_of` isn't a valid array of validators"))
                 }
             }
-            "type" => Ok("Multi" == read_str(raw)?),
+            "type" => if "Multi" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Multi")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Multi validator")),
         }
     }

@@ -17,16 +17,16 @@ fn main() {
     let test_schema = Document::new(msgpack!({
         //"": Hash::new_empty(),
         "name": "Simple chat schema",
-        "required": {
+        "req": {
             "title": { "type": "Str", "max_len": 255 },
             "description": { "type": "Str" }
         },
         "entries": {
             "post" : {
                 "type": "Obj",
-                "required": {
+                "req": {
                     "time": { "type": "Time" },
-                    "text": { "type": "String" }
+                    "text": { "type": "Str" }
                 }
             }
         }

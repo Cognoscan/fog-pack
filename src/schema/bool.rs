@@ -32,7 +32,7 @@ impl ValidBool {
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
         match field {
-            "type" => Ok("Bool" == read_str(raw)?),
+            "type" => if "Bool" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Bool")) },
             "in" => {
                 self.constant = Some(read_bool(raw)?);
                 Ok(true)

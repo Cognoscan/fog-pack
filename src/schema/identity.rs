@@ -86,7 +86,7 @@ impl ValidIdentity {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => Ok("Ident" == read_str(raw)?),
+            "type" => if "Ident" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Ident")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Identity validator")),
         }
     }

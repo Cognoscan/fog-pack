@@ -41,7 +41,7 @@ impl ValidLock {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => Ok("Lock" == read_str(raw)?),
+            "type" => if "Lock" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Lock")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Lockbox validator")),
         }
     }

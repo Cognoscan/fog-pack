@@ -135,7 +135,7 @@ impl ValidHash {
                 self.schema_ok = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => Ok("Hash" == read_str(raw)?),
+            "type" => if "Hash" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Hash")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Hash validator")),
         }
     }

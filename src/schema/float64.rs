@@ -150,7 +150,7 @@ impl ValidF64 {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => Ok("F64" == read_str(raw)?),
+            "type" => if "F64" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match F64")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in f64 validator")),
         }
     }

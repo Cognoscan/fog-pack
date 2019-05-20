@@ -1,3 +1,20 @@
+// Broad overview of the code
+// ==========================
+//
+// The top-level struct here  is the Schema, which can be created from parsing raw msgpack that 
+// satisfies the schema formating. It is created by parsing "validators", which are represented 
+// here as an enum, `Validator`, which can be one of several types of validator. Each type has its 
+// own module, with the exceptions of Null, Valid, Invalid, and Type.
+//
+// Validators are all stored in the Schema as a flat Vec, and are always indexed into this Vec. 
+// This way, all validators are in a simple, constant-time lookup flat structure. The first two 
+// elements of this structure are reserved for "Invalid" and "Valid", which are often used in other 
+// validator code, especially in instersections.
+//
+// Because schema can have aliased, named validators in the "types" top-level field, construction 
+// of these is a bit complex. The validators in the "types" fields are parsed, then, if a validator 
+// is appended at the very end of the "types" Vec, it is popped off and put in the appropriate 
+// place. If it isn't at the very end, then it is referencing another type and is ignored.
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
@@ -216,6 +233,23 @@ impl Schema {
                "field_type" | "max_fields" | "min_fields" | "req" | "opt" | "unknown_ok" => {
                    object.update(field, raw, false, &mut types, &mut type_names)?;
                 },
+                "types" => {
+                    if let MarkerType::Object(len) = read_marker(raw)? {
+                        object_iterate(raw, len, |field, raw| {
+                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
+                            if v == (types.len() - 1) {
+                                let v = types.pop();
+                                if let Some(index) = type_names.get(field) {
+                                    types[*index] = v.unwrap();
+                                }
+                            }
+                            Ok(())
+                        })?;
+                    }
+                    else {
+                        return Err(Error::new(InvalidData, "`entries` field doesn't contain an Object"));
+                    }
+                }
                 _ => {
                     return Err(Error::new(InvalidData, "Unrecognized field in schema document"));
                 }
@@ -337,8 +371,9 @@ impl Validator {
                     Validator::Timestamp(ValidTime::new(is_query)),
                     Validator::Multi(ValidMulti::new(is_query)),
                 ];
-                let mut possible_check = vec![true; possible.len()];
+                let mut possible_check = vec![2u8; possible.len()];
 
+                // Try all of the possible validators on each field
                 object_iterate(raw, len, |field, raw| {
                     match field {
                         "comment" => {
@@ -348,22 +383,51 @@ impl Validator {
                             let mut raw_now = &raw[..];
                             possible_check.iter_mut()
                                 .zip(possible.iter_mut())
-                                .filter(|(check,_)| !**check)
+                                .filter(|(check,_)| **check > 0)
                                 .for_each(|(check,validator)| {
                                     let mut raw_local = &raw_now[..];
-                                    let result = validator.update(field, &mut raw_local, is_query, types, type_names).unwrap_or(false);
-                                    if result {
+                                    let result = validator.update(field, &mut raw_local, is_query, types, type_names)
+                                        .and_then(|x| if x { Ok(2) } else { Ok(1) })
+                                        .unwrap_or(2);
+                                    if result != 0 {
                                         *raw = raw_local;
                                     }
-                                    *check = result;
+                                    if (*check == 2) || ((*check == 1) && (result == 0)) {
+                                        *check = result;
+                                    }
                                 });
                         }
                     }
                     Ok(())
                 })?;
 
-                return Err(Error::new(Other, "Can't yet decode this validator type"));
-            }
+                let possible_count = possible_check.iter().fold(0, |acc, x| acc + if *x > 0 { 1 } else { 0 });
+                if possible_count == possible.len() {
+                    // Generic "valid" validator
+                    Validator::Valid
+                }
+                else if possible_count > 1 {
+                    if possible_check[1] > 0 {
+                        possible[1].clone()
+                    }
+                    else {
+                        return Err(Error::new(InvalidData, "Validator isn't specific enough. Specify more fields"))
+                    }
+                }
+                else if possible_count != 0 {
+                    let mut index: usize = 0;
+                    for i in 0..possible_check.len() {
+                        if possible_check[i] > 0 {
+                            index = i;
+                            break;
+                        }
+                    }
+                    possible[index].clone()
+                }
+                else {
+                    return Err(Error::new(InvalidData, "Not a recognized validator"));
+                }
+            },
         };
 
         if let Validator::Type(name) = validator {

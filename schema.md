@@ -82,7 +82,8 @@ The permitted optional fields are:
 	types here, it will fail validation.
 - `types`: Array of data types. Each named type can be referred to as a type in 
 	the `required`, `optional`, and `entries` arrays. It may also be referred to 
-	by other types in the `types` array.
+	by other types in the `types` array. A type *may not* be aliased; that is, a 
+	type may not consist solely of a reference to another type.
 - `unknown_ok`: Boolean indicating if unknown fields are allowed in the 
 	document.
 

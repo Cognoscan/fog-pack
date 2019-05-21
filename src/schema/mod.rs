@@ -86,6 +86,10 @@ impl Checklist {
         }
     }
 
+    pub fn iter(&self) -> ::std::collections::hash_map::Iter<Hash, Vec<usize>> {
+        self.list.iter()
+    }
+
     pub fn get_list(&self, hash: &Hash) -> Option<&Vec<usize>> {
         self.list.get(hash)
     }

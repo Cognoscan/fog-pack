@@ -65,6 +65,14 @@ impl Entry {
         self.hash.clone()
     }
 
+    pub fn field(&self) -> String {
+        self.field.clone()
+    }
+
+    pub fn to_parts(self) -> (Hash, String, Vec<u8>) {
+        (self.hash, self.field, self.content)
+    }
+
     pub fn encode(&self, buf: &mut Vec<u8>) {
         buf.reserve(self.len);
         buf.extend_from_slice(&self.content[..]);

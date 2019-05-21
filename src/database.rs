@@ -211,7 +211,7 @@ struct InternalDb {
     /// The document database
     doc_db: HashMap<Hash,(usize, Vec<u8>,Permission,u32)>,
     /// The database of entries
-    entry_db: HashMap<Hash, Vec<(Entry,u32)>>,
+    entry_db: HashMap<Hash, Vec<(String,Vec<u8>,u32)>>,
     /// Tracking how many places a given schema is used.
     schema_tracking: HashMap<Hash, usize>,
 }
@@ -235,7 +235,7 @@ impl InternalDb {
                     // extract_schema verifies the document is a msgpack object & gets the schema.
                     let result = match document::extract_schema(&doc[..]) {
                         Ok(Some(schema_hash)) => {
-                            let result = match self.doc_db.get(&schema_hash) {
+                            match self.doc_db.get(&schema_hash) {
                                 Some((_,schema,_,_)) => {
                                     // Get the schema and verify the document
                                     let schema_result = Schema::from_raw(&mut &schema[..]);
@@ -258,10 +258,7 @@ impl InternalDb {
                                 None => {
                                     ChangeResult::SchemaNotFound
                                 }
-                            };
-                            if result == ChangeResult::Ok {
                             }
-                            result
                         }
                         Ok(None) => {
                             ChangeResult::Ok
@@ -300,10 +297,55 @@ impl InternalDb {
                 };
                 if result == ChangeResult::Ok {
                     self.doc_db.remove(&hash);
+                    self.entry_db.remove(&hash);
                 }
                 result
             },
-            ChangeRequest::AddEntry(_)      => ChangeResult::Failed,
+            ChangeRequest::AddEntry((entry, ttl)) => {
+                let (doc_hash, field, entry) = entry.to_parts();
+                let result = self.doc_db.get(&doc_hash);
+                if result.is_none() { return ChangeResult::NoSuchDoc; }
+                let (_,doc,_,_) = result.unwrap();
+                if let Some(schema_hash) = document::extract_schema(&doc[..])
+                    .expect(&format!("Corrupted Database: Document wasn't a valid document: {:X?}", doc_hash))
+                {
+                    let (_,schema,_,_) = self.doc_db
+                        .get(&schema_hash)
+                        .expect(&format!("Corrupted Database: Document's schema is missing: {:X?}", schema_hash));
+                    let schema = Schema::from_raw(&mut &schema[..])
+                        .expect(&format!("Corrupted Database: Schema that was added can't be read: {:X?}", schema_hash));
+
+                    // Validate against retrieved schema
+                    let checklist = schema.validate_entry(&field, &mut &entry[..]);
+                    if checklist.is_err() { return ChangeResult::FailedSchemaCheck; }
+                    let checklist = checklist.unwrap();
+
+                    // Go through all items in the checklist created by the schema
+                    if checklist.iter().all(|(hash, list)| {
+                        if let Some((_,doc,_,_)) = self.doc_db.get(&hash) {
+                            list.iter().all(|index| schema.validate_checklist_item(*index, &mut &doc[..]).is_ok())
+                        }
+                        else {
+                            false
+                        }
+                    })
+                    {
+                        self.entry_db.entry(doc_hash)
+                            .or_insert(Vec::with_capacity(1)) 
+                            .push((field, entry, ttl));
+                        ChangeResult::Ok
+                    }
+                    else {
+                        ChangeResult::FailedSchemaCheck
+                    }
+                }
+                else {
+                    self.entry_db.entry(doc_hash)
+                        .or_insert(Vec::with_capacity(1)) 
+                        .push((field, entry, ttl));
+                    ChangeResult::Ok
+                }
+            }
             ChangeRequest::DelEntry(_)      => ChangeResult::Failed,
             ChangeRequest::DelQuery(_)      => ChangeResult::Failed,
             ChangeRequest::SetTtlDoc(_)     => ChangeResult::Failed,

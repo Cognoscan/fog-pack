@@ -110,7 +110,9 @@ pub fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
 
 /// Convert from a raw vector straight into a document. This should *only* be called by the 
 /// internal database, as it does not do complete validity checking. It only verifies the hash and 
-/// extracts signatues. It should not be expected that these checks will always occur.
+/// extracts signatues. It should not be expected that these checks will always occur. The expected 
+/// use case is solely for converting a pre-checked raw document into a `Document`. If checks need 
+/// to be performed, see the `from_raw_parts` function.
 pub fn from_raw(hash: &Hash, data: Vec<u8>, doc_len: usize) -> io::Result<Document> {
     if doc_len > data.len() { 
         return Err(io::Error::new(InvalidData, "Document length greater than raw data length"));
@@ -141,7 +143,31 @@ pub fn from_raw(hash: &Hash, data: Vec<u8>, doc_len: usize) -> io::Result<Docume
     })
 }
 
-
+/// This function constructs a final document using precomputed components. The expected sequence 
+/// is:
+/// 1. Read the document object and (if required) validate it against a schema.
+/// 2. Calculate the document object hash and keep the hash state.
+/// 3. Remaining bytes are signatures. Read each signature and verify it with the document object 
+///    hash. Store the `Identity` associated with each signature in a vector.
+/// 4. Using the hash state from calculating the document object, update it with the remaining 
+///    bytes. Then take the final hash and verify it matches the document's full hash.
+/// 5. A document can now be constructed using this function.
+pub fn from_raw_parts(
+    doc_hash: Hash,
+    data: Vec<u8>,
+    doc_len: usize,
+    hash_state: HashState,
+    signed_by: Vec<Identity>
+    ) -> Document
+{
+    Document {
+        hash_state,
+        doc_hash,
+        doc_len,
+        doc: data,
+        signed_by
+    }
+}
 
 
 

@@ -1,9 +1,12 @@
 Schema Language
 ===============
 
-This specifies a schema language for validating documents and their entries. A 
-schema document is itself a MessagePack Document, and conforms to a schema 
-document.
+This specifies both the schema and query language used to validate documents and 
+their entries. Queries are themselves schema, which are used to return all 
+documents & entries that meet the schema.
+
+A schema document is itself a MessagePack Document, and conforms to the root 
+schema.
 
 The primary purpose of a schema document is to specify agreed-upon formats for 
 documents and entries. By doing so, a query does not need to include any 
@@ -11,9 +14,39 @@ validation criteria. The secondary purpose of a schema document is to specify
 which fields should be queryable, and how they may be queried. This allows a 
 database to optimize for queries ahead of time.
 
+Queries are schema documents that narrow the scope of acceptable entries.
+When a query is made against a document, it returns only the entries (and 
+associated documents) that meet the query schema.
+
 All documents may refer to the schema document they meet using an empty string 
 for the field. This unique field, if used, must contain a schema hash. If left 
-unspecified, it is assumed that there is no schema.
+unspecified, it is assumed that there is no schema. For example, a basic 
+schema might look like:
+
+```json
+{
+	"document(Basic Schema)" : [{
+		"": "<Hash(Condense-db Core Schema)>",
+		"name": "Simple Schema",
+		"required": {
+			"title": { "type": "Str", max_len: 255},
+			"text": { "type": "Str" }
+		}
+	}]
+}
+```
+
+A document that uses this "Basic Schema" would look like:
+
+```json
+{
+	"document(Example)": [{
+		"": "<Hash(Basic Schema)>",
+		"title": "Example Document",
+		"text": "This is an example document that meets a schema"
+	}]
+}
+```
 
 When are Documents Validated?
 -----------------------------
@@ -34,64 +67,69 @@ A entry is similarly simple. It must:
 
 1. Be an entry for a document already in the database
 2. Be a valid entry for that document
+3. Link to documents already in the database
 
 If the above rules are met for a document/entry, then it passes validation and 
 will be added into the database.
 
+A document/schema does not have to already be in the database if it is part of 
+the same transaction made to the database. That is, a document and its schema 
+may be added at the same time, instead of one preceeded by the other.
+
 ### Validating received data
 
-Received data must be temporarily cached in order to support validation. When a 
-document is received, if it refers to a schema document not yet in the database, 
-a query for that schema document will be generated. This query will have the 
-same permissions as the query that resulted in the received document. It will be 
-considered a related query - see the [query specification](query.md) for 
-details.
+Received data is always validated using local schema. If a schema is 
+unrecognized, the document is rejected and a notice is sent to the query 
+originator, along with the missing schema document.
 
-Once the schema document is either in the database or cached, the received 
-document is validated against it. The same goes for received entries. If a 
-received entry refers to a document not received or in the database, it is held 
-until all documents have been received or added to the database.
+Received data may be temporarily cached in order to support validation. 
+Specifically, when an entry is received, it may refer to documents that must 
+also be validated. The entry is cached until all related documents are received, 
+either via an external source or from the local database.
 
 Schema Document Format
 ----------------------
 
-The core concept in schema documents is the "data type". A data type is an 
-object containing the validation rules for a given field. It can directly define 
-a field, or it can be aliased and used throughout the schema document. 
+The core concept in schema documents is the validator. A validator is an 
+object containing the validation rules for a particular part of a document. It 
+can directly define the rules, or it can be aliased and used throughout the 
+schema document. Validators are always one of the following types: `Null`, 
+`Bool`, `Int`, `F32`, `F64`, `Bin`, `Str`, `Obj`, `Array`, `Hash`, `Ident`, 
+`Lock`, `Time`, or `Multi`. A Validator may be aliased by using a type name not 
+in this list, in which case it will use a validator in the schema's `types` 
+object, detailed later.
 
-A schema document consists of some descriptive fields, 3 array fields specifying 
-what fields are permitted in the document, an array of data type definitions 
-that may be used in the schema, and a boolean field indicating if the schema 
-permits unknown fields in a document.
+At the top level, a schema document is an object validator with a few extra 
+fields. The object validator is used for the document itself. The additional 
+fields are for additional description, for entry validation, and for aliased 
+validators.
 
 A schema document must, at minimum, have a name field. This should be a 
 descriptive string naming the schema. The other permitted fields are all 
 optional, and unspecified fields are not allowed.
 
-The permitted optional fields are:
+The permitted optional fields (besides those of the object validator) are:
 
-- `comment`: Description of the schema. Not used in validation.
+- `name`: A name for the schema. Always a string.
+- `description`: A string describing the intent of the schema.
 - `version`: Version number to differentiate from previously named schema. Not 
-	used in validation.
-- `required`: Array of data types. Each named type is a field that must be 
-	present in a document meeting the schema.
-- `optional`: Array of data types. Each named type is a field that can be 
-	present in a document meeting the schema.
-- `entries`: Array of data types. Each named type is a field that can be used in 
-	an entry attached to the document. If an entry does not match one of the data 
-	types here, it will fail validation.
-- `types`: Array of data types. Each named type can be referred to as a type in 
-	the `required`, `optional`, and `entries` arrays. It may also be referred to 
-	by other types in the `types` array. A type *may not* be aliased; that is, a 
-	type may not consist solely of a reference to another type.
-- `unknown_ok`: Boolean indicating if unknown fields are allowed in the 
-	document.
+	used in validation. This is always a non-negative integer.
+- `entries`: Object whose fields are acceptable entry fields. The value for 
+	a field is the validator that will be used when an entry with the field is 
+	attached to a document.
+- `types`: Object whose fields are names for various validators. The value for a 
+	field is the validator referred to by the name.
 
-Names that begin with a "$" character are considered reserved, as are the base 
-type names. If a schema has a named type beginning with a "$" or attempts to 
-override one of the base type, that type shall be ignored. The exception to this 
-is when validating the root schema document or the query schema document, both 
-of which define the reserved types.
+### Aliasing Validators
+
+A Validator alias may be created by using a Validator with a single field, 
+`type`, whose value is a string that isn't one of the base types (that is, not 
+`Int`, `Bin`, and so on). In this case, the type name will be looked up in the 
+schema's `types` object. If it is not present, validation fails. If the 
+validator is cyclically or self-referential, validation also fails.
+
+If there is a field in `types` that equals one of the base type names, it will 
+never be used.
 
 ### Validation Sequence
 

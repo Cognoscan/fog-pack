@@ -14,11 +14,15 @@ pub struct ValidBin {
     nin_vec: Vec<Box<[u8]>>,
     min_len: usize,
     max_len: usize,
+    min: Box<[u8]>,
+    max: Option<Box<[u8]>>,
     bits_set: Vec<u8>,
     bits_clr: Vec<u8>,
     query: bool,
     ord: bool,
     bit: bool,
+    ex_min: bool, // setup only
+    ex_max: bool, // setup only
 }
 
 impl ValidBin {
@@ -28,11 +32,15 @@ impl ValidBin {
             nin_vec: Vec::with_capacity(0),
             min_len: usize::min_value(),
             max_len: usize::max_value(),
+            min: Vec::new().into_boxed_slice(),
+            max: None,
             bits_set: Vec::with_capacity(0),
             bits_clr: Vec::with_capacity(0),
             query: is_query,
             ord: is_query,
             bit: is_query,
+            ex_min: false,
+            ex_max: false,
         }
     }
 
@@ -70,6 +78,15 @@ impl ValidBin {
                 read_vec(raw)?;
                 Ok(true)
             }
+            "ex_max" => {
+                self.ex_max = read_bool(raw)?;
+                Ok(true)
+            },
+            "ex_min" => {
+                self.ex_min = read_bool(raw)?;
+                self.min = vec![1u8].into_boxed_slice();
+                Ok(true)
+            },
             "in" => {
                 match read_marker(raw)? {
                     MarkerType::Binary(len) => {
@@ -91,6 +108,20 @@ impl ValidBin {
                 }
                 Ok(true)
             },
+            "max" => {
+                let mut max = read_vec(raw)?;
+                if !self.ex_max {
+                    if max.iter_mut().all(|x| {
+                        let (y, carry) = x.overflowing_add(1);
+                        *x = y;
+                        carry
+                    }) {
+                        max.push(1u8);
+                    }
+                }
+                self.max = Some(max.into_boxed_slice());
+                Ok(true)
+            }
             "max_len" => {
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.max_len = len as usize;
@@ -99,6 +130,20 @@ impl ValidBin {
                 else {
                     Ok(false)
                 }
+            }
+            "min" => {
+                let mut min = read_vec(raw)?;
+                if self.ex_min {
+                    if min.iter_mut().all(|x| {
+                        let (y, carry) = x.overflowing_add(1);
+                        *x = y;
+                        carry
+                    }) {
+                        min.push(1u8);
+                    }
+                }
+                self.min = min.into_boxed_slice();
+                Ok(true)
             }
             "min_len" => {
                 if let Some(len) = read_integer(raw)?.as_u64() {
@@ -209,6 +254,22 @@ impl ValidBin {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains binary longer than max length of {}", field, self.min_len)))
         }
+        else if self.min.iter()
+            .zip(value.iter().chain(repeat(&0u8)))
+            .fold(false, |carry, (min, val)| {
+                if carry {
+                    let (result, carry) = val.overflowing_sub(*min);
+                    result == 0 || carry
+                }
+                else {
+                    let (_, carry) = val.overflowing_sub(*min);
+                    carry
+                }
+            })
+        {
+            Err(Error::new(InvalidData,
+                format!("Field \"{}\" is greater than maximum", field)))
+        }
         else if self.bits_set.iter()
             .zip(value.iter().chain(repeat(&0u8)))
             .any(|(bit, val)| (bit & val) != *bit)
@@ -252,6 +313,7 @@ impl ValidBin {
                     Ok(Validator::Invalid)
                 }
                 else {
+                    // Calculate in_vec
                     let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
                         sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
                     }
@@ -261,16 +323,33 @@ impl ValidBin {
                     else {
                         other.in_vec.clone()
                     };
+                    // Create new min
+                    let min = if self.min > other.min { self.min.clone() } else { other.min.clone() };
+                    // Create new max
+                    let max = if let (Some(s), Some(o)) = (&self.max, &other.max) {
+                        if s > o { other.max.clone() } else { self.max.clone() }
+                    }
+                    else if self.max.is_some() {
+                        self.max.clone()
+                    }
+                    else {
+                        other.max.clone()
+                    };
+
                     let mut new_validator = ValidBin {
                         in_vec: in_vec,
                         nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
                         min_len: self.min_len.max(other.min_len),
                         max_len: self.max_len.min(other.max_len),
+                        min: min,
+                        max: max,
                         bits_set: self.bits_set.iter().zip(other.bits_set.iter()).map(|(a,b)| a | b).collect(),
                         bits_clr: self.bits_clr.iter().zip(other.bits_clr.iter()).map(|(a,b)| a | b).collect(),
                         query: self.query && other.query,
                         ord: self.ord && other.ord,
                         bit: self.bit && other.bit,
+                        ex_min: false,
+                        ex_max: false,
                     };
                     if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
                         return Ok(Validator::Invalid);

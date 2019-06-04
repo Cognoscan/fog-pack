@@ -5,7 +5,7 @@ use condense_db::*;
 fn main() {
     println!("Start up the system");
     crypto::init().expect("Couldn't initialize random-number generator");
-    let db = Db::new();
+    let db = Db::new("simple_setup").unwrap();
     let mut vault = crypto::Vault::new_from_password(
         crypto::PasswordLevel::Interactive,
         String::from("BadPassword")).unwrap();
@@ -61,10 +61,11 @@ fn main() {
 
 
     println!("Making an entry");
-    let test_entry = Entry::new_signed(doc_hash.clone(), String::from("post"), msgpack!({
+    let mut test_entry = Entry::new(doc_hash.clone(), String::from("post"), msgpack!({
         "time": Timestamp::now().unwrap(),
         "text": "Making a post",
-    }), &vault, &my_key).unwrap();
+    })).unwrap();
+    test_entry.sign(&vault, &my_key).unwrap();
     let res = db.add_entry(test_entry, 0).unwrap();
     let res = res.recv().unwrap();
     println!("    Got back: {:?}", res);

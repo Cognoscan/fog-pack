@@ -1,4 +1,18 @@
 {
+	"document(Basic Schema)" : [{
+		"": "<Hash(Condense-db Core Schema)>",
+		"name": "Simple Schema",
+		"required": {
+			"title": { "type": "Str", max_len: 255},
+			"text": { "type": "Str" }
+		}
+	}],
+
+	"document(Example)": [{
+		"": "<Hash(Basic Schema)>",
+		"title": "Example Document",
+		"text": "This is an example document that meets a schema"
+	}],
   "document(Condense-db Query Schema)" : [{
     "": "<Hash(Condense-db Core Schema)>",
     "name": "Condense-db core schema",

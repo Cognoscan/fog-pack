@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use crossbeam_channel::{TrySendError, TryRecvError, RecvError, Sender, Receiver, unbounded, bounded, Select};
+use std::path::Path;
 
 use super::{Schema, Permission, Query, Hash, Document, Entry};
 use document;
@@ -86,17 +87,18 @@ pub struct Db {
 }
 
 impl Db {
-    pub fn new() -> Db {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Db, String> {
         let (control_in, control_out) = unbounded();
         let (change_in, change_out) = unbounded();
         let (query_in, query_out) = unbounded();
-        let handle = std::thread::spawn(move || db_loop(control_out, change_out, query_out));
-        Db {
+        let db = rocksdb::DB::open_default(path).map_err(|e| e.into_string())?;
+        let handle = std::thread::spawn(move || db_loop(db, control_out, change_out, query_out));
+        Ok(Db {
             handle,
             control_in,
             change_in,
             query_in
-        }
+        })
     }
 
     /// Submit a change request to the database. Returns a `ChangeWait`, which will eventually 
@@ -453,6 +455,7 @@ impl OpenQuery {
 /// - A database management command has been issued
 /// 
 fn db_loop(
+    rocks_db: rocksdb::DB,
     control: Receiver<DbControl>,
     change: Receiver<(ChangeRequest, Sender<ChangeResult>)>,
     query_inbox: Receiver<(QueryRequest, Sender<QueryResponse>, Receiver<()>)>)

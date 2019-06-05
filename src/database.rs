@@ -1,3 +1,75 @@
+//! Internal Database
+//! =================
+//!
+//! The internal database is a set of 4 key-value stores:
+//!
+//! - data: Documents and entries
+//! - ttl: Timestamps for documents/entries
+//! - root: Flat list of "root" documents
+//! - reference: Counts of references to a document
+//!
+//! Documents in the database are tracked by reference-counting. This provides a semi-intuitive way 
+//! to manage documents without needing to create a complete hierarchy. There are two types of 
+//! references: "strong" references and "weak" references. Both are hash links, but their context 
+//! determines if they are strong or weak:
+//!
+//! - Strong references are hashes in a document, or hashes in an entry that are required for it to 
+//! satisfy a document schema.
+//! - Weak references are hashes in an entry that aren't required to satisfy a document schema.
+//!
+//! ### Adding a document
+//!
+//! The document is first checked to make sure it may be added:
+//!
+//! 1. It is checked against its schema
+//! 2. `root` is checked to make sure the name is unique, if it is a root document.
+//!
+//! The database is then updated in the following way:
+//! 1. `data` is updated: the key is the document hash, the value is the raw document.
+//! 2. `reference` is updated: the key is the document hash. It contains u32 counters: one for 
+//!    counting references from `root`, one for counting references from documents/entries that 
+//!    require it, and one for counting all other references.
+//! 3. `reference` is updated: the schema used by the document has its reference counter 
+//!    incremented by 1.
+//! 3. `root` is updated: if the document is a root document, it is added here. The key is the 
+//!    unique name, and the value is the document hash.
+//! 4. `ttl` is updated. The time to live is converted to a timestamp and used as a key. The length 
+//!    of the document hash, along with the hash itself, is appended to the value at that key.
+//!
+//! ### Deleting a Document
+//!
+//! Documents (and their entries) are automatically removed if there are no references to it from 
+//! `root` AND one of the following is true:
+//!
+//! 1. TTL has expired and the requirement counter in `reference` is 0.
+//! 2. TTL has expired and it cannot be reached through required hash links from root documents & 
+//!    their entries.
+//! 3. It cannot be reached through any hash links, required or otherwise.
+//!
+//! This should make document deletion relatively easy for the user. Essential documents will 
+//! always stick around, while they can be managed by changing TTL and whether they are in `root` 
+//! or not.
+//!
+//! Deletion Strategy
+//! -----------------
+//!
+//! Deletion from `root` updates the `reference` counters. A document is immediately deleted if the 
+//! reference counters are 0 afterwards. The entries are then immediately deleted and the reference 
+//! counters for them are updated, at which point deletion halts. If any reference counters are all 
+//! 0, document deletion is scheduled for the future.
+//!
+//! Periodically, the database will try to delete data. It will first go through any deletion 
+//! already scheduled, update things accordingly, and finish if things were deleted. If there are 
+//! no deletions scheduled, it will run a tracing garbage collection algorithm on remaining 
+//! non-root objects.
+//!
+//! Every couple of minutes, the database will run through the `ttl` list and attempt to delete 
+//! stale documents & entries. If a document cannot be deleted due to non-zero reference counters, 
+//! it will be marked for deletion the moment the strong references are removed.
+//!
+
+
+
 use std::collections::HashMap;
 use crossbeam_channel::{TrySendError, TryRecvError, RecvError, Sender, Receiver, unbounded, bounded, Select};
 use std::path::Path;
@@ -210,6 +282,8 @@ impl QueryWait {
 }
 
 struct InternalDb {
+    /// The core database
+    rocks_db: rocksdb::DB,
     /// The document database
     doc_db: HashMap<Hash,(usize, Vec<u8>,Permission,u32)>,
     /// The database of entries

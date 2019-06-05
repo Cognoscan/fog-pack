@@ -1,3 +1,5 @@
+extern crate tempfile;
+
 extern crate condense_db;
 
 use condense_db::*;
@@ -5,7 +7,8 @@ use condense_db::*;
 fn main() {
     println!("Start up the system");
     crypto::init().expect("Couldn't initialize random-number generator");
-    let db = Db::new("simple_setup").unwrap();
+    let db_dir = tempfile::tempdir().unwrap();
+    let db = Db::new(db_dir.path()).unwrap();
     let mut vault = crypto::Vault::new_from_password(
         crypto::PasswordLevel::Interactive,
         String::from("BadPassword")).unwrap();

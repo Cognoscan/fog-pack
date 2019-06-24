@@ -146,7 +146,8 @@ pub enum QueryResponse {
     Invalid,
     /// One of the documents retrieved failed schema validation.
     BadDoc(Hash),
-    /// One of the documents retrieved used an unknown schema.
+    /// One of the documents retrieved used an unknown schema. First Hash is the document, second 
+    /// hash is the Schema.
     UnknownSchema((Hash, Hash)),
 }
 

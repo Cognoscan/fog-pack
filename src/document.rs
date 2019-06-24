@@ -109,27 +109,33 @@ pub fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
 }
 
 /// Convert from a raw vector straight into a document. This should *only* be called by the 
-/// internal database, as it does not do complete validity checking. It only verifies the hash and 
-/// extracts signatues. It should not be expected that these checks will always occur. The expected 
-/// use case is solely for converting a pre-checked raw document into a `Document`. If checks need 
-/// to be performed, see the `from_raw_parts` function.
+/// internal database, as it does not do complete validity checking. It only verifies the hash, 
+/// extracts signatures, and check them. The use case is solely for converting a pre-checked raw 
+/// document into a `Document`. If checks need to be performed, see the `from_raw_parts` function.
 pub fn from_raw(hash: &Hash, data: Vec<u8>, doc_len: usize) -> io::Result<Document> {
-    if doc_len > data.len() { 
-        return Err(io::Error::new(InvalidData, "Document length greater than raw data length"));
+    if doc_len > data.len() { return Err(io::Error::new(InvalidData, "Document length greater than 
+                                                        raw data length"));
     }
     let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+    // Get the HashState up to the correct point
+    hash_state.update(&data[..doc_len]);
+    let doc_hash = hash_state.get_hash();
+
+    // Get & validate signatures
     let mut signed_by = Vec::new();
     {
         let mut index = &mut &data[doc_len..];
         while index.len() > 0 {
             let signature = crypto::Signature::decode(&mut index)
                 .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
+            if !signature.verify(&doc_hash) {
+                return Err(io::Error::new(InvalidData, "Signatures did not validate"));
+            }
             signed_by.push(signature.signed_by().clone());
         }
     }
-    // Get the HashState up to the correct point
-    hash_state.update(&data[..doc_len]);
-    let doc_hash = hash_state.get_hash();
+    
+    // Update hasher with the signatures
     hash_state.update(&data[doc_len..]);
     if hash != &hash_state.get_hash() {
         return Err(io::Error::new(InvalidData, "Raw document doesn't match stored hash"));

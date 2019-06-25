@@ -42,7 +42,7 @@ impl Document {
     /// (`BadKey`), can't be found (`NotInStorage`).
     pub fn sign(&mut self, vault: &Vault, key: &Key) -> Result<(), CryptoError> {
         let signature = vault.sign(&self.doc_hash, key)?;
-        self.signed_by.push(key.get_identity());
+        self.signed_by.push(signature.signed_by().clone());
         let len = self.doc.len();
         signature.encode(&mut self.doc);
         if self.doc.len() > len {
@@ -87,7 +87,7 @@ impl Document {
 
 // Finds the schema hash for a raw, encoded document. Fails if raw data isn't an object, or if 
 // the empty field ("") doesn't contain a Hash. If there is no empty field, `None` is returned.
-pub fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
+pub fn extract_schema_hash(buf: &[u8]) -> io::Result<Option<Hash>> {
     let mut buf: &[u8] = buf;
     // Get the object tag & number of field/value pairs it has
     let obj_len = if let MarkerType::Object(len) = decode::read_marker(&mut buf)? {
@@ -113,8 +113,8 @@ pub fn extract_schema(buf: &[u8]) -> io::Result<Option<Hash>> {
 /// extracts signatures, and check them. The use case is solely for converting a pre-checked raw 
 /// document into a `Document`. If checks need to be performed, see the `from_raw_parts` function.
 pub fn from_raw(hash: &Hash, data: Vec<u8>, doc_len: usize) -> io::Result<Document> {
-    if doc_len > data.len() { return Err(io::Error::new(InvalidData, "Document length greater than 
-                                                        raw data length"));
+    if doc_len > data.len() {
+        return Err(io::Error::new(InvalidData, "Document length greater than raw data length"));
     }
     let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
     // Get the HashState up to the correct point

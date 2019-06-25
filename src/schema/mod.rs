@@ -27,7 +27,7 @@ use byteorder::{ReadBytesExt, BigEndian};
 use MarkerType;
 use decode::*;
 use crypto::Hash;
-use document::extract_schema;
+use document::extract_schema_hash;
 
 mod bool;
 mod integer;
@@ -301,7 +301,7 @@ impl Schema {
     pub fn validate_checklist_item(&self, index: usize, doc: &mut &[u8]) -> io::Result<()> {
         if let Validator::Hash(ref v) = self.types[index] {
             // Extract schema. Also verifies we are dealing with an Object (an actual document)
-            let doc_schema = extract_schema(&doc.clone())?;
+            let doc_schema = extract_schema_hash(&doc.clone())?;
             // Check against acceptable schemas
             if v.schema_required() {
                 if let Some(hash) = doc_schema {

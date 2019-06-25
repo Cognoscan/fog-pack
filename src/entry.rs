@@ -47,7 +47,7 @@ impl Entry {
     /// more than 127 times (`BadLength`)
     pub fn sign(&mut self, vault: &Vault, key: &Key) -> Result<(), CryptoError> {
         let signature = vault.sign(&self.entry_hash, key)?;
-        self.signed_by.push(key.get_identity());
+        self.signed_by.push(signature.signed_by().clone());
         let len = self.entry.len();
         signature.encode(&mut self.entry);
         if self.entry.len() > len {
@@ -120,17 +120,23 @@ pub fn from_raw(
     super::encode::write_value(&mut temp_vec, &Value::from(field.clone()));
     hash_state.update(&temp_vec[..]);
     hash_state.update(&data[..entry_len]);
+    let entry_hash = hash_state.get_hash();
+
+    // Get & validate signatures
     let mut signed_by = Vec::new();
     {
         let mut index = &mut &data[entry_len..];
         while index.len() > 0 {
             let signature = crypto::Signature::decode(&mut index)
-                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
+                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw entry"))?;
+            if !signature.verify(&entry_hash) {
+                return Err(io::Error::new(InvalidData, "Signatures did not validate for entry"));
+            }
             signed_by.push(signature.signed_by().clone());
         }
     }
-    // Get the HashState up to the correct point
-    let entry_hash = hash_state.get_hash();
+
+    // Finish updating the hash state
     hash_state.update(&data[entry_len..]);
     if hash != &hash_state.get_hash() {
         return Err(io::Error::new(InvalidData, "Raw entry doesn't match stored hash"));

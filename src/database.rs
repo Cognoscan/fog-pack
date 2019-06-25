@@ -294,8 +294,9 @@ struct InternalDb {
 }
 
 impl InternalDb {
-    fn new() -> InternalDb {
+    fn new(rocks_db: rocksdb::DB) -> InternalDb {
         InternalDb {
+            rocks_db,
             doc_db: HashMap::new(),
             entry_db: HashMap::new(),
             schema_tracking: HashMap::new(),
@@ -309,8 +310,8 @@ impl InternalDb {
                 if !self.doc_db.contains_key(&hash) {
                     let doc_len = doc.doc_len();
                     let doc = doc.to_vec();
-                    // extract_schema verifies the document is a msgpack object & gets the schema.
-                    let result = match document::extract_schema(&doc[..]) {
+                    // extract_schema_hash verifies the document is a msgpack object & gets the schema.
+                    let result = match document::extract_schema_hash(&doc[..]) {
                         Ok(Some(schema_hash)) => {
                             match self.doc_db.get(&schema_hash) {
                                 Some((_,schema,_,_)) => {
@@ -354,7 +355,7 @@ impl InternalDb {
             ChangeRequest::DelDoc(hash) => {
                 let result = match self.doc_db.get(&hash) {
                     Some((_,doc,_,_)) => {
-                        if let Ok(Some(schema_hash)) = document::extract_schema(&doc[..]) {
+                        if let Ok(Some(schema_hash)) = document::extract_schema_hash(&doc[..]) {
                             self.schema_tracking.entry(schema_hash)
                                 .and_modify(|v| *v -= 1);
                         };
@@ -383,7 +384,7 @@ impl InternalDb {
                 let result = self.doc_db.get(&doc_hash);
                 if result.is_none() { return ChangeResult::NoSuchDoc; }
                 let (_,doc,_,_) = result.unwrap();
-                if let Some(schema_hash) = document::extract_schema(&doc[..])
+                if let Some(schema_hash) = document::extract_schema_hash(&doc[..])
                     .expect(&format!("Corrupted Database: Document wasn't a valid document: {:X?}", doc_hash))
                 {
                     let (_,schema,_,_) = self.doc_db
@@ -430,23 +431,19 @@ impl InternalDb {
         }
     }
 
-    /// Retrieve a document. If decoding the document fails, assume the database was partially 
-    /// corrupted and remove the corrupted document.
-    fn get_doc(&mut self, hash: &Hash, _perm: &Permission) -> Option<Document> {
-        let (result, delete) = match self.doc_db.get(hash) {
+    /// Retrieve a document. If decoding the document fails, return nothing & assume it is 
+    /// corrupted.
+    fn get_doc(&self, hash: &Hash, _perm: &Permission) -> Option<Document> {
+        match self.doc_db.get(hash) {
             Some(storage) => {
                 let doc = storage.1.clone();
                 match super::document::from_raw(hash, doc, storage.0) {
-                    Ok(doc) => (Some(doc), false),
-                    Err(_) => (None, true)
+                    Ok(doc) => Some(doc),
+                    Err(_) => None,
                 }
             },
-            None => (None, false)
-        };
-        if delete {
-            self.doc_db.remove(hash);
+            None => None,
         }
-        result
     }
 }
 
@@ -475,17 +472,6 @@ impl OpenQuery {
 
     fn channel_full(&self) -> bool {
         self.channel.is_full()
-    }
-
-    fn done(&mut self) -> bool {
-        let done = match self.quit.try_recv() {
-            Err(e) => {
-                e.is_disconnected()
-            }
-            _ => false
-        };
-        self.active = !done;
-        done
     }
 
     fn get_in_db(&self) -> bool {
@@ -519,6 +505,38 @@ impl OpenQuery {
     fn try_send(&self, response: QueryResponse) -> Result<(), TrySendError<QueryResponse>> {
         self.channel.try_send(response)
     }
+
+    /// Returns true if the query cannot return anything yet
+    fn not_ready(&self) -> bool {
+        !self.active || self.channel_full() || !self.get_in_db()
+    }
+
+    /// Run the query on the database. This will push either nothing to the response channel, or a 
+    /// single response. It never pushes multiple responses in a single call.
+    fn run(&mut self, db: &InternalDb) {
+        // Check to see if query is still open, and halt if it isn't
+        self.active = match self.quit.try_recv() {
+            Err(e) => {
+                !e.is_disconnected()
+            }
+            _ => true
+        };
+        if !self.active { return; }
+
+        if self.is_root_sent() {
+            if let Ok(()) = self.try_send(QueryResponse::DoneForever) {
+                self.finish();
+            }
+        }
+        match db.get_doc(self.get_root(), self.get_perm()) {
+            Some(doc) => {
+                if let Ok(()) = self.try_send(QueryResponse::Doc((doc, 0))) {
+                    self.root_sent();
+                };
+            },
+            None => { self.set_in_db(false); }
+        };
+    }
 }
 
 /// The primary event loop for the database. The actual database handles change requests, queries, 
@@ -535,7 +553,7 @@ fn db_loop(
     change: Receiver<(ChangeRequest, Sender<ChangeResult>)>,
     query_inbox: Receiver<(QueryRequest, Sender<QueryResponse>, Receiver<()>)>)
 {
-    let mut db = InternalDb::new();
+    let mut db = InternalDb::new(rocks_db);
     let mut done = false;
 
     // Queries to respond to. Contains iterators, response channel, and bool to indicate the query 
@@ -598,25 +616,10 @@ fn db_loop(
         }
 
         for query in open_queries.iter_mut() {
-            // Check to make sure query is open, not full, and we have the document in the database
-            if query.done() { continue; }
-            if query.channel_full() { continue; }
-            if !query.get_in_db() { continue; }
-            // Send DoneForever if we're only retrieving a single document
-            if query.is_root_sent() {
-                if let Ok(()) = query.try_send(QueryResponse::DoneForever) {
-                    query.finish();
-                }
-            }
-            match db.get_doc(query.get_root(), query.get_perm()) {
-                Some(doc) => {
-                    if let Ok(()) = query.try_send(QueryResponse::Doc((doc, 0))) {
-                        query.root_sent();
-                    };
-                },
-                None => { query.set_in_db(false); },
-            };
-        };
+            if query.not_ready() { continue; }
+            query.run(&db);
+            active = true; // Set as long as we keep servicing at least one query
+        }
 
         // Drop completed queries
         open_queries.retain(|query| query.active);

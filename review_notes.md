@@ -15,10 +15,14 @@
 		- DelDoc
 		- SetTtlDoc
 		- SetTtlEntry
+
+
+Done
+----
+- Make sure state management for open queries is all within OpenQuery
+- Change interface to Document/Entry so they give hashes only once they've been 
+  submitted to the database...? Maybe not
+- Change Document/Entry to get Identity from Signature when calling `sign`
 - Rename Document's `extract_schema` to `extract_schema_hash`
 - Change Document's `from_raw` to do the signature verification
 - Change Entry's `from_raw` to do the signature verification
-- Change Document/Entry to get Identity from Signature when calling `sign`
-- Change interface to Document/Entry so they give hashes only once they've been 
-  submitted to the database...? Maybe not
-- Make sure state management for open queries is all within OpenQuery

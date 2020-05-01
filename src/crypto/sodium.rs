@@ -257,7 +257,7 @@ impl Blake2BState {
         // Below will only fail or return -1 if we have more than 64 bytes in input or tell it to use a 
         // non-existant key
         unsafe {
-            state = ::std::mem::uninitialized();
+            state = ::std::mem::MaybeUninit::uninit().assume_init();
             libsodium_sys::crypto_generichash_blake2b_init(&mut state, ::std::ptr::null(), 0, 64);
         }
         Blake2BState { 0: state }

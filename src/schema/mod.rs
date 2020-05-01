@@ -436,7 +436,7 @@ impl Validator {
                         },
                         _ => {
                             if field == "type" { type_seen = true; }
-                            let mut raw_now = &raw[..];
+                            let raw_now = &raw[..];
                             possible_check.iter_mut()
                                 .zip(possible.iter_mut())
                                 .filter(|(check,_)| **check > 0)

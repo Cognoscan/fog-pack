@@ -27,17 +27,6 @@ impl fmt::Display for CryptoError {
 }
 
 impl Error for CryptoError {
-    fn description(&self) -> &str {
-        match *self {
-            CryptoError::UnsupportedVersion   => "unsupported version",
-            CryptoError::DecryptFailed        => "decryption failed",
-            CryptoError::BadKey               => "weak or invalid key",
-            CryptoError::BadLength            => "invalid data length",
-            CryptoError::BadFormat            => "incorrect format for data",
-            CryptoError::NotInStorage         => "Key/Identity/StreamKey not in storage",
-            CryptoError::Io(ref err)          => err.description(),
-        }
-    }
 }
 
 impl From<io::Error> for CryptoError {

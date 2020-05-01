@@ -44,10 +44,10 @@ impl Marker {
     /// Construct a marker from a single byte.
     pub fn from_u8(n: u8) -> Marker {
         match n {
-            0x00 ... 0x7f => Marker::PosFixInt(n),
-            0x80 ... 0x8f => Marker::FixMap(n & 0x0F),
-            0x90 ... 0x9f => Marker::FixArray(n & 0x0F),
-            0xa0 ... 0xbf => Marker::FixStr(n & 0x1F),
+            0x00 ..= 0x7f => Marker::PosFixInt(n),
+            0x80 ..= 0x8f => Marker::FixMap(n & 0x0F),
+            0x90 ..= 0x9f => Marker::FixArray(n & 0x0F),
+            0xa0 ..= 0xbf => Marker::FixStr(n & 0x1F),
             0xc0 => Marker::Nil,
             // Marked in MessagePack spec as never used.
             0xc1 => Marker::Reserved,
@@ -81,7 +81,7 @@ impl Marker {
             0xdd => Marker::Array32,
             0xde => Marker::Map16,
             0xdf => Marker::Map32,
-            0xe0 ... 0xff => Marker::NegFixInt(n as i8),
+            0xe0 ..= 0xff => Marker::NegFixInt(n as i8),
         }
     }
 

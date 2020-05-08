@@ -347,6 +347,12 @@ impl Value {
 
 }
 
+impl From<()> for Value {
+    fn from((): ()) -> Self {
+        Value::Null
+    }
+}
+
 impl From<bool> for Value {
     fn from(v: bool) -> Self {
         Value::Boolean(v)

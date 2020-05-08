@@ -407,7 +407,7 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test passing any binary data
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "type": "Bin"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
@@ -429,7 +429,7 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test min/max length
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "min_len": 3,
             "max_len": 6
         }));
@@ -447,7 +447,7 @@ mod tests {
 
         let bits_set: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
         let bits_clr: Vec<u8> = vec![0x05, 0x30, 0x0C];
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "bits_set": bits_set,
             "bits_clr": bits_clr
         }));
@@ -466,7 +466,7 @@ mod tests {
 
         let in_vec: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
         let nin_vec: Vec<u8> = vec![0x05, 0x30, 0x0C];
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "in": vec![Value::from(in_vec)],
             "nin": vec![Value::from(nin_vec)]
         }));
@@ -478,7 +478,7 @@ mod tests {
 
         let nin_vec: Vec<u8> = vec![0x05, 0x30, 0x0C];
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "nin": vec![Value::from(nin_vec)]
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
@@ -493,13 +493,13 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test min/max length
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "min_len": 2,
             "max_len": 6
         }));
         let valid1 = read_it(&mut &test1[..], false).unwrap();
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "min_len": 3,
             "max_len": 10
         }));
@@ -525,7 +525,7 @@ mod tests {
 
         let bits_set: Vec<u8> = vec![0x0A];
         let bits_clr: Vec<u8> = vec![0x50];
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "bits_set": bits_set,
             "bits_clr": bits_clr
         }));
@@ -533,7 +533,7 @@ mod tests {
         test1.clear();
         let bits_set: Vec<u8> = vec![0xA0];
         let bits_clr: Vec<u8> = vec![0x05];
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "bits_set": bits_set,
             "bits_clr": bits_clr
         }));

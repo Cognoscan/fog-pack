@@ -309,7 +309,7 @@ mod tests {
 
         // Test passing any timestamp
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "type": "Time"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
@@ -325,7 +325,7 @@ mod tests {
             let val1 = rand_time(&mut rng);
             let val2 = rand_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -347,7 +347,7 @@ mod tests {
             let val1 = rand_limited_time(&mut rng);
             let val2 = rand_limited_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -374,7 +374,7 @@ mod tests {
             }
             let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
             let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "in": in_vec_val,
                 "nin": nin_vec_val,
             }));
@@ -407,7 +407,7 @@ mod tests {
             let val1 = rand_limited_time(&mut rng);
             let val2 = rand_limited_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -416,7 +416,7 @@ mod tests {
             let val1 = rand_limited_time(&mut rng);
             let val2 = rand_limited_time(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -442,7 +442,7 @@ mod tests {
             in_vec.push(Value::from(rand_limited_time(&mut rng)));
             nin_vec.push(Value::from(rand_limited_time(&mut rng)));
         }
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "in": in_vec,
             "nin": nin_vec,
         }));
@@ -454,7 +454,7 @@ mod tests {
             in_vec.push(Value::from(rand_limited_time(&mut rng)));
             nin_vec.push(Value::from(rand_limited_time(&mut rng)));
         }
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "in": in_vec,
             "nin": nin_vec,
         }));

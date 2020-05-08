@@ -7,8 +7,7 @@ use super::crypto::{HashState, Vault, Key, Identity, CryptoError};
 use decode;
 use crypto;
 
-/// A Condense-db document. Guaranteed to hold a raw msgpack object with validated signatures. 
-/// Schema validation is not guaranteed unless it has come from the database.
+/// A single, immutable fog-pack object that can be signed, hashed, and compressed.
 #[derive(Clone)]
 pub struct Document {
     hash_state: HashState,
@@ -17,6 +16,20 @@ pub struct Document {
     doc: Vec<u8>,
     signed_by: Vec<Identity>,
 }
+
+enum DocumentType {
+    Uncompressed(u8),
+    Compressed(u8),
+    DictCompressed(u8)
+}
+
+// Documents come from raw u8 slices.
+// Entries do as well
+// Passing a u8 slice straight to document will decode the u8 slice and decompress it.
+// If it is dictionary compressed 
+// So we want to read the header, then depending on the header results, we either directly decode 
+// the object into a document, or we load the appropriate schema and have it decode the object into 
+// a document. We may also need to decode it into an entry.
 
 impl Document {
 
@@ -94,7 +107,7 @@ pub fn extract_schema_hash(buf: &[u8]) -> io::Result<Option<Hash>> {
         len
     }
     else {
-        return Err(io::Error::new(InvalidData, "Raw document isn't a msgpack object"));
+        return Err(io::Error::new(InvalidData, "Raw document isn't a fogpack object"));
     };
     if obj_len == 0 { return Ok(None); }
 

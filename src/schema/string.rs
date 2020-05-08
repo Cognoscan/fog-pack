@@ -333,7 +333,7 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test passing any string data
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "type": "Str"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
@@ -352,7 +352,7 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test min/max length
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "min_len": 3,
             "max_len": 6
         }));
@@ -371,7 +371,7 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test min/max length
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "matches": "test",
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
@@ -392,14 +392,14 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test min/max length
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "type": "Str",
             "min_len": 2,
             "max_len": 6
         }));
         let valid1 = read_it(&mut &test1[..], false).unwrap();
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "type": "Str",
             "min_len": 3,
             "max_len": 10
@@ -426,12 +426,12 @@ mod tests {
         let mut test1 = Vec::new();
 
         // Test min/max length
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "matches": "test",
         }));
         let valid1 = read_it(&mut &test1[..], false).unwrap();
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "matches": "str",
         }));
         let valid2 = read_it(&mut &test1[..], false).unwrap();

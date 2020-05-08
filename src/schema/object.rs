@@ -509,7 +509,7 @@ mod tests {
     fn basic_tests() {
         let now = Timestamp::now().unwrap();
         let mut raw_schema = Vec::new();
-        let schema: Value = msgpack!({
+        let schema: Value = fogpack!({
             "type": "Obj",
             "req": {
                 "test": true
@@ -545,7 +545,7 @@ mod tests {
 
         // Should pass with all fields
         let mut raw_test = Vec::new();
-        let test: Value = msgpack!({
+        let test: Value = fogpack!({
             "test": true,
             "boolean": true,
             "positive": 1,
@@ -564,7 +564,7 @@ mod tests {
 
         // Should pass with only required fields
         raw_test.clear();
-        let test: Value = msgpack!({
+        let test: Value = fogpack!({
             "test": true,
         });
         encode::write_value(&mut raw_test, &test);
@@ -573,7 +573,7 @@ mod tests {
 
         // Should fail if we remove one of the required fields
         raw_test.clear();
-        let test: Value = msgpack!({
+        let test: Value = fogpack!({
             "boolean": true,
             "positive": 1,
             "negative": -1,

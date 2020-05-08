@@ -137,7 +137,7 @@ pub fn read_bool(buf: &mut &[u8]) -> io::Result<bool> {
     }
 }
 
-/// Attempt to read an integer from a msgpack data structure. Fails if an integer wasn't retrieved.
+/// Attempt to read an integer from a fogpack data structure. Fails if an integer wasn't retrieved.
 pub fn read_integer(buf: &mut &[u8]) -> io::Result<Integer> {
     let marker = read_marker(buf)?;
     match marker {
@@ -147,7 +147,7 @@ pub fn read_integer(buf: &mut &[u8]) -> io::Result<Integer> {
     }
 }
 
-/// Attempt to read a u8 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a u8 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u8.
 pub fn read_u8(buf: &mut &[u8]) -> io::Result<u8> {
     let int = read_integer(buf)?;
@@ -156,7 +156,7 @@ pub fn read_u8(buf: &mut &[u8]) -> io::Result<u8> {
         .ok_or(Error::new(InvalidData, "Value couldn't be represented as u8"))
 }
 
-/// Attempt to read a u16 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a u16 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u16.
 pub fn read_u16(buf: &mut &[u8]) -> io::Result<u16> {
     let int = read_integer(buf)?;
@@ -165,7 +165,7 @@ pub fn read_u16(buf: &mut &[u8]) -> io::Result<u16> {
         .ok_or(Error::new(InvalidData, "Value couldn't be represented as u16"))
 }
 
-/// Attempt to read a u32 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a u32 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u32.
 pub fn read_u32(buf: &mut &[u8]) -> io::Result<u32> {
     let int = read_integer(buf)?;
@@ -174,7 +174,7 @@ pub fn read_u32(buf: &mut &[u8]) -> io::Result<u32> {
         .ok_or(Error::new(InvalidData, "Value couldn't be represented as u32"))
 }
 
-/// Attempt to read a u64 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a u64 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u64.
 pub fn read_u64(buf: &mut &[u8]) -> io::Result<u64> {
     let int = read_integer(buf)?;
@@ -182,7 +182,7 @@ pub fn read_u64(buf: &mut &[u8]) -> io::Result<u64> {
         .ok_or(Error::new(InvalidData, "Value was negative"))
 }
 
-/// Attempt to read a i8 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a i8 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i8.
 pub fn read_i8(buf: &mut &[u8]) -> io::Result<i8> {
     let int = read_integer(buf)?;
@@ -192,7 +192,7 @@ pub fn read_i8(buf: &mut &[u8]) -> io::Result<i8> {
 }
 
 
-/// Attempt to read a i16 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a i16 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i16.
 pub fn read_i16(buf: &mut &[u8]) -> io::Result<i16> {
     let int = read_integer(buf)?;
@@ -201,7 +201,7 @@ pub fn read_i16(buf: &mut &[u8]) -> io::Result<i16> {
         .ok_or(Error::new(InvalidData, "Value couldn't be represented as i16"))
 }
 
-/// Attempt to read a i32 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a i32 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i32.
 pub fn read_i32(buf: &mut &[u8]) -> io::Result<i32> {
     let int = read_integer(buf)?;
@@ -210,7 +210,7 @@ pub fn read_i32(buf: &mut &[u8]) -> io::Result<i32> {
         .ok_or(Error::new(InvalidData, "Value couldn't be represented as i32"))
 }
 
-/// Attempt to read a i64 from a msgpack data structure. Fails if an integer wasn't retrieved, or if 
+/// Attempt to read a i64 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i64.
 pub fn read_i64(buf: &mut &[u8]) -> io::Result<i64> {
     let int = read_integer(buf)?;
@@ -218,7 +218,7 @@ pub fn read_i64(buf: &mut &[u8]) -> io::Result<i64> {
         .ok_or(Error::new(InvalidData, "Value bigger than i64 maximum"))
 }
 
-/// Attempt to read a str from a msgpack data structure. Fails if str wasn't present/valid.
+/// Attempt to read a str from a fogpack data structure. Fails if str wasn't present/valid.
 pub fn read_str<'a>(buf: &mut &'a [u8]) -> io::Result<&'a str> {
     let marker = read_marker(buf)?;
     if let MarkerType::String(len) = marker {
@@ -229,12 +229,12 @@ pub fn read_str<'a>(buf: &mut &'a [u8]) -> io::Result<&'a str> {
     }
 }
 
-/// Attempt to copy a string from a msgpack data structure. Fails if string wasn't present/valid.
+/// Attempt to copy a string from a fogpack data structure. Fails if string wasn't present/valid.
 pub fn read_string<'a>(buf: &mut &[u8]) -> io::Result<String> {
     Ok(read_str(buf)?.to_string())
 }
 
-/// Attempt to read a F32 from a msgpack data structure. Fails if invalid F32 retrieved.
+/// Attempt to read a F32 from a fogpack data structure. Fails if invalid F32 retrieved.
 pub fn read_f32(buf: &mut &[u8]) -> io::Result<f32> {
     let marker = read_marker(buf)?;
     if let MarkerType::F32 = marker {
@@ -245,7 +245,7 @@ pub fn read_f32(buf: &mut &[u8]) -> io::Result<f32> {
     }
 }
 
-/// Attempt to read a F32 from a msgpack data structure. Fails if invalid F64 retrieved.
+/// Attempt to read a F32 from a fogpack data structure. Fails if invalid F64 retrieved.
 pub fn read_f64(buf: &mut &[u8]) -> io::Result<f64> {
     let marker = read_marker(buf)?;
     if let MarkerType::F64 = marker {
@@ -369,7 +369,7 @@ pub fn read_time(buf: &mut &[u8]) -> io::Result<Timestamp> {
 }
 
 /// Read a positive integer straight out of the stream. The size of the integer should be known from the 
-/// msgpack marker that was used. If the marker contained the integer, it should be included as `v`.
+/// fogpack marker that was used. If the marker contained the integer, it should be included as `v`.
 pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),
@@ -414,7 +414,7 @@ pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> io::Result<Integer> {
 }
 
 /// Read a negative integer straight out of the stream. The size of the integer should be known from the 
-/// msgpack marker that was used. If the marker contained the integer, it should be included as `v`.
+/// fogpack marker that was used. If the marker contained the integer, it should be included as `v`.
 pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> io::Result<Integer> {
     match len {
         0 => Ok(v.into()),
@@ -611,7 +611,7 @@ pub fn read_raw_lockbox(buf: &mut &[u8], len: usize) -> io::Result<Lockbox> {
 }
 
 
-/// Read a msgpack marker, length, and/or extension type from a buffer.
+/// Read a fogpack marker, length, and/or extension type from a buffer.
 pub fn read_marker(buf: &mut &[u8]) -> io::Result<MarkerType> {
     let marker = Marker::from_u8(buf.read_u8()?);
     Ok(match marker {

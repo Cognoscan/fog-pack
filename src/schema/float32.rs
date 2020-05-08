@@ -327,7 +327,7 @@ mod tests {
 
         // Test passing any f32
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "type": "F32"
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
@@ -349,7 +349,7 @@ mod tests {
             let val1 = rand_float(&mut rng);
             let val2 = rand_float(&mut rng);
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -372,7 +372,7 @@ mod tests {
             let val1 = rng.sample(range) as f32;
             let val2 = rng.sample(range) as f32;
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -404,7 +404,7 @@ mod tests {
             }
             let in_vec_val: Vec<Value> = in_vec.iter().map(|&x| Value::from(x)).collect();
             let nin_vec_val: Vec<Value> = nin_vec.iter().map(|&x| Value::from(x)).collect();
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "in": in_vec_val,
                 "nin": nin_vec_val,
             }));
@@ -422,7 +422,7 @@ mod tests {
 
         // Test in with NAN & infinities
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "in": vec![Value::from(f32::NAN), Value::from(f32::INFINITY), Value::from(f32::NEG_INFINITY)]
         }));
         let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
@@ -441,7 +441,7 @@ mod tests {
 
         // Test nin with NAN & infinities
         test1.clear();
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "nin": vec![Value::from(f32::NAN), Value::from(f32::INFINITY), Value::from(f32::NEG_INFINITY)]
         }));
         let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
@@ -476,7 +476,7 @@ mod tests {
             let val1 = rng.sample(range) as f32;
             let val2 = rng.sample(range) as f32;
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -485,7 +485,7 @@ mod tests {
             let val1 = rng.sample(range) as f32;
             let val2 = rng.sample(range) as f32;
             let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &msgpack!({
+            encode::write_value(&mut test1, &fogpack!({
                 "min": min,
                 "max": max
             }));
@@ -526,7 +526,7 @@ mod tests {
             in_vec.push(Value::from(rng.sample(range) as f32));
             nin_vec.push(Value::from(rng.sample(range) as f32));
         }
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "in": in_vec,
             "nin": nin_vec,
         }));
@@ -538,7 +538,7 @@ mod tests {
             in_vec.push(Value::from(rng.sample(range) as f32));
             nin_vec.push(Value::from(rng.sample(range) as f32));
         }
-        encode::write_value(&mut test1, &msgpack!({
+        encode::write_value(&mut test1, &fogpack!({
             "in": in_vec,
             "nin": nin_vec,
         }));

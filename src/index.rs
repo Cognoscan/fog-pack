@@ -39,12 +39,12 @@ impl Index for usize {
                 let len = vec.len();
                 vec.get_mut(*self).unwrap_or_else(|| {
                     panic!(
-                        "cannot access index {} of msgpack of length {}",
+                        "cannot access index {} of fogpack of length {}",
                         self, len
                     )
                 })
             }
-            _ => panic!("cannot access index {} of msgpack {}", self, Type(v)),
+            _ => panic!("cannot access index {} of fogpack {}", self, Type(v)),
         }
     }
 }
@@ -70,7 +70,7 @@ impl Index for str {
             Value::Object(ref mut obj) => {
                 obj.entry(self.to_owned()).or_insert(Value::Null)
             }
-            _ => panic!("cannot access field {:?} of msgpack {}", self, Type(v)),
+            _ => panic!("cannot access field {:?} of fogpack {}", self, Type(v)),
         }
     }
 }

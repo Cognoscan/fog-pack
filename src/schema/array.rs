@@ -9,7 +9,7 @@ use marker::MarkerType;
 
 #[derive(Clone, Debug)]
 pub struct ValidArray {
-    /// Raw msgpack to compare against
+    /// Raw fogpack to compare against
     in_vec: Vec<Box<[u8]>>,
     nin_vec: Vec<Box<[u8]>>,
     min_len: usize,

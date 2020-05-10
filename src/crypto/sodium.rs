@@ -371,7 +371,7 @@ pub fn aead_decrypt(crypt: &mut [u8], ad: &[u8], tag: &[u8],n: &Nonce, k: &Secre
 // Shouldn't fail as long as the input parameters are valid
 pub fn derive_id(k: &SecretKey, id: &mut StreamId) {
     unsafe {
-        let ctx = CString::from_vec_unchecked(b"condense".to_vec());
+        let ctx = CString::from_vec_unchecked(b"fogpack".to_vec());
         libsodium_sys::crypto_kdf_derive_from_key(id.0.as_mut_ptr(), id.0.len(), 1, ctx.as_ptr(), k.0.as_ptr());
     };
 }

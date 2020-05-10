@@ -43,7 +43,7 @@ extern crate rand;
 #[cfg(test)]
 extern crate colored;
 
-extern crate zstd;
+extern crate zstd_safe;
 extern crate num_traits;
 extern crate constant_time_eq;
 extern crate byteorder;
@@ -66,13 +66,14 @@ mod document;
 mod entry;
 mod schema;
 mod query;
-mod varint;
+mod compress_type;
 
 pub mod crypto;
 pub mod encode;
 pub mod decode;
 
 use marker::{Marker, ExtType, MarkerType};
+use compress_type::CompressType;
 
 pub use self::schema::Schema;
 pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
@@ -83,4 +84,14 @@ pub use self::integer::Integer;
 pub use self::timestamp::Timestamp;
 pub use self::document::Document;
 pub use self::entry::Entry;
+
+/// The maximum allowed size of a raw document, including signatures, is 4 MiB. An encoded, 
+/// compressed document may be slightly larger than this, as it includes a short header, and 
+/// compression can theoretically result in a slightly larger size too.
+pub const MAX_DOC_SIZE: usize = 1usize << 22; // 4 MiB
+/// The maximum allowed size of a raw entry, including signatures, is 64 kiB. An encoded, 
+/// compressed entry may be slightly larger than this, as it includes a short header, and 
+/// compression can theoretically result in a slightly larger size too. This does not include the 
+/// size of the parent hash or the field for the entry.
+pub const MAX_ENTRY_SIZE: usize = 1usize << 16; // 64 kiB
 

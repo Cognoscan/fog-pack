@@ -14,7 +14,7 @@ byteorder = "1"
 num-traits = "0.2"
 regex = "1"
 ieee754 = "0.2.6"
-zstd = "0.5"
+zstd-safe = "2.0"
 
 [dev-dependencies]
 tempfile = "3.0.8"

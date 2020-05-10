@@ -51,7 +51,7 @@ impl VarInt {
         }
     }
 
-    fn write(&self, buf: &mut Vec<u8>) {
+    fn encode(&self, buf: &mut Vec<u8>) {
         let zeros = self.n[0].leading_zeros();
         buf.push(self.n[0]);
         if zeros >= 1 { buf.push(self.n[1]); }
@@ -60,7 +60,7 @@ impl VarInt {
         if zeros >= 4 { buf.push(self.n[4]); }
     }
 
-    fn read(buf: &mut &[u8]) -> io::Result<VarInt> {
+    fn decode(buf: &mut &[u8]) -> io::Result<VarInt> {
         let mut n = [0u8; 5];
         n[0] = buf.read_u8()?;
         let zeros = n[0].leading_zeros();

@@ -67,6 +67,7 @@ mod entry;
 mod schema;
 mod query;
 mod compress_type;
+mod no_schema;
 
 pub mod crypto;
 pub mod encode;
@@ -84,6 +85,7 @@ pub use self::integer::Integer;
 pub use self::timestamp::Timestamp;
 pub use self::document::Document;
 pub use self::entry::Entry;
+pub use self::no_schema::NoSchema;
 
 /// The maximum allowed size of a raw document, including signatures, is 4 MiB. An encoded, 
 /// compressed document may be slightly larger than this, as it includes a short header, and 

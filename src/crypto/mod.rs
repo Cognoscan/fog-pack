@@ -1,6 +1,6 @@
 //! Provides basic cryptographic functionality. Key management, encryption, and signing are all 
 //! done via a Vault. A Vault is created using a password, or can be read in from a file. Once 
-//! created, the Vault stores "permenant" keys and "temporary" keys. The only difference is that 
+//! created, the Vault stores "permanent" keys and "temporary" keys. The only difference is that 
 //! temporary keys are not saved when the Vault is written to a file.
 
 

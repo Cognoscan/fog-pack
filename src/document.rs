@@ -20,6 +20,7 @@ pub struct Document {
     schema_hash: Option<Hash>,
 }
 
+// Documents with matching hashes are completely identical
 impl PartialEq for Document {
     fn eq(&self, other: &Self) -> bool {
         self.hash() == other.hash()
@@ -30,7 +31,8 @@ impl Eq for Document {}
 
 impl Document {
 
-    /// Not to be used outside the crate. Allows for creation of a Document from its internal parts
+    /// Not to be used outside the crate. Allows for creation of a Document from its internal 
+    /// parts. Should only be used by Schema/NoSchema for completing the decoding process.
     pub(crate) fn from_parts(
         hash_state: Option<HashState>,
         doc_hash: Option<Hash>,
@@ -55,8 +57,8 @@ impl Document {
     }
 
     /// Create a new document from a given Value. Fails if value isn't an Object, if the value 
-    /// doesn't have a hash for the empty string ("") field, or if the encoded value is greater 
-    /// than the maximum allowed document size.
+    /// has an empty string ("") field that doesn't contain a hash, or if the encoded value is 
+    /// greater than the maximum allowed document size.
     pub fn new(v: Value) -> Result<Document, ()> {
         let schema_hash = if let Some(obj) = v.as_obj() {
             if let Some(val) = obj.get("") {
@@ -143,10 +145,11 @@ impl Document {
 
     /// Get the Hash of the document as it currently is. Note that adding additional signatures 
     /// will change the Hash.
-    pub fn hash(&self) -> Hash {
-        self.hash.clone()
+    pub fn hash(&self) -> &Hash {
+        &self.hash
     }
 
+    /// Get the Hash of the schema used by the document, if it exists.
     pub fn schema_hash(&self) -> &Option<Hash> {
         &self.schema_hash
     }
@@ -154,7 +157,7 @@ impl Document {
     /// Retrieve the value stored inside the document as a `ValueRef`. This value has the same 
     /// lifetime as the Document; it can be converted to a `Value` if it needs to outlast the 
     /// Document.
-    pub fn get_value(&self) -> ValueRef {
+    pub fn value(&self) -> ValueRef {
         super::decode::read_value_ref(&mut &self.doc[..]).unwrap()
     }
 

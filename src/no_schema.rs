@@ -7,12 +7,19 @@ use decode;
 use encode;
 use crypto;
 
+/// An encoder/decoder for when no Schema is being used.
+///
+/// `NoSchema` is used to encode/decode both Documents & Entries when there is no associated Schema 
+/// in use. It shouldn't be used with any Document that has a schema, or with any Entry whose 
+/// parent Document has a schema.
 pub struct NoSchema {
     compress: zstd_safe::CCtx<'static>,
     decompress: zstd_safe::DCtx<'static>,
 }
 
 impl NoSchema {
+    
+    /// Create a new NoSchema instance.
     pub fn new() -> NoSchema {
         NoSchema {
             compress: zstd_safe::create_cctx(),

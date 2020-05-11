@@ -349,6 +349,13 @@ mod tests {
     use super::super::Value;
     use crate::crypto::{Vault, PasswordLevel, Key};
 
+    fn prep_vault() -> (Vault, Key) {
+        let mut vault = Vault::new_from_password(PasswordLevel::Interactive, "test".to_string())
+            .expect("Should have been able to make a new vault for testing");
+        let key = vault.new_key();
+        (vault, key)
+    }
+
     fn test_doc() -> Document {
         let test: Value = fogpack!({
             "test": true,
@@ -374,13 +381,13 @@ mod tests {
         Document::new(test).expect("Should've been able to encode as a document")
     }
 
-    fn test_entry(doc: Hash, field: String) -> Entry {
+    fn test_entry() -> Entry {
         let test: Value = fogpack!(vec![0u8, 1u8, 2u8]);
-        Entry::new(doc, field, test).expect("Should've been able to encode as an entry")
+        Entry::new(Hash::new_empty(), String::from(""), test).expect("Should've been able to encode as an entry")
     }
 
     #[test]
-    fn encode_decode() {
+    fn doc_encode_decode() {
         let test = test_doc();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
@@ -393,26 +400,17 @@ mod tests {
     }
 
     #[test]
-    fn compress_decompress() {
+    fn doc_compress_decompress() {
         let test = test_doc();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
         schema_none.compress_doc(&test, 3, &mut enc);
         let dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
-        let mut enc2 = Vec::new();
-        schema_none.encode_doc(&dec, &mut enc2);
         assert!(test == dec, "Compress->Decode should yield same document");
     }
 
-    fn prep_vault() -> (Vault, Key) {
-        let mut vault = Vault::new_from_password(PasswordLevel::Interactive, "test".to_string())
-            .expect("Should have been able to make a new vault for testing");
-        let key = vault.new_key();
-        (vault, key)
-    }
-
     #[test]
-    fn compress_decompress_sign() {
+    fn doc_compress_decompress_sign() {
         let mut test = test_doc();
         let (mut vault, key0) = prep_vault();
         let key1 = vault.new_key();
@@ -429,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn compress_sign_existing_hash() {
+    fn doc_compress_sign_existing_hash() {
         let mut test = test_doc();
         let (vault, key) = prep_vault();
         let mut schema_none = NoSchema::new();
@@ -442,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn compress_schema_decode_fails() {
+    fn doc_compress_schema_decode_fails() {
         let test = test_doc_with_schema();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
@@ -452,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_decode_tests() {
+    fn doc_strict_decode() {
         // Prep encode/decode & byte vector
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
@@ -482,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn corrupted_data_tests() {
+    fn doc_corrupted_data() {
         // Prep encode/decode & byte vector
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
@@ -492,7 +490,7 @@ mod tests {
         test.sign(&vault, &key).expect("Should have been able to sign test document");
 
         schema_none.encode_doc(&test, &mut enc);
-        *(enc.last_mut().unwrap()) = 0;
+        *(enc.last_mut().unwrap()) = *enc.last_mut().unwrap() ^ 0xFF;
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Document signature was corrupted, but decoding succeeded anyway");
 
@@ -507,6 +505,109 @@ mod tests {
         enc[0] = 0x1;
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Document payload was corrupted, but decoding succeeded anyway");
+    }
+
+    #[test]
+    fn entry_encode_decode() {
+        let test = test_entry();
+        let mut schema_none = NoSchema::new();
+        let mut enc = Vec::new();
+        schema_none.encode_entry(&test, &mut enc);
+        let dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
+            .expect("Decoding should have worked");
+        let mut enc2 = Vec::new();
+        schema_none.encode_entry(&dec, &mut enc2);
+        assert!(test == dec, "Encode->Decode should yield same entry");
+        assert!(enc == enc2, "Encode->Decode->encode didn't yield identical results");
+    }
+
+    #[test]
+    fn entry_compress_decompress() {
+        let test = test_entry();
+        let mut schema_none = NoSchema::new();
+        let mut enc = Vec::new();
+        schema_none.compress_entry(&test, 3, &mut enc);
+        let dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
+            .expect("Decoding should have worked");
+        assert!(test == dec, "Compress->Decode should yield same entry");
+    }
+
+    #[test]
+    fn entry_compress_decompress_sign() {
+        let mut test = test_entry();
+        let (mut vault, key0) = prep_vault();
+        let key1 = vault.new_key();
+        let key2 = vault.new_key();
+        test.sign(&vault, &key0).expect("Should have been able to sign test entry w/ key0");
+        test.sign(&vault, &key1).expect("Should have been able to sign test entry w/ key1");
+        let mut schema_none = NoSchema::new();
+        let mut enc = Vec::new();
+        schema_none.compress_entry(&test, 3, &mut enc);
+        let mut dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
+            .expect("Decoding should have worked");
+        test.sign(&vault, &key2).expect("Should have been able to sign test entry w/ key2");
+        dec.sign(&vault, &key2).expect("Should have been able to sign decoded entry w/ key2");
+        assert!(test == dec, "Compress->Decode should yield same entry, even after signing");
+    }
+
+    #[test]
+    fn entry_compress_sign_existing_hash() {
+        let mut test = test_entry();
+        let (vault, key) = prep_vault();
+        let mut schema_none = NoSchema::new();
+        let mut enc = Vec::new();
+        schema_none.compress_entry(&test, 3, &mut enc);
+        let mut dec = schema_none.trusted_decode_entry(
+            &mut &enc[..],
+            Hash::new_empty(),
+            String::from(""),
+            Some(test.hash().clone())
+        )
+            .expect("Decoding should have worked");
+
+        test.sign(&vault, &key).expect("Should have been able to sign test entry");
+        dec.sign(&vault, &key).expect("Should have been able to sign decoded entry");
+        assert!(test == dec, "Compress->Decode should yield same entry, even after signing");
+    }
+
+    #[test]
+    fn entry_strict_decode() {
+        let test = test_entry();
+        let mut schema_none = NoSchema::new();
+        let mut enc = Vec::new();
+        schema_none.compress_entry(&test, 3, &mut enc);
+        let dec = schema_none.decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""))
+            .expect("Decoding should have worked");
+        assert!(test == dec, "Compress->Decode should yield same entry");
+    }
+
+    #[test]
+    fn entry_corrupted_data() {
+        // Prep encode/decode & byte vector
+        let mut schema_none = NoSchema::new();
+        let mut enc = Vec::new();
+        // Prep a entry
+        let (vault, key) = prep_vault();
+        let mut test = test_entry();
+        test.sign(&vault, &key).expect("Should have been able to sign test entry");
+
+        schema_none.encode_entry(&test, &mut enc);
+        *(enc.last_mut().unwrap()) = *enc.last_mut().unwrap() ^ 0xFF;
+        let dec = schema_none.decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""));
+        assert!(dec.is_err(), "Entry signature was corrupted, but decoding succeeded anyway");
+
+        enc.clear();
+        schema_none.encode_entry(&test, &mut enc);
+        // Targets part of the binary sequence, which should break the signature, but not the Value verification
+        enc[4] = 0xFF;
+        let dec = schema_none.decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""));
+        assert!(dec.is_err(), "Entry payload was corrupted, but decoding succeeded anyway");
+
+        enc.clear();
+        schema_none.encode_entry(&test, &mut enc);
+        enc[0] = 0x1; // Targets the compression marker
+        let dec = schema_none.decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""));
+        assert!(dec.is_err(), "Entry payload was corrupted, but decoding succeeded anyway");
     }
 
 

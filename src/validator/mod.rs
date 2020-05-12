@@ -27,7 +27,6 @@ use byteorder::{ReadBytesExt, BigEndian};
 use MarkerType;
 use decode::*;
 use crypto::Hash;
-use document::extract_schema_hash;
 
 mod bool;
 mod integer;
@@ -43,31 +42,31 @@ mod array;
 mod object;
 mod multi;
 
-use self::bool::ValidBool;
-use self::integer::ValidInt;
-use self::float32::ValidF32;
-use self::float64::ValidF64;
-use self::time::ValidTime;
-use self::lock::ValidLock;
-use self::identity::ValidIdentity;
-use self::binary::ValidBin;
-use self::string::ValidStr;
-use self::hash::ValidHash;
-use self::array::{ValidArray, get_raw_array};
-use self::object::ValidObj;
-use self::multi::ValidMulti;
+pub use self::bool::ValidBool;
+pub use self::integer::ValidInt;
+pub use self::float32::ValidF32;
+pub use self::float64::ValidF64;
+pub use self::time::ValidTime;
+pub use self::lock::ValidLock;
+pub use self::identity::ValidIdentity;
+pub use self::binary::ValidBin;
+pub use self::string::ValidStr;
+pub use self::hash::ValidHash;
+pub use self::array::{ValidArray, get_raw_array};
+pub use self::object::ValidObj;
+pub use self::multi::ValidMulti;
 
 const MAX_VEC_RESERVE: usize = 2048;
 const INVALID: usize = 0;
 const VALID: usize = 1;
 
-pub struct Checklist {
+pub struct ValidatorChecklist {
     list: HashMap<Hash, Vec<usize>>
 }
 
-impl Checklist {
-    pub fn new() -> Checklist {
-        Checklist { list: HashMap::new() }
+impl ValidatorChecklist {
+    pub fn new() -> ValidatorChecklist {
+        ValidatorChecklist { list: HashMap::new() }
     }
 
     pub fn add(&mut self, hash: Hash, index: usize) {
@@ -77,7 +76,7 @@ impl Checklist {
             .push(index)
     }
 
-    pub fn merge(&mut self, mut other: Checklist) {
+    pub fn merge(&mut self, mut other: ValidatorChecklist) {
         for (hash, mut items) in other.list.drain() {
             self.list
                 .entry(hash)
@@ -103,235 +102,7 @@ impl Checklist {
     }
 }
 
-pub struct ValidBuilder<'a> {
-    types1: &'a [Validator],
-    types2: &'a [Validator],
-    dest: Vec<Validator>,
-    map1: Vec<usize>,
-    map2: Vec<usize>
-}
 
-impl <'a> ValidBuilder<'a> {
-    fn init(types1: &'a [Validator], types2: &'a [Validator]) -> ValidBuilder<'a> {
-        ValidBuilder {
-            types1,
-            types2,
-            dest: Vec::new(),
-            map1: vec![0; types1.len()],
-            map2: vec![0; types2.len()],
-        }
-    }
-
-    fn push(&mut self, new_type: Validator) -> usize {
-        self.dest.push(new_type);
-        self.len() - 1
-    }
-
-    fn intersect(&mut self, query: bool, type1: usize, type2: usize) -> Result<usize,()> {
-        Ok(if ((type1 <= 1) && (type2 <= 1)) || (type1 == 0) || (type2 == 0) {
-            // Only Valid if both valid, else invalid
-            type1 & type2
-        }
-        else if type1 == 1 {
-            // Clone type2 into the new validator list
-            if self.map2[type2] == 0 {
-                let v = self.types2[type2].intersect(&Validator::Valid, query, self)?;
-                self.dest.push(v);
-                let new_index = self.dest.len() - 1;
-                self.map2[type2] = new_index;
-                new_index
-            }
-            else {
-                self.map2[type2]
-            }
-        }
-        else if type2 == 1 {
-            // Clone type1 into the new validator list
-            if self.map1[type1] == 0 {
-                let v = self.types1[type1].intersect(&Validator::Valid, query, self)?;
-                self.dest.push(v);
-                let new_index = self.dest.len() - 1;
-                self.map1[type1] = new_index;
-                new_index
-            }
-            else {
-                self.map1[type1]
-            }
-        }
-        else {
-            // Actual new validator; perform instersection and add
-            let v = self.types1[type1].intersect(&self.types2[type2], query, self)?;
-            if let Validator::Invalid = v {
-                0
-            }
-            else {
-                self.dest.push(v);
-                self.dest.len() - 1
-            }
-        })
-    }
-
-    fn swap(&mut self) {
-        mem::swap(&mut self.types1, &mut self.types2);
-        mem::swap(&mut self.map1, &mut self.map2);
-    }
-
-    fn len(&self) -> usize {
-        self.dest.len()
-    }
-
-    fn undo_to(&mut self, len: usize) {
-        self.dest.truncate(len);
-        self.map1.iter_mut().for_each(|x| if *x >= len { *x = 0; });
-        self.map2.iter_mut().for_each(|x| if *x >= len { *x = 0; });
-    }
-
-    fn build(self) -> Vec<Validator> {
-        self.dest
-    }
-}
-
-/// Struct holding the validation portions of a schema. Can be used for validation of a document or 
-/// entry.
-#[derive(Clone, Debug)]
-pub struct Schema {
-    object: ValidObj,
-    entries: Vec<(String, usize)>,
-    types: Vec<Validator>,
-}
-
-impl Schema {
-    pub fn from_raw(raw: &mut &[u8]) -> io::Result<Schema> {
-        let mut entries = Vec::new();
-        let mut types = Vec::with_capacity(2);
-        let mut type_names = HashMap::new();
-        let mut object = ValidObj::new(true); // Documents can always be queried, hence "true"
-        types.push(Validator::Invalid);
-        types.push(Validator::Valid);
-
-        let num_fields = match read_marker(raw)? {
-            MarkerType::Object(len) => len,
-            _ => return Err(Error::new(InvalidData, "Schema wasn't an object")),
-        };
-        object_iterate(raw, num_fields, |field, raw| {
-            match field {
-                "" => {
-                    read_hash(raw).map_err(|_e| Error::new(InvalidData, "Schema's empty field didn't contain root Schema Hash"))?;
-                },
-                "description" => {
-                    read_str(raw).map_err(|_e| Error::new(InvalidData, "`description` field didn't contain string"))?;
-                },
-                "name" => {
-                    read_str(raw).map_err(|_e| Error::new(InvalidData, "`name` field didn't contain string"))?;
-                },
-                "version" => {
-                    read_integer(raw).map_err(|_e| Error::new(InvalidData, "`name` field didn't contain integer"))?;
-                },
-                "entries" => {
-                    if let MarkerType::Object(len) = read_marker(raw)? {
-                        object_iterate(raw, len, |field, raw| {
-                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
-                            entries.push((field.to_string(), v));
-                            Ok(())
-                        })?;
-                    }
-                    else {
-                        return Err(Error::new(InvalidData, "`entries` field doesn't contain an Object"));
-                    }
-                }
-               "field_type" | "max_fields" | "min_fields" | "req" | "opt" | "unknown_ok" => {
-                   object.update(field, raw, false, &mut types, &mut type_names)?;
-                },
-                "types" => {
-                    if let MarkerType::Object(len) = read_marker(raw)? {
-                        object_iterate(raw, len, |field, raw| {
-                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
-                            if v == (types.len() - 1) {
-                                let v = types.pop();
-                                match field {
-                                    "Null" | "Bool" | "Int" | "Str" | "F32" | "F64" | "Bin" |
-                                    "Array" | "Obj" | "Hash" | "Ident" | "Lock" | "Time" | "Multi" => (),
-                                    _ => {
-                                        if let Some(index) = type_names.get(field) {
-                                            types[*index] = v.unwrap();
-                                        }
-                                    }
-                                }
-                            }
-                            Ok(())
-                        })?;
-                    }
-                    else {
-                        return Err(Error::new(InvalidData, "`entries` field doesn't contain an Object"));
-                    }
-                }
-                _ => {
-                    return Err(Error::new(InvalidData, "Unrecognized field in schema document"));
-                }
-            }
-            Ok(())
-        })?;
-
-        Ok(Schema {
-            object,
-            entries,
-            types,
-        })
-    }
-
-    /// Validates a document against this schema. Does not check the schema field itself.
-    pub fn validate_doc(&self, doc: &mut &[u8]) -> io::Result<()> {
-        let mut checklist = Checklist::new();
-        self.object.validate("", doc, &self.types, &mut checklist, true).and(Ok(()))
-    }
-
-    /// Validates a given entry against this schema.
-    pub fn validate_entry(&self, entry: &str, doc: &mut &[u8]) -> io::Result<Checklist> {
-        let mut checklist = Checklist::new();
-        let v = self.entries.binary_search_by(|x| x.0.as_str().cmp(entry));
-        if v.is_err() { return Err(Error::new(InvalidData, "Entry field type doesn't exist in schema")); }
-        let v = self.entries[v.unwrap()].1;
-        self.types[v].validate("", doc, &self.types, 0, &mut checklist)?;
-        Ok(checklist)
-    }
-
-    /// Validates a document against a specific Hash Validator. Should be used in conjunction with 
-    /// a Checklist returned from `validate_entry` to confirm that all documents referenced in an 
-    /// entry meet the schema's criteria.
-    pub fn validate_checklist_item(&self, index: usize, doc: &mut &[u8]) -> io::Result<()> {
-        if let Validator::Hash(ref v) = self.types[index] {
-            // Extract schema. Also verifies we are dealing with an Object (an actual document)
-            let doc_schema = extract_schema_hash(&doc.clone())?;
-            // Check against acceptable schemas
-            if v.schema_required() {
-                if let Some(hash) = doc_schema {
-                    if !v.schema_in_set(&hash) {
-                        return Err(Error::new(InvalidData, "Document uses unrecognized schema"));
-                    }
-                }
-                else {
-                    return Err(Error::new(InvalidData, "Document doesn't have schema, but needs one"));
-                }
-            }
-            if let Some(link) = v.link() {
-                let mut checklist = Checklist::new();
-                if let Validator::Object(ref v) = self.types[link] {
-                    v.validate("", doc, &self.types, &mut checklist, true).and(Ok(()))
-                }
-                else {
-                    Err(Error::new(Other, "Can't validate a document against a non-object validator"))
-                }
-            }
-            else {
-                Ok(())
-            }
-        }
-        else {
-            Err(Error::new(Other, "Can't validate against non-hash validator"))
-        }
-
-    }
-}
 
 #[derive(Clone,Debug)]
 pub enum Validator {
@@ -607,7 +378,7 @@ impl Validator {
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
                     index: usize,
-                    list: &mut Checklist,
+                    list: &mut ValidatorChecklist,
                     ) -> io::Result<()>
     {
         match self {
@@ -686,6 +457,94 @@ impl Validator {
             Validator::Timestamp(v) => v.intersect(other, query),
             Validator::Multi(v) => v.intersect(other, query, builder),
         }
+    }
+}
+
+pub struct ValidBuilder<'a> {
+    types1: &'a [Validator],
+    types2: &'a [Validator],
+    dest: Vec<Validator>,
+    map1: Vec<usize>,
+    map2: Vec<usize>
+}
+
+impl <'a> ValidBuilder<'a> {
+    fn init(types1: &'a [Validator], types2: &'a [Validator]) -> ValidBuilder<'a> {
+        ValidBuilder {
+            types1,
+            types2,
+            dest: Vec::new(),
+            map1: vec![0; types1.len()],
+            map2: vec![0; types2.len()],
+        }
+    }
+
+    fn push(&mut self, new_type: Validator) -> usize {
+        self.dest.push(new_type);
+        self.len() - 1
+    }
+
+    fn intersect(&mut self, query: bool, type1: usize, type2: usize) -> Result<usize,()> {
+        Ok(if ((type1 <= 1) && (type2 <= 1)) || (type1 == 0) || (type2 == 0) {
+            // Only Valid if both valid, else invalid
+            type1 & type2
+        }
+        else if type1 == 1 {
+            // Clone type2 into the new validator list
+            if self.map2[type2] == 0 {
+                let v = self.types2[type2].intersect(&Validator::Valid, query, self)?;
+                self.dest.push(v);
+                let new_index = self.dest.len() - 1;
+                self.map2[type2] = new_index;
+                new_index
+            }
+            else {
+                self.map2[type2]
+            }
+        }
+        else if type2 == 1 {
+            // Clone type1 into the new validator list
+            if self.map1[type1] == 0 {
+                let v = self.types1[type1].intersect(&Validator::Valid, query, self)?;
+                self.dest.push(v);
+                let new_index = self.dest.len() - 1;
+                self.map1[type1] = new_index;
+                new_index
+            }
+            else {
+                self.map1[type1]
+            }
+        }
+        else {
+            // Actual new validator; perform instersection and add
+            let v = self.types1[type1].intersect(&self.types2[type2], query, self)?;
+            if let Validator::Invalid = v {
+                0
+            }
+            else {
+                self.dest.push(v);
+                self.dest.len() - 1
+            }
+        })
+    }
+
+    fn swap(&mut self) {
+        mem::swap(&mut self.types1, &mut self.types2);
+        mem::swap(&mut self.map1, &mut self.map2);
+    }
+
+    fn len(&self) -> usize {
+        self.dest.len()
+    }
+
+    fn undo_to(&mut self, len: usize) {
+        self.dest.truncate(len);
+        self.map1.iter_mut().for_each(|x| if *x >= len { *x = 0; });
+        self.map2.iter_mut().for_each(|x| if *x >= len { *x = 0; });
+    }
+
+    fn build(self) -> Vec<Validator> {
+        self.dest
     }
 }
 

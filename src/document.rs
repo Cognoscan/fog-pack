@@ -82,7 +82,7 @@ impl Document {
         if doc_len > MAX_DOC_SIZE {
             return Err(());
         }
-        let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+        let mut hash_state = HashState::new();
         hash_state.update(&doc[..]); 
         let hash = hash_state.get_hash();
         let doc_hash = Some(hash.clone());
@@ -106,7 +106,7 @@ impl Document {
         // Create the hasher, compute the inner document hasher, and update the hasher to include 
         // any existing signatures.
         if self.hash_state.is_none() || self.doc_hash.is_none() {
-            let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+            let mut hash_state = HashState::new();
             hash_state.update(&self.doc[..self.doc_len]);
             let doc_hash = hash_state.get_hash();
             if self.doc.len() > self.doc_len {
@@ -222,7 +222,7 @@ mod tests {
     }
 
     fn test_doc_with_schema() -> Document {
-        let fake_hash = Hash::new(1, "test".as_bytes()).expect("Should've been able to make hash");
+        let fake_hash = Hash::new("test".as_bytes());
         let test: Value = fogpack!({
             "" : fake_hash,
             "test": true,

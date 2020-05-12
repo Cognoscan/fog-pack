@@ -86,7 +86,7 @@ impl Entry {
 
     pub(crate) fn populate_hash_state(&mut self) {
         let mut temp = Vec::new();
-        let mut hash_state = HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+        let mut hash_state = HashState::new();
         encode::write_value(&mut temp, &Value::from(self.doc.clone()));
         hash_state.update(&temp[..]);
         temp.clear();

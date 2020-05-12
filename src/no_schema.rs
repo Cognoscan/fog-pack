@@ -121,7 +121,7 @@ impl NoSchema {
             (None, None, hash)
         }
         else {
-            let mut hash_state = crypto::HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+            let mut hash_state = crypto::HashState::new();
             hash_state.update(&doc[..doc_len]);
             let doc_hash = hash_state.get_hash();
             let hash = if doc.len() > doc_len {
@@ -177,7 +177,7 @@ impl NoSchema {
         let doc_len = decode::verify_value(&mut &doc[..])?;
 
         // Compute the document hashes
-        let mut hash_state = crypto::HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+        let mut hash_state = crypto::HashState::new();
         hash_state.update(&doc[..doc_len]);
         let doc_hash = hash_state.get_hash();
         let hash = if doc.len() > doc_len {
@@ -262,7 +262,7 @@ impl NoSchema {
         let entry_len = decode::verify_value(&mut &entry[..])?;
 
         let mut temp = Vec::new();
-        let mut hash_state = crypto::HashState::new(1).unwrap(); // Shouldn't fail if version == 1
+        let mut hash_state = crypto::HashState::new();
         encode::write_value(&mut temp, &Value::from(doc.clone()));
         hash_state.update(&temp[..]);
         temp.clear();
@@ -379,7 +379,7 @@ mod tests {
     }
 
     fn test_doc_with_schema() -> Document {
-        let fake_hash = Hash::new(1, "test".as_bytes()).expect("Should've been able to make hash");
+        let fake_hash = Hash::new("test".as_bytes());
         let test: Value = fogpack!({
             "" : fake_hash,
             "test": true,

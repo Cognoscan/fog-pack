@@ -7,18 +7,22 @@ use std::cmp;
 use std::cmp::Ordering;
 
 use crypto::error::CryptoError;
-use crypto::sodium::{blake2b, Blake2BState};
+use crypto::sodium::{HASH_BYTES, blake2b, Blake2BState};
+
+const DEFAULT_HASH_VERSION: u8 = 1;
+const MIN_HASH_VERSION: u8 = 1;
+const MAX_HASH_VERSION: u8 = 1;
 
 /// Crytographically secure hash of data. Can be signed by a FullKey. It is impractical to generate an 
 /// identical hash from different data.
 ///
 /// # Supported Versions
 /// - 0: Null hash. Used to refer to hash of parent document
-/// - 1: Blake2B hash with 64 bytes of digest
+/// - 1: Blake2B hash with 32 bytes of digest
 #[derive(Clone)]
 pub struct Hash {
     version: u8,
-    digest: [u8; 64],
+    digest: [u8; HASH_BYTES],
 }
 
 #[derive(Clone)]
@@ -46,7 +50,7 @@ impl cmp::Ord for Hash {
         else if self.version < other.version {
             return Ordering::Less;
         }
-        for i in 0..64 {
+        for i in 0..HASH_BYTES {
             if self.digest[i] > other.digest[i] {
                 return Ordering::Greater;
             }
@@ -79,16 +83,28 @@ impl hash::Hash for Hash {
 
 impl Hash {
 
-    pub fn new(version: u8, data: &[u8]) -> Result<Hash, CryptoError> {
-        if version != 1 { return Err(CryptoError::UnsupportedVersion); }
-        if data.len() > ::std::u64::MAX as usize { return Err(CryptoError::BadLength); }
-        let mut hash = Hash {version, digest: [0;64]};
+    pub fn new(data: &[u8]) -> Hash {
+        debug_assert!(DEFAULT_HASH_VERSION <= MAX_HASH_VERSION);
+        debug_assert!(DEFAULT_HASH_VERSION >= MIN_HASH_VERSION);
+        let mut hash = Hash {
+            version: DEFAULT_HASH_VERSION,
+            digest: [0;HASH_BYTES]
+        };
+        blake2b(&mut hash.digest, data);
+        hash
+    }
+
+    pub fn with_version(version: u8, data: &[u8]) -> Result<Hash, CryptoError> {
+        if version > MAX_HASH_VERSION || version < MIN_HASH_VERSION {
+            return Err(CryptoError::UnsupportedVersion);
+        }
+        let mut hash = Hash {version, digest: [0;HASH_BYTES]};
         blake2b(&mut hash.digest, data);
         Ok(hash)
     }
 
     pub fn new_empty() -> Hash {
-        Hash { version: 0, digest: [0; 64] }
+        Hash { version: 0, digest: [0; HASH_BYTES] }
     }
 
     pub fn get_version(&self) -> u8 {
@@ -118,17 +134,28 @@ impl Hash {
 
     pub fn decode(buf: &mut &[u8]) -> Result<Hash, CryptoError> {
         let version = buf.read_u8().map_err(CryptoError::Io)?;
-        if version == 0 { return Ok(Hash { version, digest:[0;64] }); }
+        if version == 0 { return Ok(Hash { version, digest:[0;HASH_BYTES] }); }
         if version != 1 { return Err(CryptoError::UnsupportedVersion); }
-        let mut hash = Hash {version, digest:[0;64]};
+        let mut hash = Hash {version, digest:[0;HASH_BYTES]};
         buf.read_exact(&mut hash.digest).map_err(CryptoError::Io)?;
         Ok(hash)
     }
 }
 
 impl HashState {
-    pub fn new(version: u8) -> Result<HashState, CryptoError> {
-        if version != 1 { return Err(CryptoError::UnsupportedVersion); }
+    pub fn new() -> HashState {
+        debug_assert!(DEFAULT_HASH_VERSION <= MAX_HASH_VERSION);
+        debug_assert!(DEFAULT_HASH_VERSION >= MIN_HASH_VERSION);
+        HashState {
+            version: DEFAULT_HASH_VERSION,
+            state: Blake2BState::new()
+        }
+    }
+
+    pub fn with_version(version: u8) -> Result<HashState, CryptoError> {
+        if version > MAX_HASH_VERSION || version < MIN_HASH_VERSION {
+            return Err(CryptoError::UnsupportedVersion);
+        }
         Ok(HashState { version, state: Blake2BState::new() })
     }
 
@@ -137,13 +164,13 @@ impl HashState {
     }
 
     pub fn get_hash(&self) -> Hash {
-        let mut hash = Hash { version: self.version, digest: [0;64] };
+        let mut hash = Hash { version: self.version, digest: [0;HASH_BYTES] };
         self.state.get_hash(&mut hash.digest);
         hash
     }
 
     pub fn finalize(self) -> Hash {
-        let mut hash = Hash { version: self.version, digest: [0;64] };
+        let mut hash = Hash { version: self.version, digest: [0;HASH_BYTES] };
         self.state.finalize(&mut hash.digest);
         hash
     }
@@ -177,8 +204,8 @@ mod tests {
         for vector in json_ref.as_array().unwrap().iter() {
             let ref_hash = hex::decode(&vector["out"].as_str().unwrap()).unwrap();
             let ref_input = hex::decode(&vector["input"].as_str().unwrap()).unwrap();
-            let h = Hash::new(1, &ref_input[..]).unwrap();
-            let mut state: HashState = HashState::new(1).unwrap();
+            let h = Hash::new(&ref_input[..]);
+            let mut state: HashState = HashState::new();
             state.update(&ref_input[..]);
             let h2 = state.get_hash();
             let h3 = state.finalize();
@@ -194,18 +221,17 @@ mod tests {
 
     #[test]
     fn edge_cases() {
-        match Hash::new(0, &[1,2]).unwrap_err() {
+        match Hash::with_version(0, &[1,2]).unwrap_err() {
             CryptoError::UnsupportedVersion => (),
             _ => panic!("New hash should always fail on version 0"),
         };
-        match HashState::new(0).unwrap_err() {
+        match HashState::with_version(0).unwrap_err() {
             CryptoError::UnsupportedVersion => (),
             _ => panic!("HashState should always fail on version 0"),
         };
         let digest = hex::decode(
-            "29102511d749db3cc9b4e335fa1f5e8faca8421d558f6a3f3321d50d044a248b\
-             a595cfc3efd3d2adc97334da732413f5cbf4751c362ba1d53862ac1e8dabeee8").unwrap();
-        let h = Hash::new(1, &hex::decode("00010203040506070809").unwrap()).unwrap();
+            "8b57a796a5d07cb04cc1614dfc2acb3f73edc712d7f433619ca3bbe66bb15f49").unwrap();
+        let h = Hash::new(&hex::decode("00010203040506070809").unwrap());
         assert_eq!(h.get_version(), 1);
         assert_eq!(h.digest(), &digest[..]);
     }
@@ -213,7 +239,7 @@ mod tests {
     #[test]
     fn empty() {
         let h = Hash::new_empty();
-        let digest = [0u8; 64];
+        let digest = [0u8; HASH_BYTES];
         assert_eq!(h.get_version(), 0);
         assert_eq!(h.digest(), &digest[..]);
         enc_dec(h);

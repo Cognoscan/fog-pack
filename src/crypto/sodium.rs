@@ -17,6 +17,8 @@ use std::io::Read;
 
 use crypto::error::CryptoError;
 
+pub const HASH_BYTES:         usize = 32;
+
 const SECRET_KEY_BYTES:   usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_KEYBYTES as usize;
 const NONCE_BYTES:        usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_NPUBBYTES as usize;
 const TAG_BYTES:          usize = libsodium_sys::crypto_aead_xchacha20poly1305_ietf_ABYTES as usize;
@@ -258,7 +260,7 @@ impl Blake2BState {
         // non-existant key
         unsafe {
             state = ::std::mem::MaybeUninit::uninit().assume_init();
-            libsodium_sys::crypto_generichash_blake2b_init(&mut state, ::std::ptr::null(), 0, 64);
+            libsodium_sys::crypto_generichash_blake2b_init(&mut state, ::std::ptr::null(), 0, HASH_BYTES);
         }
         Blake2BState { 0: state }
     }
@@ -273,23 +275,23 @@ impl Blake2BState {
         }
     }
 
-    pub fn get_hash(&self, hash: &mut [u8; 64]) {
+    pub fn get_hash(&self, hash: &mut [u8; HASH_BYTES]) {
         let mut temp_state = self.0.clone();
         unsafe {
             libsodium_sys::crypto_generichash_blake2b_final(
                 &mut temp_state,
                 hash.as_mut_ptr(),
-                64
+                HASH_BYTES
             );
         }
     }
 
-    pub fn finalize(mut self, hash: &mut [u8; 64]) {
+    pub fn finalize(mut self, hash: &mut [u8; HASH_BYTES]) {
         unsafe {
             libsodium_sys::crypto_generichash_blake2b_final(
                 &mut self.0,
                 hash.as_mut_ptr(),
-                64
+                HASH_BYTES
             );
         }
     }
@@ -376,11 +378,14 @@ pub fn derive_id(k: &SecretKey, id: &mut StreamId) {
     };
 }
 
-pub fn blake2b( hash: &mut [u8; 64], data: &[u8] ) {
+pub fn blake2b( hash: &mut [u8; HASH_BYTES], data: &[u8] ) {
+    if data.len() > ::std::u64::MAX as usize {
+        panic!("Data for hasher is somehow larger than maximum u64 value");
+    }
     // The below will only fail if we set up this function wrong.
     unsafe { 
         libsodium_sys::crypto_generichash_blake2b(
-            hash.as_mut_ptr(), 64, 
+            hash.as_mut_ptr(), HASH_BYTES, 
             data.as_ptr(), data.len() as u64,
             ::std::ptr::null(), 0);
     }

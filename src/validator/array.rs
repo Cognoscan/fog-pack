@@ -212,7 +212,7 @@ impl ValidArray {
                     field: &str,
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
-                    list: &mut Checklist,
+                    list: &mut ValidatorChecklist,
                     ) -> io::Result<()>
     {
         let num_items = match read_marker(doc)? {

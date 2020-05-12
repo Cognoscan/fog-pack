@@ -65,6 +65,7 @@ mod marker;
 mod document;
 mod entry;
 mod schema;
+mod validator;
 mod query;
 mod compress_type;
 mod no_schema;
@@ -87,10 +88,10 @@ pub use self::document::Document;
 pub use self::entry::Entry;
 pub use self::no_schema::NoSchema;
 
-/// The maximum allowed size of a raw document, including signatures, is 4 MiB. An encoded, 
+/// The maximum allowed size of a raw document, including signatures, is 1 MiB. An encoded, 
 /// compressed document may be slightly larger than this, as it includes a short header, and 
 /// compression can theoretically result in a slightly larger size too.
-pub const MAX_DOC_SIZE: usize = 1usize << 22; // 4 MiB
+pub const MAX_DOC_SIZE: usize = 1usize << 20; // 1 MiB
 /// The maximum allowed size of a raw entry, including signatures, is 64 kiB. An encoded, 
 /// compressed entry may be slightly larger than this, as it includes a short header, and 
 /// compression can theoretically result in a slightly larger size too. This does not include the 

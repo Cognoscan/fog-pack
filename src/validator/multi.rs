@@ -54,12 +54,12 @@ impl ValidMulti {
                     field: &str,
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
-                    list: &mut Checklist,
+                    list: &mut ValidatorChecklist,
                     ) -> io::Result<()>
     {
         if self.any_of.iter().all(|any_list| {
             any_list.iter().any(|v_index| {
-                let mut temp_list = Checklist::new();
+                let mut temp_list = ValidatorChecklist::new();
                 if let Err(_) = types[*v_index].validate(field, doc, types, *v_index, &mut temp_list) {
                     false
                 }

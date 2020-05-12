@@ -414,8 +414,8 @@ mod tests {
     fn signing() {
         init().unwrap();
         let v: Vec<u8> = b"This is a test".to_vec();
-        let h = Hash::new(1, &v[..]).unwrap();
-        let h2 = Hash::new(1, &v[1..]).unwrap();
+        let h = Hash::new(&v[..]);
+        let h2 = Hash::new(&v[1..]);
         let (k, id) = FullKey::new_pair().unwrap();
         let sig = k.sign(&h);
         assert_eq!(sig.get_hash_version(), 1);

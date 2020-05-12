@@ -187,7 +187,7 @@ impl ValidObj {
                     field: &str,
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
-                    list: &mut Checklist,
+                    list: &mut ValidatorChecklist,
                     top_schema: bool
                     ) -> io::Result<()>
     {
@@ -502,7 +502,6 @@ mod tests {
     use value::Value;
     use crypto::Hash;
     use timestamp::Timestamp;
-    //use super::super::Checklist;
     use super::*;
     
     #[test]
@@ -559,7 +558,7 @@ mod tests {
             "array": [Value::from(0), Value::from("an_array")] 
         });
         encode::write_value(&mut raw_test, &test);
-        let mut list = Checklist::new();
+        let mut list = ValidatorChecklist::new();
         assert!(types[validator].validate("", &mut &raw_test[..], &types, validator, &mut list).is_ok());
 
         // Should pass with only required fields
@@ -568,7 +567,7 @@ mod tests {
             "test": true,
         });
         encode::write_value(&mut raw_test, &test);
-        let mut list = Checklist::new();
+        let mut list = ValidatorChecklist::new();
         assert!(types[validator].validate("", &mut &raw_test[..], &types, validator, &mut list).is_ok());
 
         // Should fail if we remove one of the required fields
@@ -586,7 +585,7 @@ mod tests {
             "array": [Value::from(0), Value::from("an_array")] 
         });
         encode::write_value(&mut raw_test, &test);
-        let mut list = Checklist::new();
+        let mut list = ValidatorChecklist::new();
         assert!(types[validator].validate("", &mut &raw_test[..], &types, validator, &mut list).is_err());
     }
 }

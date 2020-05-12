@@ -1,4 +1,3 @@
-
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::InvalidData;
@@ -14,12 +13,13 @@ pub struct ValidBin {
     nin_vec: Vec<Box<[u8]>>,
     min_len: usize,
     max_len: usize,
-    min: Box<[u8]>,
+    min: Option<Box<[u8]>>,
     max: Option<Box<[u8]>>,
     bits_set: Vec<u8>,
     bits_clr: Vec<u8>,
     query: bool,
     ord: bool,
+    size: bool,
     bit: bool,
     ex_min: bool, // setup only
     ex_max: bool, // setup only
@@ -32,12 +32,13 @@ impl ValidBin {
             nin_vec: Vec::with_capacity(0),
             min_len: usize::min_value(),
             max_len: usize::max_value(),
-            min: Vec::new().into_boxed_slice(),
+            min: None,
             max: None,
             bits_set: Vec::with_capacity(0),
             bits_clr: Vec::with_capacity(0),
             query: is_query,
             ord: is_query,
+            size: is_query,
             bit: is_query,
             ex_min: false,
             ex_max: false,
@@ -84,7 +85,7 @@ impl ValidBin {
             },
             "ex_min" => {
                 self.ex_min = read_bool(raw)?;
-                self.min = vec![1u8].into_boxed_slice();
+                self.min = Some(vec![1u8].into_boxed_slice());
                 Ok(true)
             },
             "in" => {
@@ -110,17 +111,27 @@ impl ValidBin {
             },
             "max" => {
                 let mut max = read_vec(raw)?;
-                if !self.ex_max {
-                    if max.iter_mut().all(|x| {
-                        let (y, carry) = x.overflowing_add(1);
+                let res = if self.ex_max {
+                    if max.iter_mut().fold(true, |acc, x| {
+                        let (y, carry) = x.overflowing_sub(acc as u8);
                         *x = y;
                         carry
                     }) {
-                        max.push(1u8);
+                        Ok(false) // Overflowed to less than 0. Exclusive max with 0 will always fail validation
+                    }
+                    else {
+                        Ok(true)
                     }
                 }
+                else {
+                    Ok(true)
+                };
+                let end = max.iter().enumerate().rev().find_map(|x| if x.1 > &0 { Some(x.0) } else { None });
+                if let Some(end) = end {
+                    max.truncate(end+1);
+                }
                 self.max = Some(max.into_boxed_slice());
-                Ok(true)
+                res
             }
             "max_len" => {
                 if let Some(len) = read_integer(raw)?.as_u64() {
@@ -134,15 +145,19 @@ impl ValidBin {
             "min" => {
                 let mut min = read_vec(raw)?;
                 if self.ex_min {
-                    if min.iter_mut().all(|x| {
-                        let (y, carry) = x.overflowing_add(1);
+                    if min.iter_mut().fold(true, |acc, x| {
+                        let (y, carry) = x.overflowing_add(acc as u8);
                         *x = y;
                         carry
                     }) {
                         min.push(1u8);
                     }
                 }
-                self.min = min.into_boxed_slice();
+                let end = min.iter().enumerate().rev().find_map(|x| if x.1 > &0 { Some(x.0) } else { None});
+                if let Some(end) = end {
+                    min.truncate(end+1);
+                }
+                self.min = Some(min.into_boxed_slice());
                 Ok(true)
             }
             "min_len" => {
@@ -181,6 +196,10 @@ impl ValidBin {
             }
             "query" => {
                 self.query = read_bool(raw)?;
+                Ok(true)
+            }
+            "size" => {
+                self.size = read_bool(raw)?;
                 Ok(true)
             }
             "type" => if "Bin" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Bin")) },
@@ -254,18 +273,43 @@ impl ValidBin {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains binary longer than max length of {}", field, self.min_len)))
         }
-        else if self.min.iter()
-            .zip(value.iter().chain(repeat(&0u8)))
-            .fold(false, |carry, (min, val)| {
-                if carry {
-                    let (result, carry) = val.overflowing_sub(*min);
-                    result == 0 || carry
-                }
-                else {
-                    let (_, carry) = val.overflowing_sub(*min);
-                    carry
-                }
-            })
+        else if self.max.as_ref().map_or(false, |v| {
+            let max_len = v.len();
+            if max_len > value.len() {
+                false
+            }
+            else {
+                // Returns true if max minus val carries, i.e. val > max
+                value.iter()
+                    .zip(v.iter().chain(repeat(&0u8)))
+                    .fold(false, |carry, (val, max)| {
+                        let (cmp, carry1) = max.overflowing_sub(*val);
+                        let (_, carry2) = cmp.overflowing_sub(carry as u8);
+                        carry1 | carry2
+                    })
+            }
+        })
+        {
+            Err(Error::new(InvalidData,
+                format!("Field \"{}\" is greater than maximum", field)))
+        }
+        else if self.min.as_ref().map_or(false, |v| {
+            let min_len = v.len();
+            if min_len > value.len() {
+                // Value literally can't contain the minimum allowed
+                true
+            }
+            else {
+                // Returns true if val minus min carries, i.e. min > val
+                value.iter()
+                    .zip(v.iter().chain(repeat(&0u8)))
+                    .fold(false, |carry, (val, min)| {
+                        let (cmp, carry1) = val.overflowing_sub(*min);
+                        let (_, carry2) = cmp.overflowing_sub(carry as u8);
+                        carry1 | carry2
+                    })
+            }
+        })
         {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" is greater than maximum", field)))
@@ -296,12 +340,13 @@ impl ValidBin {
     /// Intersection of Binary with other Validators. Returns Err only if `query` is true and the 
     /// other validator contains non-allowed query parameters.
     pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
-        if query && !self.query && !self.ord && !self.bit { return Err(()); }
+        if query && !self.query && !self.ord && !self.size && !self.bit { return Err(()); }
         match other {
             Validator::Binary(other) => {
                 if query && (
                     (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.ord && ((other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
+                    || (!self.size && ((other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
+                    || (!self.ord && (other.min.is_some() || other.max.is_some()))
                     || (!self.bit && ((other.bits_set.len() > 0) || (other.bits_clr.len() > 0))))
                 {
                     Err(())
@@ -324,7 +369,15 @@ impl ValidBin {
                         other.in_vec.clone()
                     };
                     // Create new min
-                    let min = if self.min > other.min { self.min.clone() } else { other.min.clone() };
+                    let min = if let (Some(s), Some(o)) = (&self.min, &other.min) {
+                        if s < o { other.min.clone() } else { self.min.clone() }
+                    }
+                    else if self.min.is_some() {
+                        self.min.clone()
+                    }
+                    else {
+                        other.min.clone()
+                    };
                     // Create new max
                     let max = if let (Some(s), Some(o)) = (&self.max, &other.max) {
                         if s > o { other.max.clone() } else { self.max.clone() }
@@ -347,6 +400,7 @@ impl ValidBin {
                         bits_clr: self.bits_clr.iter().zip(other.bits_clr.iter()).map(|(a,b)| a | b).collect(),
                         query: self.query && other.query,
                         ord: self.ord && other.ord,
+                        size: self.size && other.size,
                         bit: self.bit && other.bit,
                         ex_min: false,
                         ex_max: false,
@@ -402,13 +456,93 @@ mod tests {
     }
 
     #[test]
+    fn bad_validators() {
+        // Exclusive max of 0 would be OK, but invalid
+        let mut test1 = Vec::new();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "ex_max": true,
+            "max": vec![0]
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+
+        // If `in` field isn't an array of vec or a bin, should fail
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "in": true,
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+
+        // If `nin` field isn't an array of vec or a bin, should fail
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "nin": true,
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+
+        // If `max_len` is negative, should fail
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "max_len": -1,
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+
+        // If `min_len` is negative, should fail
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "min_len": -1,
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+
+        // If `ord` is not a bool, should fail
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "ord": 1,
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+
+        // If `query` is not a bool, should fail
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "query": 1,
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+
+        // If `size` is not a bool, should fail
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "type": "Bin",
+            "size": 1,
+        }));
+        let validator = read_it(&mut &test1[..], false);
+        assert!(validator.is_err());
+    }
+
+    #[test]
     fn any_bin() {
 
         let mut test1 = Vec::new();
 
         // Test passing any binary data
         encode::write_value(&mut test1, &fogpack!({
-            "type": "Bin"
+            "type": "Bin",
+            "default": vec![0x00],
+            "ord": true,
+            "query": true,
+            "size": true,
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
         assert!(validate_bin(vec![0,1,2,3,4,5], &validator).is_ok());
@@ -425,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn range() {
+    fn len_range() {
         let mut test1 = Vec::new();
 
         // Test min/max length
@@ -442,14 +576,75 @@ mod tests {
     }
 
     #[test]
+    fn val_range() {
+        let mut test1 = Vec::new();
+
+        encode::write_value(&mut test1, &fogpack!({
+            "min": vec![0x01],
+            "max": vec![0x02]
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0x00], &validator).is_err());
+        assert!(validate_bin(vec![0x01], &validator).is_ok());
+        assert!(validate_bin(vec![0x02], &validator).is_ok());
+        assert!(validate_bin(vec![0x03], &validator).is_err());
+        assert!(validate_bin(vec![0x02, 0x00], &validator).is_ok());
+        assert!(validate_bin(vec![0x00, 0x01], &validator).is_err());
+
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "min": vec![0x01, 0x00, 0x00, 0x00],
+            "max": vec![0x02, 0x00, 0x00, 0x00]
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        // Verify the min/max vectors have their trailing zeros stripped
+        assert!(validator.min.as_ref().unwrap().len() == 1);
+        assert!(validator.max.as_ref().unwrap().len() == 1);
+        // Check against allowed ranges
+        assert!(validate_bin(vec![0x00], &validator).is_err());
+        assert!(validate_bin(vec![0x01], &validator).is_ok());
+        assert!(validate_bin(vec![0x02], &validator).is_ok());
+        assert!(validate_bin(vec![0x03], &validator).is_err());
+        assert!(validate_bin(vec![0x02, 0x00], &validator).is_ok());
+        assert!(validate_bin(vec![0x00, 0x01], &validator).is_err());
+
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "ex_min": true,
+            "ex_max": true,
+            "min": vec![0x01, 0xFF, 0x03, 0x00],
+            "max": vec![0xFF, 0xFE, 0x04, 0x00]
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0x00], &validator).is_err());
+        assert!(validate_bin(vec![0x00, 0x00, 0x00, 0x00], &validator).is_err());
+        assert!(validate_bin(vec![0x00, 0x00, 0x00, 0x01], &validator).is_err());
+        assert!(validate_bin(vec![0x01, 0xFF, 0x03, 0x00], &validator).is_err());
+        assert!(validate_bin(vec![0x02, 0xFF, 0x03, 0x00], &validator).is_ok());
+        assert!(validate_bin(vec![0xFE, 0xFE, 0x04, 0x00], &validator).is_ok());
+        assert!(validate_bin(vec![0xFF, 0xFE, 0x04, 0x00], &validator).is_err());
+
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "ex_min": true,
+            "ex_max": true,
+            "min": vec![0xFF, 0xFF],
+            "max": vec![0x00, 0xFF, 0x01]
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0xFF, 0xFF, 0x00], &validator).is_err());
+        assert!(validate_bin(vec![0x00, 0x00, 0x01], &validator).is_ok());
+        assert!(validate_bin(vec![0xFF, 0xFE, 0x01], &validator).is_ok());
+        assert!(validate_bin(vec![0x00, 0xFF, 0x01], &validator).is_err());
+    }
+
+    #[test]
     fn bits() {
         let mut test1 = Vec::new();
 
-        let bits_set: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
-        let bits_clr: Vec<u8> = vec![0x05, 0x30, 0x0C];
         encode::write_value(&mut test1, &fogpack!({
-            "bits_set": bits_set,
-            "bits_clr": bits_clr
+            "bits_set": vec![0xAA, 0x0F, 0xF0],
+            "bits_clr": vec![0x05, 0x30, 0x0C]
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
         assert!(validate_bin(vec![0xAA], &validator).is_err());
@@ -469,6 +664,19 @@ mod tests {
         encode::write_value(&mut test1, &fogpack!({
             "in": vec![Value::from(in_vec)],
             "nin": vec![Value::from(nin_vec)]
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
+        assert!(validate_bin(vec![0xAA, 0x0F], &validator).is_err());
+        assert!(validate_bin(vec![0x05, 0x30, 0x0C], &validator).is_err());
+        assert!(validate_bin(vec![0xAA, 0x0F, 0xF1], &validator).is_err());
+
+        test1.clear();
+        let in_vec: Vec<u8> = vec![0xAA, 0x0F, 0xF0];
+        let nin_vec: Vec<u8> = vec![0x05, 0x30, 0x0C];
+        encode::write_value(&mut test1, &fogpack!({
+            "in": in_vec,
+            "nin": nin_vec,
         }));
         let validator = read_it(&mut &test1[..], false).unwrap();
         assert!(validate_bin(vec![0xAA, 0x0F, 0xF0], &validator).is_ok());
@@ -526,6 +734,7 @@ mod tests {
         let bits_set: Vec<u8> = vec![0x0A];
         let bits_clr: Vec<u8> = vec![0x50];
         encode::write_value(&mut test1, &fogpack!({
+            "bit": true,
             "bits_set": bits_set,
             "bits_clr": bits_clr
         }));
@@ -534,6 +743,7 @@ mod tests {
         let bits_set: Vec<u8> = vec![0xA0];
         let bits_clr: Vec<u8> = vec![0x05];
         encode::write_value(&mut test1, &fogpack!({
+            "bit": true,
             "bits_set": bits_set,
             "bits_clr": bits_clr
         }));

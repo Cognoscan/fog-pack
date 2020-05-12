@@ -17,7 +17,7 @@ pub struct ValidStr {
     max_len: usize,
     matches: Vec<Regex>,
     query: bool,
-    ord: bool,
+    size: bool,
     regex: bool,
 }
 
@@ -30,7 +30,7 @@ impl ValidStr {
             max_len: usize::max_value(),
             matches: Vec::with_capacity(0),
             query: is_query,
-            ord: is_query,
+            size: is_query,
             regex: is_query,
         }
     }
@@ -152,16 +152,16 @@ impl ValidStr {
                 }
                 Ok(true)
             },
-            "ord" => {
-                self.ord = read_bool(raw)?;
-                Ok(true)
-            },
             "query" => {
                 self.query = read_bool(raw)?;
                 Ok(true)
             },
             "regex" => {
                 self.regex = read_bool(raw)?;
+                Ok(true)
+            },
+            "size" => {
+                self.size = read_bool(raw)?;
                 Ok(true)
             },
             "type" => if "Str" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Str")) },
@@ -241,12 +241,12 @@ impl ValidStr {
     /// Intersection of String with other Validators. Returns Err only if `query` is true and the 
     /// other validator contains non-allowed query parameters.
     pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
-        if query && !self.query && !self.ord && !self.regex { return Err(()); }
+        if query && !self.query && !self.size && !self.regex { return Err(()); }
         match other {
             Validator::String(other) => {
                 if query && (
                     (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.ord && ((other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
+                    || (!self.size && ((other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
                     || (!self.regex && (other.matches.len() > 0)))
                 {
                     Err(())
@@ -274,7 +274,7 @@ impl ValidStr {
                         max_len: self.max_len.min(other.max_len),
                         matches: matches,
                         query: self.query && other.query,
-                        ord: self.ord && other.ord,
+                        size: self.size && other.size,
                         regex: self.regex && other.regex,
                     };
                     if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {

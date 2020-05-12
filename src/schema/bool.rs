@@ -31,7 +31,10 @@ impl ValidBool {
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
         match field {
-            "type" => if "Bool" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Bool")) },
+            "default" => {
+                read_bool(raw)?;
+                Ok(true)
+            },
             "in" => {
                 self.constant = Some(read_bool(raw)?);
                 Ok(true)
@@ -55,6 +58,7 @@ impl ValidBool {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
+            "type" => if "Bool" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Bool")) },
             _ => Err(Error::new(InvalidData, "Unknown fields not allowed in boolean validator")),
         }
     }

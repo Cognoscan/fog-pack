@@ -1,4 +1,3 @@
-
 use std::io;
 use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
@@ -9,15 +8,19 @@ use decode::*;
 use document::extract_schema_hash;
 use validator::{ValidObj, Validator, ValidatorChecklist};
 use Hash;
+use Document;
 
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
 /// entry.
-#[derive(Clone, Debug)]
 pub struct Schema {
     hash: Hash,
     object: ValidObj,
     entries: Vec<(String, usize)>,
     types: Vec<Validator>,
+    doc_encode: Option<zstd_safe::CCtx<'static>>,
+    doc_decode: Option<zstd_safe::DCtx<'static>>,
+    entry_encode: Vec<(String, Option<zstd_safe::CCtx<'static>>)>,
+    entry_decode: Vec<(String, Option<zstd_safe::DCtx<'static>>)>,
 }
 
 impl Schema {
@@ -27,6 +30,10 @@ impl Schema {
         let mut types = Vec::with_capacity(2);
         let mut type_names = HashMap::new();
         let mut object = ValidObj::new(true); // Documents can always be queried, hence "true"
+        let doc_encode = Some(zstd_safe::create_cctx());
+        let doc_decode = Some(zstd_safe::create_dctx());
+        let mut entry_encode = Vec::new();
+        let mut entry_decode = Vec::new();
         types.push(Validator::Invalid);
         types.push(Validator::Valid);
 
@@ -39,6 +46,28 @@ impl Schema {
                 "" => {
                     read_hash(raw).map_err(|_e| Error::new(InvalidData, "Schema's empty field didn't contain root Schema Hash"))?;
                 },
+                /*
+                "doc_compress" => {
+                    if let MarkerType::Object(len) = read_marker(raw)? {
+                        let mut format = None;
+                        let mut setting = false;
+                        let mut setting_bin = None;
+                        object_iterate(raw, len, |field, raw| {
+                            match field {
+                                "format" => {
+                                    let format = Some(read_integer(raw)?);
+                                },
+                                "setting" => {
+                                    match read_marker(raw)? {
+                                        MarkerType::Boolean(v) => 
+                                        _ => {
+                                            return Err(Error::new(InvalidData,
+                                                    "`doc_compress`/`setting` field didn't contain boolean or binary data"));
+                                        }
+                                    }
+                    }
+                }
+                            */
                 "description" => {
                     read_str(raw).map_err(|_e| Error::new(InvalidData, "`description` field didn't contain string"))?;
                 },
@@ -53,13 +82,23 @@ impl Schema {
                         object_iterate(raw, len, |field, raw| {
                             let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
                             entries.push((field.to_string(), v));
+                            entry_encode.push((field.to_string(), Some(zstd_safe::create_cctx())));
+                            entry_decode.push((field.to_string(), Some(zstd_safe::create_dctx())));
                             Ok(())
                         })?;
                     }
                     else {
                         return Err(Error::new(InvalidData, "`entries` field doesn't contain an Object"));
                     }
-                }
+                },
+                /*
+                "entries_compress" => {
+                    if let MarkerType::Object(len) = read_marker(raw)? {
+                        object_iterate(raw, len, |field, raw| {
+                            Err(Error::new(InvalidData "entries_compress not implemented yet"))
+                        }
+                },
+                */
                "field_type" | "max_fields" | "min_fields" | "req" | "opt" | "unknown_ok" => {
                    object.update(field, raw, false, &mut types, &mut type_names)?;
                 },
@@ -99,11 +138,19 @@ impl Schema {
             object,
             entries,
             types,
+            doc_encode,
+            doc_decode,
+            entry_encode,
+            entry_decode,
         })
     }
 
     pub fn hash(&self) -> &Hash {
         &self.hash
+    }
+
+    pub fn encode_doc(&self, _doc: &Document, _buf: &mut Vec<u8>) -> io::Result<()> {
+        Err(Error::new(Other, "Document doesn't use this schema"))
     }
 
     /// Validates a document against this schema. Does not check the schema field itself.

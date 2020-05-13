@@ -133,7 +133,7 @@ impl ValidArray {
                     Ok(true)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "Array validator requires non-negative integer for `max_len` field"))
                 }
             },
             "min_len" => {
@@ -142,7 +142,7 @@ impl ValidArray {
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "Array validator requires non-negative integer for `min_len` field"))
                 }
             },
             "nin" => {

@@ -195,6 +195,11 @@ impl Validator {
                     Validator::Timestamp(ValidTime::new(is_query)),
                     Validator::Multi(ValidMulti::new(is_query)),
                 ];
+                // possible_check contains the status of each validator as we iterate through the 
+                // fields:
+                //  - 2: it's still acceptable
+                //  - 1: it's accepted but will never allow a value to pass
+                //  - 0: the validator can't be used
                 let mut possible_check = vec![2u8; possible.len()];
 
                 let mut type_seen = false;
@@ -234,10 +239,14 @@ impl Validator {
                     Validator::Valid
                 }
                 else if possible_count > 1 {
+                    // If there is more than one type, but one of them is Validator::Type, that 
+                    // means we have one that's just one of the basic types with no other 
+                    // constraints
                     if possible_check[1] > 0 {
                         possible[1].clone()
                     }
                     else {
+                        // We didn't actually specify enough fields to narrow it down to one type.
                         return Err(Error::new(InvalidData, "Validator isn't specific enough. Specify more fields"))
                     }
                 }

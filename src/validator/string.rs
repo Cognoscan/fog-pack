@@ -109,7 +109,7 @@ impl ValidStr {
                         Ok(regexes_ok)
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "String validator expected array or string for `matches` field"));
+                        Err(Error::new(InvalidData, "String validator expected array or string for `matches` field"))
                     },
                 }
             },
@@ -119,7 +119,7 @@ impl ValidStr {
                     Ok(true)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `max_len` field"))
                 }
             }
             "min_len" => {
@@ -128,7 +128,7 @@ impl ValidStr {
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `min_len` field"))
                 }
             }
             "nin" => {

@@ -43,11 +43,16 @@ impl ValidMulti {
     }
 
     /// Final check on the validator. Returns true if at least one value can (probably) still pass the 
-    /// validator. We do not check the `in` and `nin` against all validation parts
+    /// validator.
     pub fn finalize(&mut self) -> bool {
-        self.any_of[0].sort_unstable();
-        self.any_of[0].dedup();
-        true
+        if self.any_of.len() > 0 {
+            self.any_of[0].sort_unstable();
+            self.any_of[0].dedup();
+            true
+        }
+        else {
+            false
+        }
     }
 
     pub fn validate(&self,

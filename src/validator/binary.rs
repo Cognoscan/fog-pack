@@ -139,7 +139,7 @@ impl ValidBin {
                     Ok(true)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "Binary validator requires non-negative integer for `max_len` field"))
                 }
             }
             "min" => {
@@ -166,7 +166,7 @@ impl ValidBin {
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "Binary validator requires non-negative integer for `max_len` field"))
                 }
             }
             "nin" => {

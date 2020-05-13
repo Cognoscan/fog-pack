@@ -91,7 +91,7 @@ impl ValidObj {
                     Ok(true)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "Object validator expected non-negative value for `max_fields` field"))
                 }
             },
             "min_fields" => {
@@ -100,7 +100,7 @@ impl ValidObj {
                     Ok(self.max_fields >= self.min_fields)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "Object validator expected non-negative value for `min_fields` field"))
                 }
             },
             "nin" => {

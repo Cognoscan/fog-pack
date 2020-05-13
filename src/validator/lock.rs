@@ -34,7 +34,7 @@ impl ValidLock {
                     Ok(true)
                 }
                 else {
-                    Ok(false)
+                    Err(Error::new(InvalidData, "Lockbox validator expected non-negative value for `max_len` field"))
                 }
             }
             "query" => {

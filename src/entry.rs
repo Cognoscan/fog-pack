@@ -16,7 +16,9 @@ pub struct Entry {
     entry_len: usize,
     entry: Vec<u8>,
     signed_by: Vec<Identity>,
-    compressed: Option<Vec<u8>>
+    compressed: Option<Vec<u8>>,
+    override_compression: bool,
+    compression: Option<i32>,
 }
 
 // Entries are completely identical (including parent hash and field) if their hashes match
@@ -46,6 +48,8 @@ impl Entry {
         entry: Vec<u8>,
         signed_by: Vec<Identity>,
         compressed: Option<Vec<u8>>,
+        override_compression: bool,
+        compression: Option<i32>,
     ) -> Entry {
         Entry {
             hash_state,
@@ -57,6 +61,8 @@ impl Entry {
             entry,
             signed_by,
             compressed,
+            override_compression,
+            compression,
         }
     }
 
@@ -79,6 +85,8 @@ impl Entry {
             entry,
             signed_by: Vec::new(),
             compressed: None,
+            override_compression: false,
+            compression: None,
         };
         entry.populate_hash_state();
         Ok(entry)
@@ -129,6 +137,20 @@ impl Entry {
         Ok(())
     }
 
+    /// Specifically set compression, overriding default schema settings. If None, no compression 
+    /// will be used. If some `i32`, the value will be passed to the zstd compressor. Note: if the 
+    /// document has no schema settings, it defaults to generic compression with default zstd 
+    /// settings.
+    pub fn set_compression(&mut self, compression: Option<i32>) {
+        self.override_compression = true;
+        self.compression = compression;
+    }
+
+    /// Remove any overrides on the compression settings set by [`set_compression`].
+    pub fn reset_compression(&mut self) {
+        self.override_compression = false;
+    }
+
     /// Get an iterator over all known signers of the document.
     pub fn signed_by(&self) -> std::slice::Iter<Identity> {
         self.signed_by.iter()
@@ -153,6 +175,18 @@ impl Entry {
     /// Get the field for this entry.
     pub fn field(&self) -> &str {
         self.field.as_str()
+    }
+
+    /// Returns the compression setting that will be used if the compression is overridden. Check 
+    /// override status with [`override_compression`].
+    pub fn compression(&self) -> Option<i32> {
+        self.compression
+    }
+
+    /// Returns true if compression is being overridden. If true, the setting returned by 
+    /// [`compression`] will be used.
+    pub fn override_compression(&self) -> bool {
+        self.override_compression
     }
 
     /// Retrieve the value stored inside the entry as a `ValueRef`. This value has the same 

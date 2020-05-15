@@ -27,14 +27,71 @@ impl NoSchema {
         }
     }
 
-    /// Encode the document and write it to an output buffer.
-    pub fn encode_doc(&self, doc: &Document, buf: &mut Vec<u8>) {
-        CompressType::Uncompressed.encode(buf);
+    /// Encode the document and write it to an output buffer. By default, compression with the zstd 
+    /// default will be used, which may be overridden by the Document. This panics if the 
+    /// underlying zstd calls return an error, which shouldn't be possible witih the way they are 
+    /// used in this library.
+    pub fn encode_doc(&mut self, doc: &Document, buf: &mut Vec<u8>) {
         let len = doc.len();
+        let mut raw: &[u8] = doc.raw_doc();
         assert!(len <= MAX_DOC_SIZE,
             "Document was larger than maximum size! Document implementation should've made this impossible!");
-        buf.extend_from_slice(doc.raw_doc());
+
+        let compress = if doc.override_compression() {
+            doc.compression()
+        }
+        else {
+            Some(zstd_safe::CLEVEL_DEFAULT)
+        };
+
+        if let Some(level) = compress {
+            if doc.schema_hash().is_some() {
+                // Don't encode schema hash if it exists
+                CompressType::Compressed.encode(buf);
+                let _ = parse_schema_hash(&mut raw)
+                    .expect("Document has invalid vec!")
+                    .expect("Document has invalid vec!");
+                let header_len = doc.raw_doc().len() - raw.len();
+                buf.extend_from_slice(&doc.raw_doc()[..header_len]);
+            }
+            else {
+                CompressType::CompressedNoSchema.encode(buf);
+            }
+            self.compress(raw, level, buf);
+        }
+        else {
+            CompressType::Uncompressed.encode(buf);
+            buf.extend_from_slice(raw);
+        }
     }
+
+    /// Encode an entry and write it to an output buffer. Includes the entry content only, not the 
+    /// parent document hash or the field. By default, compression with the zstd default will be 
+    /// used, which may be overridden by the Document. This panics if the underlying zstd calls 
+    /// return an error, which shouldn't be possible witih the way they are used in this library.
+    pub fn encode_entry(&mut self, entry: &Entry, buf: &mut Vec<u8>) {
+        let len = entry.len();
+        let raw: &[u8] = entry.raw_entry();
+        assert!(len <= MAX_ENTRY_SIZE,
+            "Entry was larger than maximum size! Entry implementation should've made this impossible!");
+
+        let compress = if entry.override_compression() {
+            entry.compression()
+        }
+        else {
+            Some(zstd_safe::CLEVEL_DEFAULT)
+        };
+
+        if let Some(level) = compress {
+            CompressType::CompressedNoSchema.encode(buf);
+            self.compress(raw, level, buf);
+        }
+        else {
+            CompressType::Uncompressed.encode(buf);
+            buf.extend_from_slice(raw);
+        }
+    }
+
 
     fn compress(&mut self, raw: &[u8], level: i32, buf: &mut Vec<u8>) {
         // Allocate a slightly more space than is in the input
@@ -51,51 +108,6 @@ impl NoSchema {
             ).expect("zstd library unexpectedly errored during compress_cctx!");
             buf.set_len(vec_len + buffer_len);
         }
-    }
-
-
-    /// Encode the document, compress it, and write it to an output buffer. The level of 
-    /// compression is passed to zstd. 0 will cause it to use the default compression level.
-    /// This panics if the underlying zstd calls return an error, which shouldn't be possible with 
-    /// the way they are used in this library.
-    pub fn compress_doc(&mut self, doc: &Document, level: i32, buf: &mut Vec<u8>) {
-        if doc.schema_hash().is_some() {
-            CompressType::Compressed.encode(buf);
-        }
-        else {
-            CompressType::CompressedNoSchema.encode(buf);
-        }
-
-        let mut raw: &[u8] = doc.raw_doc();
-
-        // Don't encode schema hash if it exists
-        if doc.schema_hash().is_some() {
-            let _ = parse_schema_hash(&mut raw)
-                .expect("Document has invalid vec!")
-                .expect("Document has invalid vec!");
-            let header_len = doc.raw_doc().len() - raw.len();
-            buf.extend_from_slice(&doc.raw_doc()[..header_len]);
-        }
-
-        self.compress(raw, level, buf);
-    }
-
-    /// Encode an entry and write it to an output buffer. Includes the entry content only, not the 
-    /// parent document hash or the field.
-    pub fn encode_entry(&self, entry: &Entry, buf: &mut Vec<u8>) {
-        CompressType::Uncompressed.encode(buf);
-        let len = entry.len();
-        assert!(len <= MAX_ENTRY_SIZE,
-            "Entry was larger than maximum size! Entry implementation should've made this impossible!");
-        buf.extend_from_slice(entry.raw_entry());
-    }
-
-    /// Compress an entry and write it to an output buffer. Includes the entry content only, not the 
-    /// parent document hash or the field. This panics if the underlying zstd calls return an 
-    /// error, which shouldn't be possible with the way this library uses zstd.
-    pub fn compress_entry(&mut self, entry: &Entry, level: i32, buf: &mut Vec<u8>) {
-        CompressType::CompressedNoSchema.encode(buf);
-        self.compress(entry.raw_entry(), level, buf);
     }
 
     /// Read a document from a byte slice, trusting the origin of the slice and doing as few checks 
@@ -143,6 +155,8 @@ impl NoSchema {
             signed_by.push(signature.signed_by().clone());
         }
 
+        let override_compression = false;
+        let compression = None;
         Ok(Document::from_parts(
             hash_state,
             doc_hash,
@@ -150,6 +164,8 @@ impl NoSchema {
             doc_len,
             doc,
             compressed,
+            override_compression,
+            compression,
             signed_by,
             None
         ))
@@ -200,6 +216,8 @@ impl NoSchema {
             signed_by.push(signature.signed_by().clone());
         }
 
+        let override_compression = false;
+        let compression = None;
         Ok(Document::from_parts(
             Some(hash_state),
             Some(doc_hash),
@@ -207,6 +225,8 @@ impl NoSchema {
             doc_len,
             doc,
             compressed,
+            override_compression,
+            compression,
             signed_by,
             None
         ))
@@ -232,6 +252,8 @@ impl NoSchema {
             signed_by.push(signature.signed_by().clone());
         }
 
+        let override_compression = false;
+        let compression = None;
         let mut entry = Entry::from_parts(
             None,
             None,
@@ -241,7 +263,9 @@ impl NoSchema {
             entry_len,
             entry,
             signed_by,
-            compressed
+            compressed,
+            override_compression,
+            compression,
         );
 
         if !hash_provided {
@@ -289,6 +313,8 @@ impl NoSchema {
             signed_by.push(signature.signed_by().clone());
         }
 
+        let override_compression = false;
+        let compression = None;
         Ok(Entry::from_parts(
             Some(hash_state),
             Some(entry_hash),
@@ -298,7 +324,9 @@ impl NoSchema {
             entry_len,
             entry,
             signed_by,
-            compressed
+            compressed,
+            override_compression,
+            compression,
         ))
     }
 
@@ -388,19 +416,32 @@ mod tests {
         Document::new(test).expect("Should've been able to encode as a document")
     }
 
+
     fn test_entry() -> Entry {
         let test: Value = fogpack!(vec![0u8, 1u8, 2u8]);
         Entry::new(Hash::new_empty(), String::from(""), test).expect("Should've been able to encode as an entry")
     }
 
     #[test]
+    fn doc_empty_content() {
+        let test = Document::new(fogpack!({})).unwrap();
+        let mut enc = Vec::new();
+        let mut schema_none = NoSchema::new();
+        schema_none.encode_doc(&test, &mut enc);
+        let dec = schema_none.decode_doc(&mut &enc[..]).expect("Decoding should have worked");
+        assert!(test == dec, "Encode->Decode should yield same document");
+    }
+
+    #[test]
     fn doc_encode_decode() {
-        let test = test_doc();
+        let mut test = test_doc();
+        test.set_compression(None);
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
         schema_none.encode_doc(&test, &mut enc);
-        let dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
+        let mut dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
         let mut enc2 = Vec::new();
+        dec.set_compression(None);
         schema_none.encode_doc(&dec, &mut enc2);
         assert!(test == dec, "Encode->Decode should yield same document");
         assert!(enc == enc2, "Encode->Decode->encode didn't yield identical results");
@@ -411,7 +452,7 @@ mod tests {
         let test = test_doc();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_doc(&test, 3, &mut enc);
+        schema_none.encode_doc(&test, &mut enc);
         let dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
         assert!(test == dec, "Compress->Decode should yield same document");
     }
@@ -426,7 +467,7 @@ mod tests {
         test.sign(&vault, &key1).expect("Should have been able to sign test document w/ key1");
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_doc(&test, 3, &mut enc);
+        schema_none.encode_doc(&test, &mut enc);
         let mut dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
         test.sign(&vault, &key2).expect("Should have been able to sign test document w/ key2");
         dec.sign(&vault, &key2).expect("Should have been able to sign decoded document w/ key2");
@@ -439,7 +480,7 @@ mod tests {
         let (vault, key) = prep_vault();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_doc(&test, 3, &mut enc);
+        schema_none.encode_doc(&test, &mut enc);
         let mut dec = schema_none.trusted_decode_doc(&mut &enc[..], Some(test.hash().clone())).expect("Decoding should have worked");
         test.sign(&vault, &key).expect("Should have been able to sign test document");
         dec.sign(&vault, &key).expect("Should have been able to sign decoded document");
@@ -451,7 +492,7 @@ mod tests {
         let test = test_doc_with_schema();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_doc(&test, 3, &mut enc);
+        schema_none.encode_doc(&test, &mut enc);
         let dec = schema_none.trusted_decode_doc(&mut &enc[..], Some(test.hash().clone()));
         assert!(dec.is_err(), "Decompression should have failed, as a schema was in the document");
     }
@@ -463,14 +504,16 @@ mod tests {
         let mut enc = Vec::new();
 
         // Prep schema-using document
-        let test = test_doc_with_schema();
+        let mut test = test_doc_with_schema();
 
+        test.set_compression(None);
         schema_none.encode_doc(&test, &mut enc);
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Decoding should have failed when a schema was in the document");
 
         enc.clear();
-        schema_none.compress_doc(&test, 3, &mut enc);
+        test.reset_compression();
+        schema_none.encode_doc(&test, &mut enc);
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Decompression should have failed when a schema was in the document");
 
@@ -480,6 +523,7 @@ mod tests {
         test.sign(&vault, &key).expect("Should have been able to sign test document");
 
         enc.clear();
+        test.set_compression(None);
         schema_none.encode_doc(&test, &mut enc);
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_ok(), "Decoding a valid document should have succeeded");
@@ -496,6 +540,7 @@ mod tests {
         let mut test = test_doc();
         test.sign(&vault, &key).expect("Should have been able to sign test document");
 
+        test.set_compression(None);
         schema_none.encode_doc(&test, &mut enc);
         *(enc.last_mut().unwrap()) = *enc.last_mut().unwrap() ^ 0xFF;
         let dec = schema_none.decode_doc(&mut &enc[..]);
@@ -516,13 +561,15 @@ mod tests {
 
     #[test]
     fn entry_encode_decode() {
-        let test = test_entry();
+        let mut test = test_entry();
+        test.set_compression(None);
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
         schema_none.encode_entry(&test, &mut enc);
-        let dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
+        let mut dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
             .expect("Decoding should have worked");
         let mut enc2 = Vec::new();
+        dec.set_compression(None);
         schema_none.encode_entry(&dec, &mut enc2);
         assert!(test == dec, "Encode->Decode should yield same entry");
         assert!(enc == enc2, "Encode->Decode->encode didn't yield identical results");
@@ -533,7 +580,7 @@ mod tests {
         let test = test_entry();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_entry(&test, 3, &mut enc);
+        schema_none.encode_entry(&test, &mut enc);
         let dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
             .expect("Decoding should have worked");
         assert!(test == dec, "Compress->Decode should yield same entry");
@@ -549,7 +596,7 @@ mod tests {
         test.sign(&vault, &key1).expect("Should have been able to sign test entry w/ key1");
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_entry(&test, 3, &mut enc);
+        schema_none.encode_entry(&test, &mut enc);
         let mut dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
             .expect("Decoding should have worked");
         test.sign(&vault, &key2).expect("Should have been able to sign test entry w/ key2");
@@ -563,7 +610,7 @@ mod tests {
         let (vault, key) = prep_vault();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_entry(&test, 3, &mut enc);
+        schema_none.encode_entry(&test, &mut enc);
         let mut dec = schema_none.trusted_decode_entry(
             &mut &enc[..],
             Hash::new_empty(),
@@ -582,7 +629,7 @@ mod tests {
         let test = test_entry();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.compress_entry(&test, 3, &mut enc);
+        schema_none.encode_entry(&test, &mut enc);
         let dec = schema_none.decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""))
             .expect("Decoding should have worked");
         assert!(test == dec, "Compress->Decode should yield same entry");
@@ -598,6 +645,7 @@ mod tests {
         let mut test = test_entry();
         test.sign(&vault, &key).expect("Should have been able to sign test entry");
 
+        test.set_compression(None);
         schema_none.encode_entry(&test, &mut enc);
         *(enc.last_mut().unwrap()) = *enc.last_mut().unwrap() ^ 0xFF;
         let dec = schema_none.decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""));
@@ -616,6 +664,5 @@ mod tests {
         let dec = schema_none.decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""));
         assert!(dec.is_err(), "Entry payload was corrupted, but decoding succeeded anyway");
     }
-
 
 }

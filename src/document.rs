@@ -16,6 +16,8 @@ pub struct Document {
     doc_len: usize,
     doc: Vec<u8>,
     compressed: Option<Vec<u8>>,
+    override_compression: bool,
+    compression: Option<i32>,
     signed_by: Vec<Identity>,
     schema_hash: Option<Hash>,
 }
@@ -40,6 +42,8 @@ impl Document {
         doc_len: usize,
         doc: Vec<u8>,
         compressed: Option<Vec<u8>>,
+        override_compression: bool,
+        compression: Option<i32>,
         signed_by: Vec<Identity>,
         schema_hash: Option<Hash>,
         ) -> Document {
@@ -51,6 +55,8 @@ impl Document {
             doc_len,
             doc,
             compressed,
+            override_compression,
+            compression,
             signed_by,
             schema_hash,
         }
@@ -93,6 +99,8 @@ impl Document {
             doc_len,
             doc,
             compressed: None,
+            override_compression: false,
+            compression: None,
             signed_by: Vec::new(),
             schema_hash,
         })
@@ -133,6 +141,20 @@ impl Document {
         Ok(())
     }
 
+    /// Specifically set compression, overriding default schema settings. If None, no compression 
+    /// will be used. If some `i32`, the value will be passed to the zstd compressor. Note: if the 
+    /// document has no schema settings, it defaults to generic compression with default zstd 
+    /// settings.
+    pub fn set_compression(&mut self, compression: Option<i32>) {
+        self.override_compression = true;
+        self.compression = compression;
+    }
+
+    /// Remove any overrides on the compression settings set by [`set_compression`].
+    pub fn reset_compression(&mut self) {
+        self.override_compression = false;
+    }
+
     /// Get an iterator over all known signers of the document.
     pub fn signed_by(&self) -> std::slice::Iter<Identity> {
         self.signed_by.iter()
@@ -152,6 +174,18 @@ impl Document {
     /// Get the Hash of the schema used by the document, if it exists.
     pub fn schema_hash(&self) -> &Option<Hash> {
         &self.schema_hash
+    }
+
+    /// Returns the compression setting that will be used if the compression is overridden. Check 
+    /// override status with [`override_compression`].
+    pub fn compression(&self) -> Option<i32> {
+        self.compression
+    }
+
+    /// Returns true if compression is being overridden. If true, the setting returned by 
+    /// [`compression`] will be used.
+    pub fn override_compression(&self) -> bool {
+        self.override_compression
     }
 
     /// Retrieve the value stored inside the document as a `ValueRef`. This value has the same 

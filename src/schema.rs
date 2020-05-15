@@ -10,6 +10,64 @@ use validator::{ValidObj, Validator, ValidatorChecklist};
 use Hash;
 use Document;
 
+
+enum Compression {
+    NoCompress,
+    Compress(i32),
+    DictCompress((zstd_safe::CDict<'static>, zstd_safe::DDict<'static>))
+}
+
+/*
+impl Compression {
+    fn read_raw(raw: &mut &[u8]) -> io::Result<Compression> {
+        let mut setting_seen = false;
+        let mut format_seen = false;
+        let mut format = 0;
+        let mut setting = None;
+        let mut setting_bool = false;
+
+        let num_fields = match read_marker(raw)? {
+            MarkerType::Object(len) => len,
+            _ => return Err(Error::new(InvalidData, "Compression spec wasn't an object")),
+        };
+        object_iterate(raw, len, |field, raw| {
+            match field {
+                "format" => {
+                    format_seen = true;
+                    format = read_integer(raw)?;
+                },
+                "setting" => {
+                    setting_seen = true;
+                    match read_marker(raw)? {
+                        MarkerType::Boolean(v) => {
+                            format_bool = v;
+                        },
+                        MarkerType::Binary(len) => {
+                            let v = read_raw_bin(raw, len)?;
+                            setting = true;
+                            setting_bin = Some(v.to_vec());
+                        },
+                        _ => {
+                            return Err(Error::new(InvalidData,
+                                    "`doc_compress`/`setting` field didn't contain boolean or binary data"));
+                        }
+                    }
+                },
+                _ => {
+                    return Err(Error::new(InvalidData,
+                            format!("`doc_compress` contains unrecognized field `{}`", field)));
+                }
+            }
+            if format.is_none() && setting_bin.is_some() {
+                return Err(Error::new(InvalidData,
+                        "Compression specifies a binary setting, but not a format"));
+            }
+        }
+    }
+}
+*/
+
+
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 
 /// entry.
 pub struct Schema {
@@ -46,28 +104,47 @@ impl Schema {
                 "" => {
                     read_hash(raw).map_err(|_e| Error::new(InvalidData, "Schema's empty field didn't contain root Schema Hash"))?;
                 },
-                /*
                 "doc_compress" => {
                     if let MarkerType::Object(len) = read_marker(raw)? {
                         let mut format = None;
+                        let mut setting_seen = false;
                         let mut setting = false;
                         let mut setting_bin = None;
                         object_iterate(raw, len, |field, raw| {
                             match field {
                                 "format" => {
-                                    let format = Some(read_integer(raw)?);
+                                    format = Some(read_integer(raw)?);
                                 },
                                 "setting" => {
+                                    setting_seen = true;
                                     match read_marker(raw)? {
-                                        MarkerType::Boolean(v) => 
+                                        MarkerType::Boolean(v) => {
+                                            setting = v;
+                                        },
+                                        MarkerType::Binary(len) => {
+                                            let v = read_raw_bin(raw, len)?;
+                                            setting = true;
+                                            setting_bin = Some(v.to_vec());
+                                        },
                                         _ => {
                                             return Err(Error::new(InvalidData,
                                                     "`doc_compress`/`setting` field didn't contain boolean or binary data"));
                                         }
                                     }
+                                },
+                                _ => {
+                                    return Err(Error::new(InvalidData,
+                                            format!("`doc_compress` contains unrecognized field `{}`", field)));
+                                }
+                            }
+                            if format.is_none() && setting_bin.is_some() {
+                                return Err(Error::new(InvalidData,
+                                        "Compression specifies a binary setting, but not a format"));
+                            }
+                            Ok(())
+                        })?;
                     }
                 }
-                            */
                 "description" => {
                     read_str(raw).map_err(|_e| Error::new(InvalidData, "`description` field didn't contain string"))?;
                 },

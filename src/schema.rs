@@ -4,8 +4,9 @@ use std::io::ErrorKind::{InvalidData,Other};
 use std::collections::HashMap;
 
 use MarkerType;
+use CompressType;
 use decode::*;
-use document::extract_schema_hash;
+use document::{extract_schema_hash, parse_schema_hash};
 use validator::{ValidObj, Validator, ValidatorChecklist};
 use Hash;
 use Document;
@@ -17,55 +18,231 @@ enum Compression {
     DictCompress((zstd_safe::CDict<'static>, zstd_safe::DDict<'static>))
 }
 
-/*
 impl Compression {
     fn read_raw(raw: &mut &[u8]) -> io::Result<Compression> {
         let mut setting_seen = false;
         let mut format_seen = false;
+        let mut level_seen = false;
+        let mut level = zstd_safe::CLEVEL_DEFAULT;
         let mut format = 0;
         let mut setting = None;
         let mut setting_bool = false;
 
         let num_fields = match read_marker(raw)? {
             MarkerType::Object(len) => len,
-            _ => return Err(Error::new(InvalidData, "Compression spec wasn't an object")),
+            _ => return Err(Error::new(InvalidData, "Compress spec wasn't an object")),
         };
-        object_iterate(raw, len, |field, raw| {
+        object_iterate(raw, num_fields, |field, raw| {
             match field {
                 "format" => {
                     format_seen = true;
-                    format = read_integer(raw)?;
+                    if let Some(i) = read_integer(raw)?.as_u64() {
+                        if i > 31 {
+                            Err(Error::new(InvalidData,
+                                "Compress `format` field didn't contain integer between 0 and 31"))
+                        }
+                        else {
+                            format = i;
+                            Ok(())
+                        }
+                    }
+                    else {
+                        Err(Error::new(InvalidData,
+                            "Compress `format` field didn't contain integer between 0 and 31"))
+                    }
+                },
+                "level" => {
+                    level_seen = true;
+                    if let Some(i) = read_integer(raw)?.as_u64() {
+                        if i > 255 {
+                            Err(Error::new(InvalidData,
+                                "Compress `level` field didn't contain integer between 0 and 255"))
+                        }
+                        else {
+                            level = i as i32;
+                            let max = zstd_safe::max_c_level();
+                            if level > max {
+                                level = max;
+                            }
+                            Ok(())
+                        }
+                    }
+                    else {
+                        Err(Error::new(InvalidData,
+                            "Compress `level` field didn't contain integer between 0 and 255"))
+                    }
                 },
                 "setting" => {
                     setting_seen = true;
                     match read_marker(raw)? {
                         MarkerType::Boolean(v) => {
-                            format_bool = v;
+                            setting_bool = v;
+                            Ok(())
                         },
                         MarkerType::Binary(len) => {
                             let v = read_raw_bin(raw, len)?;
-                            setting = true;
-                            setting_bin = Some(v.to_vec());
+                            setting = Some(v.to_vec());
+                            setting_bool = true;
+                            Ok(())
                         },
                         _ => {
-                            return Err(Error::new(InvalidData,
-                                    "`doc_compress`/`setting` field didn't contain boolean or binary data"));
+                            Err(Error::new(InvalidData,
+                                "Compress `setting` field didn't contain boolean or binary data"))
                         }
                     }
                 },
                 _ => {
-                    return Err(Error::new(InvalidData,
-                            format!("`doc_compress` contains unrecognized field `{}`", field)));
+                    Err(Error::new(InvalidData,
+                        format!("Compress contains unrecognized field `{}`", field)))
                 }
             }
-            if format.is_none() && setting_bin.is_some() {
-                return Err(Error::new(InvalidData,
-                        "Compression specifies a binary setting, but not a format"));
+        })?;
+
+        // Checks to verify we met the allowed object format
+        if !setting_seen {
+            return Err(Error::new(InvalidData, "Compress spec didn't have setting field"));
+        }
+        if !setting_bool && (format_seen || level_seen) {
+            return Err(Error::new(InvalidData, "Compress spec had false setting field, but other fields were also present"));
+        }
+        if !format_seen && setting_bool {
+            return Err(Error::new(InvalidData, "Compress spec had setting field not set to false, but no format field"));
+        }
+
+        Ok(
+            if !setting_bool {
+                Compression::NoCompress
+            }
+            else if format > 0 {
+                // We know compression was desired, but don't recognize the format. Just use 
+                // default compression instead.
+                Compression::Compress(zstd_safe::CLEVEL_DEFAULT)
+            }
+            else if let Some(bin) = setting {
+                Compression::DictCompress((
+                    zstd_safe::create_cdict(&bin[..], level),
+                    zstd_safe::create_ddict(&bin[..])
+                ))
+            }
+            else {
+                Compression::Compress(level)
+            }
+        )
+    }
+
+    fn compress(&mut self, compressor: &mut zstd_safe::CCtx, raw: &[u8], buf: &mut Vec<u8>) {
+        match self {
+            Compression::NoCompress => {
+                buf.extend_from_slice(raw);
+            },
+            Compression::Compress(level) => {
+                let vec_len = buf.len();
+                let mut buffer_len = zstd_safe::compress_bound(raw.len());
+                buf.reserve(buffer_len);
+                unsafe {
+                    buf.set_len(vec_len + buffer_len);
+                    buffer_len = zstd_safe::compress_cctx(
+                        compressor,
+                        &mut buf[vec_len..],
+                        raw,
+                        *level
+                    ).expect("zstd library unexpectedly errored during compress_cctx!");
+                    buf.set_len(vec_len + buffer_len);
+                }
+            },
+            Compression::DictCompress((dict, _)) => {
+                let vec_len = buf.len();
+                let mut buffer_len = zstd_safe::compress_bound(raw.len());
+                buf.reserve(buffer_len);
+                unsafe {
+                    buf.set_len(vec_len + buffer_len);
+                    buffer_len = zstd_safe::compress_using_cdict(
+                        compressor,
+                        &mut buf[vec_len..],
+                        raw,
+                        dict
+                    ).expect("zstd library unexpectedly errored during compress_cctx!");
+                    buf.set_len(vec_len + buffer_len);
+                }
+            },
+        }
+    }
+
+    // Decompress raw data, after it has been stripped of the `CompressType` byte and the header if 
+    // present, which consists of the leading object tag and schema hash field-value pair. max_size 
+    // should reflect if the header has already been read. The intent is that the caller of this 
+    // function needed to vet the schema hash anyway, and verify that an Entry didn't start with 
+    // the Compressed flag, and that a Document didn't start with the CompressedNoSchema flag.
+    fn decompress(
+        &mut self,
+        decompressor: &mut zstd_safe::DCtx,
+        max_size: usize,
+        compress_type: CompressType,
+        buf: &mut &[u8],
+        decode: &mut Vec<u8>
+    )
+        -> io::Result<()>
+    {
+        match compress_type {
+            CompressType::Uncompressed => {
+                if buf.len() > max_size {
+                    return Err(io::Error::new(InvalidData, "Data is larger than maximum allowed size"));
+                }
+                decode.extend_from_slice(buf);
+                Ok(())
+            },
+            CompressType::Compressed | CompressType::CompressedNoSchema => {
+                // Decompress the data
+                // Find the expected size, and fail if it's larger than the maximum allowed size.
+                let decode_len = decode.len();
+                let expected_len = zstd_safe::get_frame_content_size(buf);
+                if ((decode_len as u64)+expected_len) > (max_size as u64) {
+                    return Err(io::Error::new(InvalidData, "Expected decompressed size is larger than maximum allowed size"));
+                }
+                let expected_len = expected_len as usize;
+                unsafe {
+                    decode.set_len(decode_len + expected_len);
+                    let len = zstd_safe::decompress_dctx(
+                        decompressor,
+                        &mut decode[..],
+                        buf
+                    ).map_err(|_| io::Error::new(InvalidData, "Decompression failed"))?;
+                    decode.set_len(decode_len + len);
+                }
+                Ok(())
+            },
+            CompressType::DictCompressed => {
+                // Decompress the data
+                // Find the expected size, and fail if it's larger than the maximum allowed size.
+                if let Compression::DictCompress((_,dict)) = &self {
+                    // Decompress the data
+                    // Find the expected size, and fail if it's larger than the maximum allowed size.
+                    let decode_len = decode.len();
+                    let expected_len = zstd_safe::get_frame_content_size(buf);
+                    if ((decode_len as u64)+expected_len) > (max_size as u64) {
+                        return Err(io::Error::new(InvalidData, "Expected decompressed size is larger than maximum allowed size"));
+                    }
+                    let expected_len = expected_len as usize;
+                    unsafe {
+                        decode.set_len(decode_len + expected_len);
+                        let len = zstd_safe::decompress_using_ddict(
+                            decompressor,
+                            &mut decode[..],
+                            buf,
+                            dict
+                        ).map_err(|_| io::Error::new(InvalidData, "Decompression failed"))?;
+                        decode.set_len(decode_len + len);
+                    }
+                    Ok(())
+                }
+                else {
+                    Err(io::Error::new(InvalidData, "Schema has no dictionary for this data"))
+                }
             }
         }
     }
+
 }
-*/
 
 
 /// Struct holding the validation portions of a schema. Can be used for validation of a document or 

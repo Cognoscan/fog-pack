@@ -14,8 +14,9 @@ pub struct Key {
     id: PublicSignKey,
 }
 
-/// A Condense-db Identity, which may be used for signature verification and 
-/// encryption of data. This is really a cryptographic public key.
+/// A fog-pack Identity, which may be used for signature verification and 
+/// encryption of data. This is a key for Ed25519 signing and encryption with 
+/// Curve25519.
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct Identity {
     version: u8,

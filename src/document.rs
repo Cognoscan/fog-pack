@@ -151,6 +151,8 @@ impl Document {
     }
 
     /// Remove any overrides on the compression settings set by [`set_compression`].
+    ///
+    /// [`set_compression`]: #method.set_compression
     pub fn reset_compression(&mut self) {
         self.override_compression = false;
     }
@@ -178,12 +180,16 @@ impl Document {
 
     /// Returns the compression setting that will be used if the compression is overridden. Check 
     /// override status with [`override_compression`].
+    ///
+    /// [`override_compression`]: #method.override_compression
     pub fn compression(&self) -> Option<i32> {
         self.compression
     }
 
     /// Returns true if compression is being overridden. If true, the setting returned by 
     /// [`compression`] will be used.
+    ///
+    /// [`compression`]: #method.compression
     pub fn override_compression(&self) -> bool {
         self.override_compression
     }
@@ -201,8 +207,9 @@ impl Document {
 
 }
 
-/// Finds the schema hash for a raw, encoded document. Fails if raw data isn't an object, or if 
-/// the empty field ("") doesn't contain a Hash. If there is no empty field, `None` is returned.
+/// Finds the schema hash for a raw, encoded document. Fails if raw data doesn't fit the document 
+/// format, or if the empty field ("") doesn't contain a Hash. If there is no schema, `None` is 
+/// returned.
 pub fn extract_schema_hash(buf: &[u8]) -> io::Result<Option<Hash>> {
     let mut buf: &[u8] = buf;
     let compressed = CompressType::decode(&mut buf)?;

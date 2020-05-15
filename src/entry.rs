@@ -147,6 +147,8 @@ impl Entry {
     }
 
     /// Remove any overrides on the compression settings set by [`set_compression`].
+    ///
+    /// [`set_compression`]: #method.set_compression
     pub fn reset_compression(&mut self) {
         self.override_compression = false;
     }
@@ -179,12 +181,16 @@ impl Entry {
 
     /// Returns the compression setting that will be used if the compression is overridden. Check 
     /// override status with [`override_compression`].
+    ///
+    /// [`override_compression`]: #method.override_compression
     pub fn compression(&self) -> Option<i32> {
         self.compression
     }
 
     /// Returns true if compression is being overridden. If true, the setting returned by 
     /// [`compression`] will be used.
+    ///
+    /// [`compression`]: #method.compression
     pub fn override_compression(&self) -> bool {
         self.override_compression
     }

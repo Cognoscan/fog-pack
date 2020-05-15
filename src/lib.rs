@@ -87,6 +87,7 @@ pub use self::timestamp::Timestamp;
 pub use self::document::Document;
 pub use self::entry::Entry;
 pub use self::no_schema::NoSchema;
+pub use document::extract_schema_hash;
 
 /// The maximum allowed size of a raw document, including signatures, is 1 MiB. An encoded, 
 /// compressed document may be slightly larger than this, as it includes a short header, and 

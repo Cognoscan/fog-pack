@@ -112,6 +112,13 @@ impl Vault {
 
     /// Write the entire keystore out to a file.
     pub fn write_to_file(&self, f: &mut File) -> std::io::Result<()> {
+        f.write_all(&self.encode()[..])?;
+        f.sync_data()?;
+        Ok(())
+    }
+
+    /// Encrypt the entire keystore and pass it out as a byte vector.
+    pub fn encode(&self) -> Vec<u8> {
         // Write the PasswordConfig, then all perm_keys, then all perm_streams
         let mut data = Vec::with_capacity(
             PasswordConfig::len() +
@@ -139,18 +146,23 @@ impl Vault {
             res
         };
         data.extend_from_slice(&tag.0);
-        f.write_all(&data[..])?;
-        f.sync_data()?;
-        Ok(())
+        data
     }
 
     /// Read the entire keystore from a file, returning a Vault.
     /// 
     /// Consumes the password string in the process and zeroes it out before dropping it.
-    pub fn read_from_file(f: &mut File, password: String) -> io::Result<Vault> {
+    pub fn read_from_file(f: &mut File, password: String) -> io::Result<Self> {
         let mut buf_reader = BufReader::new(f);
         let mut content = Vec::new();
         buf_reader.read_to_end(&mut content)?;
+        Self::decode(content, password)
+    }
+
+    /// Read a keystore from a byte vector, returning a Vault. Consumes both the byte vector and 
+    /// the password string. The byte vector is used for in-place decryption, then is zeroed out. 
+    /// The password string is likewise zeroed out.
+    pub fn decode(mut content: Vec<u8>, password: String) -> io::Result<Self> {
         if content.len() < (PasswordConfig::len() + Nonce::len() + Tag::len()) {
             return Err(io::Error::new(ErrorKind::UnexpectedEof, "Password file does not contain any encryption info"));
         }

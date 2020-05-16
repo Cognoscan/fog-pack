@@ -3,13 +3,11 @@ use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
 use std::collections::HashMap;
 
-use MarkerType;
-use CompressType;
 use decode::*;
 use document::{extract_schema_hash, parse_schema_hash};
 use validator::{ValidObj, Validator, ValidatorChecklist};
-use Hash;
-use Document;
+use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Hash, Document, MarkerType, CompressType};
+use super::zstd_help;
 
 /**
 */
@@ -131,8 +129,75 @@ impl Schema {
         &self.hash
     }
 
-    pub fn encode_doc(&self, _doc: &Document, _buf: &mut Vec<u8>) -> io::Result<()> {
-        Err(Error::new(Other, "Document doesn't use this schema"))
+    /// Encode the document and write it to an output buffer. Schema compression defaults are used 
+    /// unless overridden by the Document. This will fail if the document's schema hash doesn't 
+    /// match this schema.
+    ///
+    /// # Panics
+    /// Panics if the underlying zstd calls return an error, which shouldn't be possible. Also 
+    /// panics if the document somehow became larger than the maximum allowed size, which should be 
+    /// impossible with the public Document interface.
+    pub fn encode_doc(&mut self, doc: &Document, buf: &mut Vec<u8>) -> Result<(),()> {
+        let len = doc.len();
+        let mut raw: &[u8] = doc.raw_doc();
+        assert!(len <= MAX_DOC_SIZE,
+            "Document was larger than maximum size! Document implementation should've made this impossible!");
+
+        // Verify we're the right schema hash
+        if let Some(doc_schema) = doc.schema_hash() {
+            if doc_schema != self.hash() { return Err(()); }
+        }
+        else {
+            return Err(());
+        }
+
+        // Verify the document passes validation
+        let mut checklist = ValidatorChecklist::new();
+        let validate = self.object.validate("", &mut doc.raw_doc(), &self.types, &mut checklist, true);
+        if validate.is_err() { return Err(()); }
+
+        if doc.override_compression() {
+            if let Some(level) = doc.compression() {
+                CompressType::Compressed.encode(buf);
+                let _ = parse_schema_hash(&mut raw)
+                    .expect("Document has invalid vec!")
+                    .expect("Document has invalid vec!");
+                let header_len = doc.raw_doc().len() - raw.len();
+                buf.extend_from_slice(&doc.raw_doc()[..header_len]);
+                // Compress everything else
+                zstd_help::compress(&mut self.compressor, level, raw, buf);
+            }
+            else {
+                CompressType::Uncompressed.encode(buf);
+                buf.extend_from_slice(raw);
+            }
+        }
+        else {
+            match self.doc_compress {
+                Compression::NoCompress => {
+                    CompressType::Uncompressed.encode(buf);
+                }
+                Compression::Compress(_) => {
+                    CompressType::Compressed.encode(buf);
+                    let _ = parse_schema_hash(&mut raw)
+                        .expect("Document has invalid vec!")
+                        .expect("Document has invalid vec!");
+                    let header_len = doc.raw_doc().len() - raw.len();
+                    buf.extend_from_slice(&doc.raw_doc()[..header_len]);
+                }
+                Compression::DictCompress(_) => {
+                    CompressType::DictCompressed.encode(buf);
+                    let _ = parse_schema_hash(&mut raw)
+                        .expect("Document has invalid vec!")
+                        .expect("Document has invalid vec!");
+                    let header_len = doc.raw_doc().len() - raw.len();
+                    buf.extend_from_slice(&doc.raw_doc()[..header_len]);
+                }
+            }
+            self.doc_compress.compress(&mut self.compressor, raw, buf);
+        }
+
+        Ok(())
     }
 
     /// Validates a document against this schema. Does not check the schema field itself.
@@ -319,34 +384,10 @@ impl Compression {
                 buf.extend_from_slice(raw);
             },
             Compression::Compress(level) => {
-                let vec_len = buf.len();
-                let mut buffer_len = zstd_safe::compress_bound(raw.len());
-                buf.reserve(buffer_len);
-                unsafe {
-                    buf.set_len(vec_len + buffer_len);
-                    buffer_len = zstd_safe::compress_cctx(
-                        compressor,
-                        &mut buf[vec_len..],
-                        raw,
-                        *level
-                    ).expect("zstd library unexpectedly errored during compress_cctx!");
-                    buf.set_len(vec_len + buffer_len);
-                }
+                zstd_help::compress(compressor, *level, raw, buf);
             },
             Compression::DictCompress((dict, _)) => {
-                let vec_len = buf.len();
-                let mut buffer_len = zstd_safe::compress_bound(raw.len());
-                buf.reserve(buffer_len);
-                unsafe {
-                    buf.set_len(vec_len + buffer_len);
-                    buffer_len = zstd_safe::compress_using_cdict(
-                        compressor,
-                        &mut buf[vec_len..],
-                        raw,
-                        dict
-                    ).expect("zstd library unexpectedly errored during compress_cctx!");
-                    buf.set_len(vec_len + buffer_len);
-                }
+                zstd_help::dict_compress(compressor, dict, raw, buf);
             },
         }
     }
@@ -375,48 +416,13 @@ impl Compression {
                 Ok(())
             },
             CompressType::Compressed | CompressType::CompressedNoSchema => {
-                // Decompress the data
-                // Find the expected size, and fail if it's larger than the maximum allowed size.
-                let decode_len = decode.len();
-                let expected_len = zstd_safe::get_frame_content_size(buf);
-                if ((decode_len as u64)+expected_len) > (max_size as u64) {
-                    return Err(io::Error::new(InvalidData, "Expected decompressed size is larger than maximum allowed size"));
-                }
-                let expected_len = expected_len as usize;
-                unsafe {
-                    decode.set_len(decode_len + expected_len);
-                    let len = zstd_safe::decompress_dctx(
-                        decompressor,
-                        &mut decode[..],
-                        buf
-                    ).map_err(|_| io::Error::new(InvalidData, "Decompression failed"))?;
-                    decode.set_len(decode_len + len);
-                }
-                Ok(())
+                zstd_help::decompress(decompressor, max_size, buf, decode)
             },
             CompressType::DictCompressed => {
                 // Decompress the data
                 // Find the expected size, and fail if it's larger than the maximum allowed size.
                 if let Compression::DictCompress((_,dict)) = &self {
-                    // Decompress the data
-                    // Find the expected size, and fail if it's larger than the maximum allowed size.
-                    let decode_len = decode.len();
-                    let expected_len = zstd_safe::get_frame_content_size(buf);
-                    if ((decode_len as u64)+expected_len) > (max_size as u64) {
-                        return Err(io::Error::new(InvalidData, "Expected decompressed size is larger than maximum allowed size"));
-                    }
-                    let expected_len = expected_len as usize;
-                    unsafe {
-                        decode.set_len(decode_len + expected_len);
-                        let len = zstd_safe::decompress_using_ddict(
-                            decompressor,
-                            &mut decode[..],
-                            buf,
-                            dict
-                        ).map_err(|_| io::Error::new(InvalidData, "Decompression failed"))?;
-                        decode.set_len(decode_len + len);
-                    }
-                    Ok(())
+                    zstd_help::dict_decompress(decompressor, dict, max_size, buf, decode)
                 }
                 else {
                     Err(io::Error::new(InvalidData, "Schema has no dictionary for this data"))

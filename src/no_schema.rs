@@ -6,6 +6,7 @@ use super::document::parse_schema_hash;
 use decode;
 use encode;
 use crypto;
+use zstd_help;
 
 /// An encoder/decoder for when no Schema is being used.
 ///
@@ -57,7 +58,7 @@ impl NoSchema {
             else {
                 CompressType::CompressedNoSchema.encode(buf);
             }
-            self.compress(raw, level, buf);
+            zstd_help::compress(&mut self.compress, level, raw, buf);
         }
         else {
             CompressType::Uncompressed.encode(buf);
@@ -84,29 +85,11 @@ impl NoSchema {
 
         if let Some(level) = compress {
             CompressType::CompressedNoSchema.encode(buf);
-            self.compress(raw, level, buf);
+            zstd_help::compress(&mut self.compress, level, raw, buf);
         }
         else {
             CompressType::Uncompressed.encode(buf);
             buf.extend_from_slice(raw);
-        }
-    }
-
-
-    fn compress(&mut self, raw: &[u8], level: i32, buf: &mut Vec<u8>) {
-        // Allocate a slightly more space than is in the input
-        let vec_len = buf.len();
-        let mut buffer_len = zstd_safe::compress_bound(raw.len());
-        buf.reserve(buffer_len);
-        unsafe {
-            buf.set_len(vec_len + buffer_len);
-            buffer_len = zstd_safe::compress_cctx(
-                &mut self.compress,
-                &mut buf[vec_len..],
-                raw,
-                level
-            ).expect("zstd library unexpectedly errored during compress_cctx!");
-            buf.set_len(vec_len + buffer_len);
         }
     }
 
@@ -350,24 +333,9 @@ impl NoSchema {
                 // Save off the compressed data
                 compress_type.encode(&mut compressed);
                 compressed.extend_from_slice(buf);
-                // Decompress the data
-                // Find the expected size, and fail if it's larger than the maximum allowed size.
-                let expected_len = zstd_safe::get_frame_content_size(buf);
-                if expected_len > (max_size as u64) {
-                    return Err(io::Error::new(InvalidData, "Expected decompressed size is larger than maximum allowed size"));
-                }
-                let expected_len = expected_len as usize;
-                let mut doc = Vec::with_capacity(expected_len);
-                unsafe {
-                    doc.set_len(expected_len);
-                    let len = zstd_safe::decompress_dctx(
-                        &mut self.decompress,
-                        &mut doc[..],
-                        buf
-                    ).map_err(|_| io::Error::new(InvalidData, "Decompression failed"))?;
-                    doc.set_len(len);
-                }
-                Ok((doc, Some(compressed)))
+                let mut decode = Vec::new();
+                zstd_help::decompress(&mut self.decompress, max_size, buf, &mut decode)?;
+                Ok((decode, Some(compressed)))
             },
             CompressType::Compressed | CompressType::DictCompressed => {
                 return Err(io::Error::new(InvalidData, "Data uses a schema, but NoSchema struct was used for decoding"));

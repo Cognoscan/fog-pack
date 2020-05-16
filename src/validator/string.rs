@@ -13,6 +13,9 @@ use marker::MarkerType;
 pub struct ValidStr {
     in_vec: Vec<String>,
     nin_vec: Vec<String>,
+    min_char: usize,
+    max_char: usize,
+    use_char: bool,
     min_len: usize,
     max_len: usize,
     matches: Vec<Regex>,
@@ -26,6 +29,9 @@ impl ValidStr {
         ValidStr {
             in_vec: Vec::with_capacity(0),
             nin_vec: Vec::with_capacity(0),
+            min_char: usize::min_value(),
+            max_char: usize::max_value(),
+            use_char: false,
             min_len: usize::min_value(),
             max_len: usize::max_value(),
             matches: Vec::with_capacity(0),
@@ -113,6 +119,16 @@ impl ValidStr {
                     },
                 }
             },
+            "max_char" => {
+                if let Some(len) = read_integer(raw)?.as_u64() {
+                    self.max_char = len as usize;
+                    self.use_char = true;
+                    Ok(true)
+                }
+                else {
+                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `max_char` field"))
+                }
+            }
             "max_len" => {
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.max_len = len as usize;
@@ -120,6 +136,16 @@ impl ValidStr {
                 }
                 else {
                     Err(Error::new(InvalidData, "String validator requires non-negative integer for `max_len` field"))
+                }
+            }
+            "min_char" => {
+                if let Some(len) = read_integer(raw)?.as_u64() {
+                    self.min_char = len as usize;
+                    self.use_char = true;
+                    Ok(self.max_char >= self.min_char)
+                }
+                else {
+                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `min_char` field"))
                 }
             }
             "min_len" => {
@@ -182,6 +208,12 @@ impl ValidStr {
                 if let Some(nin) = self.nin_vec.get(nin_index) {
                     if nin == val { continue; }
                 }
+                let len_char = bytecount::num_chars(val.as_bytes());
+                if self.use_char {
+                    if (len_char > self.max_char) || (len_char < self.min_char) {
+                        continue;
+                    }
+                }
                 if (val.len() >= self.min_len) && (val.len() <= self.max_len) 
                     && self.matches.iter().all(|reg| reg.is_match(val))
                 {
@@ -199,7 +231,9 @@ impl ValidStr {
             // Only keep `nin` values that would otherwise pass
             let mut nin_vec = self.nin_vec.clone();
             nin_vec.retain(|val| {
+                let len_char = bytecount::num_chars(val.as_bytes());
                 (val.len() >= min_len) && (val.len() <= max_len) 
+                    && (len_char >= self.min_char) && (len_char <= self.max_char)
                     && self.matches.iter().all(|reg| reg.is_match(val))
             });
             nin_vec.shrink_to_fit();
@@ -210,6 +244,7 @@ impl ValidStr {
 
     pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
         let value = read_str(doc)?;
+        let len_char = if self.use_char { bytecount::num_chars(value.as_bytes()) } else { 0 };
         if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains string not on the `in` list", field)))
@@ -217,13 +252,21 @@ impl ValidStr {
         else if self.in_vec.len() > 0 {
             Ok(())
         }
+        else if self.use_char && (len_char < self.min_char) {
+            Err(Error::new(InvalidData,
+                format!("Field \"{}\" contains string shorter than min char length of {}", field, self.min_char)))
+        }
+        else if self.use_char && (len_char > self.max_char) {
+            Err(Error::new(InvalidData,
+                format!("Field \"{}\" contains string longer than max char length of {}", field, self.max_char)))
+        }
         else if value.len() < self.min_len {
             Err(Error::new(InvalidData,
                 format!("Field \"{}\" contains string shorter than min length of {}", field, self.min_len)))
         }
         else if value.len() > self.max_len {
             Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains string longer than max length of {}", field, self.min_len)))
+                format!("Field \"{}\" contains string longer than max length of {}", field, self.max_len)))
         }
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(value)).is_ok() {
             Err(Error::new(InvalidData,
@@ -246,12 +289,16 @@ impl ValidStr {
             Validator::String(other) => {
                 if query && (
                     (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.size && ((other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
+                    || (!self.size && (other.use_char || (other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
                     || (!self.regex && (other.matches.len() > 0)))
                 {
                     Err(())
                 }
                 else if (self.min_len > other.max_len) || (self.max_len < other.min_len) 
+                {
+                    Ok(Validator::Invalid)
+                }
+                else if (self.min_char > other.max_char) || (self.max_char < other.min_char)
                 {
                     Ok(Validator::Invalid)
                 }
@@ -272,6 +319,9 @@ impl ValidStr {
                         nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
                         min_len: self.min_len.max(other.min_len),
                         max_len: self.max_len.min(other.max_len),
+                        min_char: self.min_char.max(other.min_char),
+                        max_char: self.max_char.min(other.max_char),
+                        use_char: self.use_char || other.use_char,
                         matches: matches,
                         query: self.query && other.query,
                         size: self.size && other.size,
@@ -364,6 +414,22 @@ mod tests {
         assert!(validate_str("TestSt", &validator).is_ok());
         assert!(validate_str("TestStr", &validator).is_err());
         assert!(validate_str("TestString", &validator).is_err());
+
+        // Test min/max characters
+        test1.clear();
+        encode::write_value(&mut test1, &fogpack!({
+            "min_char": 3,
+            "max_char": 6
+        }));
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_str("", &validator).is_err());
+        assert!(validate_str("Te", &validator).is_err());
+        assert!(validate_str("Tes", &validator).is_ok());
+        assert!(validate_str("Test", &validator).is_ok());
+        assert!(validate_str("TestSt", &validator).is_ok());
+        assert!(validate_str("TestStr", &validator).is_err());
+        assert!(validate_str("TestString", &validator).is_err());
+        assert!(validate_str("メカジキ", &validator).is_ok());
     }
 
     #[test]

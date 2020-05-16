@@ -233,8 +233,9 @@ As an example, an integer validator allowing any positive value between 0 and
 
 ### Str
 
-Str types describe an allowed String value. They have the following 
-optional fields:
+Str types describe an allowed String value. Strings are always valid UTF-8, and 
+support counting their length by both the number of raw encoded bytes and the 
+number of Unicode scalar values. They have the following optional fields:
 
 - `default`
 - `comment`
@@ -243,19 +244,38 @@ optional fields:
 - `matches`: A string or array of strings, each of which contains a regex the 
 	described field must match. General perl-style regular expressions are 
 	supported, but without look around and backreferences.
-- `max_len`: The maximum number of UTF-8 characters allowed for the value. Must 
-	be at least 0.
-- `min_len`: The minimum number of UTF-8 characters allowed for the value. Must 
-	be at least 0.
+- `max_len`: The maximum number of bytes allowed for the value. Must be at least 
+	0.
+- `min_len`: The minimum number of bytes allowed for the value. Must be at least
+	0.
+- `max_char`: The maximum number of unicode scalar values allowed for the value. 
+	Must be at least 0.
+- `min_char`: The minimum number of unicode scalar values allowed for the value.
+	Must be at least 0.
 - `query`: Boolean. Allows queries to use `in` and `nin`.
 - `regex`: Boolean. Allows queries to use `matches`.
-- `size`: Boolean. Allows queries to use `min_len` and `max_len`.
+- `size`: Boolean. Allows queries to use `min_len`, `max_len`, `min_char`, and 
+	`max_char`.
 
 Validation fails if the value is not a string or does not meet all of the 
 optional requirements.
 
-As an example, a string validator allowing any string without a forward slash, 
-that is fewer than 256 UTF-8 characters in length, a
+As an example, say we want a string validator that only allows valid Unix file 
+names and excludes the special "." and ".." file names. We thus want to only 
+allow strings without a forward slash or null character, that are between 1 and 
+255 bytes in size, but aren't "." or "..". Perhaps we also want to allow exact 
+queries with `in` and `nin` as well. The resulting validator could be:
+
+```json
+{
+    "type": "Str",
+    "min_len" : 1,
+    "max_len": 255,
+    "nin": [ ".", ".." ],
+    "matches": "^[^/\0]*$",
+    "query": true
+}
+```
 
 ### F32 & F64
 
@@ -282,6 +302,17 @@ optional fields:
 
 Validation fails if the value is not the correct type of floating-point value or 
 does not meet all of the optional requirements.
+
+As an example, say we want to accept any float64 value that isn't NaN or +/- 
+infinity. The validator could be:
+
+```json
+{
+    "type": "F64",
+    "ex_min": true,
+    "ex_max": true
+}
+```
 
 ### Bin
 
@@ -316,6 +347,20 @@ purposes of ordinal comparisons. They have the following optional fields:
 Validation fails if the value is not a binary value or does not meet all of the 
 optional requirements.
 
+As an example, say we want to accept a 32-byte bitfield, but only if bit 31 is 
+set. The resulting schema would be:
+
+```json
+{
+    "type": "Bin",
+    "max_len": 32,
+    "bits_set": "<Bin([0x00, 0x00, 0x00, 0x80])>"
+}
+```
+
+Note that we don't need to require a minimum length here - we could implement a
+handler that assumes non-present bytes are all 0.
+
 ### Array
 
 Array types describe an allowed array value. They support the following optional 
@@ -346,6 +391,26 @@ fields:
 
 Validation fails if the value is not an array or does not meet all of the 
 optional requirements.
+
+As an example, say we wanted to accept an array of arrays, where each sub-array 
+is exactly three items and contains a string, then two integers. The resulting 
+validator could look like:
+
+```json
+{
+    "type": "Array",
+    "extra_items": {
+        "type": "Array",
+        "min_len": 3,
+        "max_len": 3,
+        "items": [
+            { "type": "Str" },
+            { "type": "Int" },
+            { "type": "Int" }
+        ]
+    }
+}
+```
 
 ### Obj
 

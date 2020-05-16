@@ -151,6 +151,8 @@
 						},
 						"max_len": { "type": "Int", "min": 0 },
 						"min_len": { "type": "Int", "min": 0 },
+						"max_char": { "type": "Int", "min": 0 },
+						"min_char": { "type": "Int", "min": 0 },
 						"nin": {
 							"type": "Multi",
 							"any_of": [

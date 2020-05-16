@@ -234,6 +234,8 @@ impl NoSchema {
 
     /// Read an entry from a byte slice, trusting the origin of the slice and doing as few checks 
     /// as possible when decoding. Functions like [`trusted_decode_doc`], but for entries.
+    ///
+    /// [`trusted_decode_doc`]: #method.trusted_decode_doc
     pub fn trusted_decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String, hash: Option<Hash>) -> io::Result<Entry> {
         // TODO: Change this function so that it doesn't copy any data until the very end.
         let (entry, compressed) = self.decode_raw(MAX_ENTRY_SIZE, buf)?;
@@ -279,6 +281,8 @@ impl NoSchema {
     /// Success guarantees the resulting entry is valid, and as such, this can be used with 
     /// untrusted inputs. Functions like [`decode_doc`]; see its documentation for the possible 
     /// failure cases.
+    ///
+    /// [`decode_doc`]: #method.decode_doc
     pub fn decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> io::Result<Entry> {
         // TODO: Change this function so that it doesn't copy any data until the very end.
         let (entry, compressed) = self.decode_raw(MAX_ENTRY_SIZE, buf)?;

@@ -50,7 +50,10 @@
 						"setting": { "type": "Multi", "any_of": [
 							{ "type": "Bin" },
 							true
-						] }
+						] },
+          "opt": {
+            "level": { "type": "Int", "min": 0, "max": 255 }
+          }
 				}}
 			]
 		},
@@ -260,7 +263,6 @@
 					"opt": {
 						"comment": { "type": "Str" },
 						"contains": { "type": "Array", "extra_items": { "type": "Validator" } },
-						"contains_ok": { "type": "Bool" },
 						"default": { "type": "Array" },
 						"extra_items": { "type": "Validator" },
 						"in": { "type": "Array", "extra_items": { "type": "Array" } },
@@ -268,6 +270,8 @@
 						"max_len": { "type": "Int", "min": 0 },
 						"min_len": { "type": "Int", "min": 0 },
 						"nin": { "type": "Array", "extra_items": { "type": "Array" } },
+						"array": { "type": "Bool" },
+						"contains_ok": { "type": "Bool" },
 						"query": { "type": "Bool" },
 						"unique": { "type": "Bool" }
 					}

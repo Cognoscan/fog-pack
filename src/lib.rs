@@ -84,6 +84,7 @@ extern crate libsodium_sys;
 extern crate libc;
 extern crate regex;
 extern crate ieee754;
+extern crate bytecount;
 //use std::io::Write;
 
 #[macro_use]
@@ -102,6 +103,7 @@ mod validator;
 mod query;
 mod compress_type;
 mod no_schema;
+mod zstd_help;
 
 pub mod crypto;
 pub mod encode;

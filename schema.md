@@ -431,6 +431,8 @@ optional fields:
 - `opt`: An object where each field is a required field for the described 
 	object, and each associated value is the validator for that field's value in 
 	the described object.
+- `ban`: A string or array of strings that none of the fields are allowed to 
+	be among.
 - `field_type`: A validator that any field values not covered by `req` or `opt` 
 	must adhere to.
 - `unknown_ok`: Allows field-value pairs not covered by `req` and `opt`. This 

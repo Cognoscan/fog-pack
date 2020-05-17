@@ -126,7 +126,13 @@ pub enum Validator {
 }
 
 impl Validator {
-    pub fn read_validator(raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String, usize>)
+    pub fn read_validator(
+        raw: &mut &[u8],
+        is_query: bool,
+        types: &mut Vec<Validator>,
+        type_names: &mut HashMap<String, usize>,
+        schema_hash: &Hash
+    )
         -> io::Result<usize>
     {
         let validator = match read_marker(raw)? {
@@ -218,7 +224,7 @@ impl Validator {
                                 .filter(|(check,_)| **check > 0)
                                 .for_each(|(check,validator)| {
                                     let mut raw_local = &raw_now[..];
-                                    let result = validator.update(field, &mut raw_local, is_query, types, type_names)
+                                    let result = validator.update(field, &mut raw_local, is_query, types, type_names, schema_hash)
                                         .and_then(|x| if x { Ok(2) } else { Ok(1) })
                                         .unwrap_or(0);
                                     if result != 0 {
@@ -318,7 +324,8 @@ impl Validator {
               raw: &mut &[u8],
               is_query: bool,
               types: &mut Vec<Validator>,
-              type_names: &mut HashMap<String,usize>
+              type_names: &mut HashMap<String,usize>,
+              schema_hash: &Hash
     )
         -> io::Result<bool>
     {
@@ -348,13 +355,13 @@ impl Validator {
             Validator::F32(v) => v.update(field, raw),
             Validator::F64(v) => v.update(field, raw),
             Validator::Binary(v) => v.update(field, raw),
-            Validator::Array(v) => v.update(field, raw, is_query, types, type_names),
-            Validator::Object(v) => v.update(field, raw, is_query, types, type_names),
-            Validator::Hash(v) => v.update(field, raw, is_query, types, type_names),
+            Validator::Array(v) => v.update(field, raw, is_query, types, type_names, schema_hash),
+            Validator::Object(v) => v.update(field, raw, is_query, types, type_names, schema_hash),
+            Validator::Hash(v) => v.update(field, raw, is_query, types, type_names, schema_hash),
             Validator::Identity(v) => v.update(field, raw),
             Validator::Lockbox(v) => v.update(field, raw),
             Validator::Timestamp(v) => v.update(field, raw),
-            Validator::Multi(v) => v.update(field, raw, is_query, types, type_names),
+            Validator::Multi(v) => v.update(field, raw, is_query, types, type_names, schema_hash),
             Validator::Valid => Err(Error::new(InvalidData, "Fields not allowed in Valid validator")),
             Validator::Invalid => Err(Error::new(InvalidData, "Fields not allowed in Invalid validator")),
         }

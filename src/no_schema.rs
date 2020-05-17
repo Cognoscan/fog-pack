@@ -29,12 +29,19 @@ impl NoSchema {
     }
 
     /// Encode the document and write it to an output buffer. By default, compression with the zstd 
-    /// default will be used, which may be overridden by the Document. This panics if the 
-    /// underlying zstd calls return an error, which shouldn't be possible witih the way they are 
-    /// used in this library.
-    pub fn encode_doc(&mut self, doc: &Document, buf: &mut Vec<u8>) {
+    /// default will be used, which may be overridden by the Document.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the Document has an associated schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying zstd calls return an error, which shouldn't be possible with the 
+    /// way they are used in this library.
+    pub fn encode_doc(&mut self, doc: Document, buf: &mut Vec<u8>) -> io::Result<()> {
         let len = doc.len();
-        let mut raw: &[u8] = doc.raw_doc();
+        let raw: &[u8] = doc.raw_doc();
         assert!(len <= MAX_DOC_SIZE,
             "Document was larger than maximum size! Document implementation should've made this impossible!");
 
@@ -45,25 +52,19 @@ impl NoSchema {
             Some(zstd_safe::CLEVEL_DEFAULT)
         };
 
+        if doc.schema_hash().is_some() {
+            return Err(io::Error::new(InvalidData, "Document has a schema (encode_doc)"));
+        }
+
         if let Some(level) = compress {
-            if doc.schema_hash().is_some() {
-                // Don't encode schema hash if it exists
-                CompressType::Compressed.encode(buf);
-                let _ = parse_schema_hash(&mut raw)
-                    .expect("Document has invalid vec!")
-                    .expect("Document has invalid vec!");
-                let header_len = doc.raw_doc().len() - raw.len();
-                buf.extend_from_slice(&doc.raw_doc()[..header_len]);
-            }
-            else {
-                CompressType::CompressedNoSchema.encode(buf);
-            }
+            CompressType::CompressedNoSchema.encode(buf);
             zstd_help::compress(&mut self.compress, level, raw, buf);
         }
         else {
             CompressType::Uncompressed.encode(buf);
             buf.extend_from_slice(raw);
         }
+        Ok(())
     }
 
     /// Encode an entry and write it to an output buffer. Includes the entry content only, not the 
@@ -96,8 +97,7 @@ impl NoSchema {
     /// Read a document from a byte slice, trusting the origin of the slice and doing as few checks 
     /// as possible when decoding. It fails if there isn't a valid fogpack value, the compression 
     /// isn't recognized/is invalid, the slice terminates early, or if the document is using a 
-    /// compression method that requires a schema. The presence of a schema is otherwise not 
-    /// checked for.
+    /// compression schema or compression method requiring a schema.
     ///
     /// Rather than compute the hash, the document hash can optionally be provided. If integrity 
     /// checking is desired, provide no hash and compare the expected hash with the hash of the 
@@ -108,6 +108,11 @@ impl NoSchema {
     pub fn trusted_decode_doc(&mut self, buf: &mut &[u8], hash: Option<Hash>) -> io::Result<Document> {
         // TODO: Change this function so that it doesn't copy any data until the very end.
         let (doc, compressed) = self.decode_raw(MAX_DOC_SIZE, buf)?;
+
+        // Check for a schema
+        if let Some(_) = parse_schema_hash(&mut &doc[..])? {
+            return Err(io::Error::new(InvalidData, "Document has a schema (trusted_decode_doc)"));
+        }
 
         // Parse the document itself & optionally start up the hasher
         let doc_len = decode::verify_value(&mut &doc[..])?;
@@ -171,7 +176,7 @@ impl NoSchema {
 
         // Parse the document itself
         if parse_schema_hash(&mut &doc[..])?.is_some() {
-            return Err(io::Error::new(InvalidData, "Document has a schema"));
+            return Err(io::Error::new(InvalidData, "Document has a schema (decode_doc)"));
         }
         let doc_len = decode::verify_value(&mut &doc[..])?;
 
@@ -355,6 +360,7 @@ mod tests {
     use super::*;
     use super::super::Value;
     use crate::crypto::{Vault, PasswordLevel, Key};
+    use Schema;
 
     fn prep_vault() -> (Vault, Key) {
         let mut vault = Vault::new_from_password(PasswordLevel::Interactive, "test".to_string())
@@ -378,14 +384,22 @@ mod tests {
         Document::new(test).expect("Should've been able to encode as a document")
     }
 
-    fn test_doc_with_schema() -> Document {
-        let fake_hash = Hash::new("test".as_bytes());
+    fn test_doc_with_schema() -> (Schema, Document) {
+        let schema: Value = fogpack!({
+            "req": {
+                "test": { "type": "Bool" },
+                "boolean": { "type": "Bool" }
+            }
+        });
+        let schema = Document::new(schema).unwrap();
+        let schema = Schema::from_doc(schema).unwrap();
         let test: Value = fogpack!({
-            "" : fake_hash,
+            "" : Value::from(schema.hash().clone()),
             "test": true,
             "boolean": true,
         });
-        Document::new(test).expect("Should've been able to encode as a document")
+        let doc = Document::new(test).expect("Should've been able to encode as a document");
+        (schema, doc)
     }
 
 
@@ -399,7 +413,7 @@ mod tests {
         let test = Document::new(fogpack!({})).unwrap();
         let mut enc = Vec::new();
         let mut schema_none = NoSchema::new();
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         let dec = schema_none.decode_doc(&mut &enc[..]).expect("Decoding should have worked");
         assert!(test == dec, "Encode->Decode should yield same document");
     }
@@ -410,11 +424,11 @@ mod tests {
         test.set_compression(None);
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         let mut dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
         let mut enc2 = Vec::new();
         dec.set_compression(None);
-        schema_none.encode_doc(&dec, &mut enc2);
+        schema_none.encode_doc(dec.clone(), &mut enc2).unwrap();
         assert!(test == dec, "Encode->Decode should yield same document");
         assert!(enc == enc2, "Encode->Decode->encode didn't yield identical results");
     }
@@ -424,7 +438,7 @@ mod tests {
         let test = test_doc();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         let dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
         assert!(test == dec, "Compress->Decode should yield same document");
     }
@@ -439,7 +453,7 @@ mod tests {
         test.sign(&vault, &key1).expect("Should have been able to sign test document w/ key1");
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         let mut dec = schema_none.trusted_decode_doc(&mut &enc[..], None).expect("Decoding should have worked");
         test.sign(&vault, &key2).expect("Should have been able to sign test document w/ key2");
         dec.sign(&vault, &key2).expect("Should have been able to sign decoded document w/ key2");
@@ -452,7 +466,7 @@ mod tests {
         let (vault, key) = prep_vault();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         let mut dec = schema_none.trusted_decode_doc(&mut &enc[..], Some(test.hash().clone())).expect("Decoding should have worked");
         test.sign(&vault, &key).expect("Should have been able to sign test document");
         dec.sign(&vault, &key).expect("Should have been able to sign decoded document");
@@ -461,10 +475,11 @@ mod tests {
 
     #[test]
     fn doc_compress_schema_decode_fails() {
-        let test = test_doc_with_schema();
+        let (mut schema, test) = test_doc_with_schema();
         let mut schema_none = NoSchema::new();
         let mut enc = Vec::new();
-        schema_none.encode_doc(&test, &mut enc);
+        assert!(schema_none.encode_doc(test.clone(), &mut enc).is_err());
+        schema.encode_doc(test.clone(), &mut enc).unwrap();
         let dec = schema_none.trusted_decode_doc(&mut &enc[..], Some(test.hash().clone()));
         assert!(dec.is_err(), "Decompression should have failed, as a schema was in the document");
     }
@@ -476,16 +491,17 @@ mod tests {
         let mut enc = Vec::new();
 
         // Prep schema-using document
-        let mut test = test_doc_with_schema();
+        let (mut schema, mut test) = test_doc_with_schema();
 
         test.set_compression(None);
-        schema_none.encode_doc(&test, &mut enc);
+        assert!(schema_none.encode_doc(test.clone(), &mut enc).is_err());
+        schema.encode_doc(test.clone(), &mut enc).unwrap();
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Decoding should have failed when a schema was in the document");
 
         enc.clear();
         test.reset_compression();
-        schema_none.encode_doc(&test, &mut enc);
+        schema.encode_doc(test.clone(), &mut enc).unwrap();
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Decompression should have failed when a schema was in the document");
 
@@ -496,7 +512,7 @@ mod tests {
 
         enc.clear();
         test.set_compression(None);
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_ok(), "Decoding a valid document should have succeeded");
         
@@ -513,19 +529,19 @@ mod tests {
         test.sign(&vault, &key).expect("Should have been able to sign test document");
 
         test.set_compression(None);
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         *(enc.last_mut().unwrap()) = *enc.last_mut().unwrap() ^ 0xFF;
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Document signature was corrupted, but decoding succeeded anyway");
 
         enc.clear();
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         enc[10] = 0xFF;
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Document payload was corrupted, but decoding succeeded anyway");
 
         enc.clear();
-        schema_none.encode_doc(&test, &mut enc);
+        schema_none.encode_doc(test.clone(), &mut enc).unwrap();
         enc[0] = 0x1;
         let dec = schema_none.decode_doc(&mut &enc[..]);
         assert!(dec.is_err(), "Document payload was corrupted, but decoding succeeded anyway");

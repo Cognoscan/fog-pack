@@ -107,7 +107,7 @@ impl Hash {
         Hash { version: 0, digest: [0; HASH_BYTES] }
     }
 
-    pub fn get_version(&self) -> u8 {
+    pub fn version(&self) -> u8 {
         self.version
     }
 
@@ -120,7 +120,7 @@ impl Hash {
             1
         }
         else {
-            65
+            HASH_BYTES+1
         }
     }
 
@@ -232,7 +232,7 @@ mod tests {
         let digest = hex::decode(
             "8b57a796a5d07cb04cc1614dfc2acb3f73edc712d7f433619ca3bbe66bb15f49").unwrap();
         let h = Hash::new(&hex::decode("00010203040506070809").unwrap());
-        assert_eq!(h.get_version(), 1);
+        assert_eq!(h.version(), 1);
         assert_eq!(h.digest(), &digest[..]);
     }
 
@@ -240,7 +240,7 @@ mod tests {
     fn empty() {
         let h = Hash::new_empty();
         let digest = [0u8; HASH_BYTES];
-        assert_eq!(h.get_version(), 0);
+        assert_eq!(h.version(), 0);
         assert_eq!(h.digest(), &digest[..]);
         enc_dec(h);
     }

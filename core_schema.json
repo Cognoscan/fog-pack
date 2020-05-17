@@ -22,14 +22,26 @@
 		"min_fields": { "type": "Int", "min": 0 },
 		"req": {
 			"type": "Obj",
+      "ban": "",
 			"unknown_ok": true,
 			"field_type": { "type": "Validator" }
 		},
 		"opt": {
 			"type": "Obj",
+      "ban": "",
 			"unknown_ok": true,
 			"field_type": { "type": "Validator" }
 		},
+    "ban": {
+      "type": "Multi",
+      "any_of": [
+        { "type": "Str", "nin": "" },
+        {
+          "type": "Array",
+          "extra_items": { "type": "Str", "nin": "" }
+        }
+      ]
+    },
 		"unknown_ok": { "type": "Bool" },
 		"types": {
 			"type": "Obj",
@@ -283,6 +295,13 @@
 					"comment": "The Object type validator",
 					"req": { "type": "Obj" },
 					"opt": {
+            "ban": {
+              "type": "Multi",
+              "any_of": [
+                { "type": "Str" },
+                { "type": "Array", "extra_items": { "type": "Str" } }
+              ]
+            },
 						"comment": { "type": "Str" },
 						"default": { "type": "Obj" },
 						"field_type": { "type": "Validator" },

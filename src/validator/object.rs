@@ -4,6 +4,7 @@ use std::io::ErrorKind::InvalidData;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::mem;
+use Hash;
 
 use decode::*;
 use super::*;
@@ -16,15 +17,17 @@ pub struct ValidObj {
     nin_vec: Vec<Box<[u8]>>,
     required: Vec<(String, usize)>,
     optional: Vec<(String, usize)>,
+    banned: Vec<String>,
     min_fields: usize,
     max_fields: usize,
     field_type: Option<usize>,
     unknown_ok: bool,
     query: bool,
+    schema_top: bool,
 }
 
 impl ValidObj {
-    pub fn new(is_query: bool) -> ValidObj {
+    pub fn new(is_query: bool) -> Self {
         // For `unknown_ok`, default to no unknowns allowed, the only time we are not permissive by 
         // default in schema validators.
         ValidObj {
@@ -32,24 +35,70 @@ impl ValidObj {
             nin_vec: Vec::with_capacity(0),
             required: Vec::with_capacity(0),
             optional: Vec::with_capacity(0),
+            banned: Vec::with_capacity(0),
             min_fields: usize::min_value(),
             max_fields: usize::max_value(),
             field_type: None,
             unknown_ok: is_query,
             query: is_query,
+            schema_top: false,
         }
     }
+
+    pub fn new_schema() -> ValidObj {
+        let mut obj = Self::new(false);
+        obj.schema_top = true;
+        obj
+    }
+
 
     /// Update the validator. Returns `Ok(true)` if everything is read out Ok, `Ok(false)` if we 
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>)
+    pub fn update(
+        &mut self,
+        field: &str,
+        raw: &mut &[u8],
+        is_query: bool,
+        types: &mut Vec<Validator>,
+        type_names: &mut HashMap<String,usize>,
+        schema_hash: &Hash
+    )
         -> io::Result<bool>
     {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
+            "ban" => {
+                match read_marker(&mut raw.clone())? {
+                    MarkerType::String(len) => {
+                        let s = read_raw_str(raw, len)?;
+                        if self.schema_top && (s == "") {
+                            return Err(Error::new(InvalidData, "Schema top `ban` cannot have empty string"));
+                        }
+                        self.banned.reserve_exact(1);
+                        self.banned.push(s.to_string());
+                        Ok(true)
+                    },
+                    MarkerType::Array(len) => {
+                        self.banned.reserve_exact(len.min(MAX_VEC_RESERVE));
+                        for _ in 0..len {
+                            let s = read_string(raw)?;
+                            if self.schema_top && (s == "") {
+                                return Err(Error::new(InvalidData, "Schema top `ban` cannot have empty string in array"));
+                            }
+                            self.banned.push(s);
+                        };
+                        self.banned.sort_unstable();
+                        self.banned.dedup();
+                        Ok(true)
+                    },
+                    _ => {
+                        Err(Error::new(InvalidData, "`ban` field must contain string or array of strings"))
+                    }
+                }
+            },
             "default" => {
                 if let MarkerType::Object(len) = read_marker(raw)? {
                     verify_map(raw, len)?;
@@ -60,7 +109,7 @@ impl ValidObj {
                 }
             },
             "field_type" => {
-                self.field_type = Some(Validator::read_validator(raw, is_query, types, type_names)?);
+                self.field_type = Some(Validator::read_validator(raw, is_query, types, type_names, schema_hash)?);
                 Ok(true)
             }
             "in" => {
@@ -71,7 +120,7 @@ impl ValidObj {
                         self.in_vec.push(v);
                     },
                     MarkerType::Array(len) => {
-                        read_marker(raw)?;
+                        self.in_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _ in 0..len {
                             let v = get_obj(raw)?;
                             self.in_vec.push(v);
@@ -111,7 +160,7 @@ impl ValidObj {
                         self.nin_vec.push(v);
                     },
                     MarkerType::Array(len) => {
-                        read_marker(raw)?;
+                        self.nin_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _ in 0..len {
                             let v = get_obj(raw)?;
                             self.nin_vec.push(v);
@@ -129,7 +178,10 @@ impl ValidObj {
                 let mut valid = true;
                 if let MarkerType::Object(len) = read_marker(raw)? {
                     object_iterate(raw, len, |field, raw| {
-                        let v = Validator::read_validator(raw, is_query, types, type_names)?;
+                        if self.schema_top && (field == "") {
+                            return Err(Error::new(InvalidData, "Schema top `opt` cannot have empty string field"));
+                        }
+                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
                         if v == 0 { valid = false; }
                         self.optional.push((field.to_string(), v));
                         Ok(())
@@ -148,7 +200,10 @@ impl ValidObj {
                 let mut valid = true;
                 if let MarkerType::Object(len) = read_marker(raw)? {
                     object_iterate(raw, len, |field, raw| {
-                        let v = Validator::read_validator(raw, is_query, types, type_names)?;
+                        if self.schema_top && (field == "") {
+                            return Err(Error::new(InvalidData, "Schema top `req` cannot have empty string field"));
+                        }
+                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
                         if v == 0 { valid = false; }
                         self.required.push((field.to_string(), v));
                         Ok(())
@@ -227,17 +282,18 @@ impl ValidObj {
         // Setup for loop
         let parent_field = field;
         let mut req_index = 0;
-        let mut opt_index = 0;
         object_iterate(doc, num_fields, |field, doc| {
             // Check against required/optional/unknown types
-            if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
+            if self.banned.binary_search_by(|probe| (**probe).cmp(field)).is_ok() {
+                Err(Error::new(InvalidData, "Field \"{}\" is banned"))
+            }
+            else if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
                 let v_index = self.required[req_index].1;
                 req_index += 1;
                 types[v_index].validate(field, doc, types, v_index, list)
             }
-            else if Some(field) == self.optional.get(opt_index).map(|x| x.0.as_str()) {
+            else if let Ok(opt_index) = self.optional.binary_search_by(|probe| (probe.0).as_str().cmp(field)) {
                 let v_index = self.optional[opt_index].1;
-                opt_index += 1;
                 types[v_index].validate(field, doc, types, v_index, list)
             }
             else if self.unknown_ok {
@@ -250,7 +306,12 @@ impl ValidObj {
                 }
             }
             else {
-                Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)))
+                if self.required.binary_search_by(|probe| (probe.0).as_str().cmp(field)).is_ok() {
+                    Err(Error::new(InvalidData, format!("Missing required fields before \"{}\"", field)))
+                }
+                else {
+                    Err(Error::new(InvalidData, format!("Unknown, invalid field: \"{}\"", field)))
+                }
             }
         })?;
 
@@ -442,11 +503,13 @@ impl ValidObj {
                     nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
                     required: required,
                     optional: optional,
+                    banned: sorted_union(&self.banned[..], &other.banned[..], |a,b| a.cmp(b)),
                     min_fields: self.min_fields.max(other.min_fields),
                     max_fields: self.max_fields.min(other.max_fields),
                     field_type: field_type,
                     unknown_ok: self.unknown_ok && other.unknown_ok,
                     query: self.query && other.query,
+                    schema_top: false, // Only used during initial creation
                 };
                 if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
                     builder.undo_to(builder_len);
@@ -503,7 +566,48 @@ mod tests {
     use crypto::Hash;
     use timestamp::Timestamp;
     use super::*;
-    
+
+    fn read_it(raw: &mut &[u8], is_query: bool) -> (usize, Vec<Validator>) {
+        let mut types = Vec::new();
+        types.push(Validator::Invalid);
+        types.push(Validator::Valid);
+        let mut type_names = HashMap::new();
+        let schema_hash = Hash::new(b"test");
+        let validator = Validator::read_validator(&mut &raw[..], is_query, &mut types, &mut type_names, &schema_hash).unwrap();
+        for (i, v) in types.iter().enumerate() {
+            println!("{}: {:?}", i, v);
+        }
+        match types[validator] {
+            Validator::Object(_) => (),
+            _ => panic!("Parsing an object validator didn't yield an object validator!"),
+        }
+        (validator, types)
+    }
+
+    #[test]
+    fn simple_obj() {
+        let schema: Value = fogpack!({
+            "type": "Obj",
+            "req": {
+                "title": { "type": "Str", "max_len": 200 },
+                "text": { "type": "Str" }
+            },
+        });
+        let mut raw_schema = Vec::new();
+        encode::write_value(&mut raw_schema, &schema);
+
+        let doc: Value = fogpack!({
+            "title": "A Test",
+            "text": "This is a test of a schema document"
+        });
+        let mut raw_doc = Vec::new();
+        encode::write_value(&mut raw_doc, &doc);
+        
+        let (validator, types) = read_it(&mut &raw_schema[..], false);
+        let mut list = ValidatorChecklist::new();
+        types[validator].validate("", &mut &raw_doc[..], &types, validator, &mut list).unwrap();
+    }
+
     #[test]
     fn basic_tests() {
         let now = Timestamp::now().unwrap();
@@ -529,18 +633,7 @@ mod tests {
         encode::write_value(&mut raw_schema, &schema);
         println!("Schema = {}", &schema);
 
-        let mut types = Vec::new();
-        types.push(Validator::Invalid);
-        types.push(Validator::Valid);
-        let mut type_names = HashMap::new();
-        let validator = Validator::read_validator(&mut &raw_schema[..], false, &mut types, &mut type_names).unwrap();
-        for (i, v) in types.iter().enumerate() {
-            println!("{}: {:?}", i, v);
-        }
-        match types[validator] {
-            Validator::Object(_) => (),
-            _ => panic!("Parsing an object validator didn't yield an object validator!"),
-        }
+        let (validator, types) = read_it(&mut &raw_schema[..], false);
 
         // Should pass with all fields
         let mut raw_test = Vec::new();

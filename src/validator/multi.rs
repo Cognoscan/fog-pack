@@ -18,7 +18,7 @@ impl ValidMulti {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>)
+    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>, schema_hash: &Hash)
         -> io::Result<bool>
     {
         // Note about this match: because fields are lexicographically ordered, the items in this 
@@ -28,7 +28,7 @@ impl ValidMulti {
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     self.any_of.push(Vec::new());
                     for _ in 0..len {
-                        let v = Validator::read_validator(raw, is_query, types, type_names)?;
+                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
                         self.any_of[0].push(v);
                     }
                     Ok(true)

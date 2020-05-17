@@ -53,7 +53,7 @@ impl ValidArray {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>)
+    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>, schema_hash: &Hash)
         -> io::Result<bool>
     {
         // Note about this match: because fields are lexicographically ordered, the items in this 
@@ -66,7 +66,7 @@ impl ValidArray {
             "contains" => {
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     for _ in 0..len {
-                        let v = Validator::read_validator(raw, is_query, types, type_names)?;
+                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
                         self.contains.push(v);
                     }
                     Ok(true)
@@ -91,7 +91,7 @@ impl ValidArray {
                 }
             },
             "extra_items" => {
-                self.extra_items = Some(Validator::read_validator(raw, is_query, types, type_names)?);
+                self.extra_items = Some(Validator::read_validator(raw, is_query, types, type_names, schema_hash)?);
                 Ok(true)
             },
             "in" => {
@@ -118,7 +118,7 @@ impl ValidArray {
             "items" => {
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     for _ in 0..len {
-                        let v = Validator::read_validator(raw, is_query, types, type_names)?;
+                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
                         self.items.push(v);
                     }
                     Ok(true)

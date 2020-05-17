@@ -325,7 +325,7 @@ impl Value {
             }
             Value::Timestamp(ref val) => write!(f, "{}", val),
             Value::Hash(ref val) => {
-                if val.get_version() == 0 {
+                if val.version() == 0 {
                     write!(f, "\"<Hash(Null)>\"")
                 }
                 else {
@@ -831,7 +831,7 @@ impl<'a> ValueRef<'a> {
             }
             ValueRef::Timestamp(ref val) => write!(f, "{}", val),
             ValueRef::Hash(ref val) => {
-                if val.get_version() == 0 {
+                if val.version() == 0 {
                     write!(f, "\"<Hash(Null)>\"")
                 }
                 else {

@@ -3,10 +3,11 @@ use std::io::Error;
 use std::io::ErrorKind::{InvalidData,Other};
 use std::collections::HashMap;
 
+use crypto;
 use decode::*;
 use document::{extract_schema_hash, parse_schema_hash};
 use validator::{ValidObj, Validator, ValidatorChecklist};
-use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Hash, Document, MarkerType, CompressType};
+use {MAX_DOC_SIZE, Hash, Document, MarkerType, CompressType};
 use super::zstd_help;
 
 /**
@@ -14,6 +15,7 @@ use super::zstd_help;
 pub struct Schema {
     hash: Hash,
     object: ValidObj,
+    object_valid: bool,
     entries: Vec<(String, usize)>,
     types: Vec<Validator>,
     compressor: zstd_safe::CCtx<'static>,
@@ -23,12 +25,25 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn from_raw(raw: &mut &[u8]) -> io::Result<Schema> {
-        let raw_for_hash: &[u8] = raw;
+
+    pub fn from_doc(doc: Document) -> io::Result<Self> {
+        Self::from_raw(&mut doc.raw_doc(), Some(doc.hash().clone()))
+    }
+
+    fn from_raw(raw: &mut &[u8], hash: Option<Hash>) -> io::Result<Self> {
+        let hash = if let Some(hash) = hash {
+            hash
+        }
+        else {
+            let raw_for_hash: &[u8] = raw;
+            Hash::new(raw_for_hash)
+        };
+
         let mut entries = Vec::new();
         let mut types = Vec::with_capacity(2);
         let mut type_names = HashMap::new();
-        let mut object = ValidObj::new(true); // Documents can always be queried, hence "true"
+        let mut object = ValidObj::new_schema(); // Documents can always be queried, hence "true"
+        let mut object_valid = true;
         let mut doc_compress = Default::default();
         let mut entry_compress = Vec::new();
         types.push(Validator::Invalid);
@@ -58,7 +73,7 @@ impl Schema {
                 "entries" => {
                     if let MarkerType::Object(len) = read_marker(raw)? {
                         object_iterate(raw, len, |field, raw| {
-                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
+                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names, &hash)?;
                             entries.push((field.to_string(), v));
                             Ok(())
                         })?;
@@ -79,13 +94,14 @@ impl Schema {
                         return Err(Error::new(InvalidData, "`entries_compress` field doesn't contain an Object"));
                     }
                 },
-               "field_type" | "max_fields" | "min_fields" | "req" | "opt" | "unknown_ok" => {
-                   object.update(field, raw, false, &mut types, &mut type_names)?;
+               "field_type" | "max_fields" | "min_fields" | "req" | "opt" | "ban" | "unknown_ok" => {
+                   let valid = object.update(field, raw, false, &mut types, &mut type_names, &hash)?;
+                   object_valid = object_valid && valid;
                 },
                 "types" => {
                     if let MarkerType::Object(len) = read_marker(raw)? {
                         object_iterate(raw, len, |field, raw| {
-                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names)?;
+                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names, &hash)?;
                             if v == (types.len() - 1) {
                                 let v = types.pop();
                                 match field {
@@ -112,10 +128,12 @@ impl Schema {
             Ok(())
         })?;
 
-        let hash = Hash::new(raw_for_hash);
+        object_valid = object_valid && object.finalize();
+
         Ok(Schema {
             hash,
             object,
+            object_valid,
             entries,
             types,
             compressor: zstd_safe::create_cctx(),
@@ -131,13 +149,13 @@ impl Schema {
 
     /// Encode the document and write it to an output buffer. Schema compression defaults are used 
     /// unless overridden by the Document. This will fail if the document's schema hash doesn't 
-    /// match this schema.
+    /// match this schema, or validation fails. On failure, nothing is written to the output buffer.
     ///
     /// # Panics
     /// Panics if the underlying zstd calls return an error, which shouldn't be possible. Also 
     /// panics if the document somehow became larger than the maximum allowed size, which should be 
     /// impossible with the public Document interface.
-    pub fn encode_doc(&mut self, doc: &Document, buf: &mut Vec<u8>) -> Result<(),()> {
+    pub fn encode_doc(&mut self, doc: Document, buf: &mut Vec<u8>) -> io::Result<()> {
         let len = doc.len();
         let mut raw: &[u8] = doc.raw_doc();
         assert!(len <= MAX_DOC_SIZE,
@@ -145,16 +163,22 @@ impl Schema {
 
         // Verify we're the right schema hash
         if let Some(doc_schema) = doc.schema_hash() {
-            if doc_schema != self.hash() { return Err(()); }
+            if doc_schema != self.hash() { return Err(io::Error::new(InvalidData, "Document doesn't use this schema")); }
         }
         else {
-            return Err(());
+            return Err(io::Error::new(InvalidData, "Document doesn't use this schema"));
         }
 
         // Verify the document passes validation
-        let mut checklist = ValidatorChecklist::new();
-        let validate = self.object.validate("", &mut doc.raw_doc(), &self.types, &mut checklist, true);
-        if validate.is_err() { return Err(()); }
+        if self.object_valid {
+            if !doc.validated() {
+                let mut checklist = ValidatorChecklist::new();
+                self.object.validate("", &mut doc.raw_doc(), &self.types, &mut checklist, true)?;
+            }
+        }
+        else {
+            return Err(io::Error::new(InvalidData, "This schema cannot pass anything"));
+        }
 
         if doc.override_compression() {
             if let Some(level) = doc.compression() {
@@ -200,10 +224,79 @@ impl Schema {
         Ok(())
     }
 
+    pub fn decode_doc(&mut self, buf: &mut &[u8]) -> io::Result<Document> {
+        let mut buf_ptr: &[u8] = buf;
+        let compress_type = CompressType::decode(&mut buf_ptr)?;
+        if let CompressType::CompressedNoSchema = compress_type {
+            return Err(io::Error::new(InvalidData, "Schema does not support decoding non-schema document"));
+        }
+        let mut doc = Vec::new();
+        let mut buf_post_hash: &[u8] = buf_ptr;
+        parse_schema_hash(&mut buf_post_hash)?; // Just pull off the schema hash & object header
+        doc.extend_from_slice(&buf_ptr[..(buf_ptr.len()-buf_post_hash.len())]);
+        self.doc_compress.decompress(&mut self.decompressor, MAX_DOC_SIZE, compress_type, &mut buf_post_hash, &mut doc)?;
+        
+        // Verify the document passes validation
+        let mut doc_ptr: &[u8] = &doc[..];
+        if self.object_valid {
+            let mut checklist = ValidatorChecklist::new();
+            self.object.validate("", &mut doc_ptr, &self.types, &mut checklist, true)?;
+        }
+        else {
+            return Err(io::Error::new(InvalidData, "Decoding failed: Schema doesn't allow any documents to pass"));
+        }
+
+        let doc_len = doc.len() - doc_ptr.len();
+
+        // Compute the document hashes
+        let mut hash_state = crypto::HashState::new();
+        hash_state.update(&doc[..doc_len]);
+        let doc_hash = hash_state.get_hash();
+        let hash = if doc.len() > doc_len {
+            hash_state.update(&doc[doc_len..]);
+            hash_state.get_hash()
+        }
+        else {
+            doc_hash.clone()
+        };
+
+        // Get & verify signatures
+        let mut signed_by = Vec::new();
+        while doc_ptr.len() > 0 {
+            let signature = crypto::Signature::decode(&mut doc_ptr)
+                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
+            if !signature.verify(&doc_hash) {
+                return Err(io::Error::new(InvalidData, "Signature doesn't verify against document"));
+            }
+            signed_by.push(signature.signed_by().clone());
+        }
+
+        let override_compression = false;
+        let compression = None;
+        let compressed = None;
+        Ok(Document::from_parts(
+            Some(hash_state),
+            Some(doc_hash),
+            hash,
+            doc_len,
+            doc,
+            compressed,
+            override_compression,
+            compression,
+            signed_by,
+            None
+        ))
+    }
+
     /// Validates a document against this schema. Does not check the schema field itself.
     pub fn validate_doc(&self, doc: &mut &[u8]) -> io::Result<()> {
         let mut checklist = ValidatorChecklist::new();
-        self.object.validate("", doc, &self.types, &mut checklist, true).and(Ok(()))
+        if self.object_valid {
+            self.object.validate("", doc, &self.types, &mut checklist, true).and(Ok(()))
+        }
+        else {
+            Err(Error::new(InvalidData, "Schema will never pass"))
+        }
     }
 
     /// Validates a given entry against this schema.
@@ -409,7 +502,7 @@ impl Compression {
     {
         match compress_type {
             CompressType::Uncompressed => {
-                if buf.len() > max_size {
+                if (buf.len() + decode.len()) > max_size {
                     return Err(io::Error::new(InvalidData, "Data is larger than maximum allowed size"));
                 }
                 decode.extend_from_slice(buf);
@@ -430,5 +523,70 @@ impl Compression {
             }
         }
     }
-
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::Value;
+    use NoSchema;
+    //use crate::crypto::{Vault, PasswordLevel, Key};
+
+    fn simple_schema() -> Document {
+        let schema: Value = fogpack!({
+            "req": {
+                "title": { "type": "Str", "max_len": 200 },
+                "text": { "type": "Str" }
+            },
+            "doc_compress": {
+                "format": 0,
+                "level": 3,
+                "setting": true
+            }
+        });
+        Document::new(schema).expect("Should've been able to encode as a document")
+    }
+
+    fn simple_doc(schema: &Hash) -> Document {
+        let doc: Value = fogpack!({
+            "": Value::from(schema.clone()),
+            "title": "A Test",
+            "text": "This is a test of a schema document"
+        });
+        println!("{}", doc);
+        Document::new(doc).expect("Should've been able to encode as document")
+    }
+
+    fn simple_bad_doc(schema: &Hash) -> Document {
+        let doc: Value = fogpack!({
+            "": Value::from(schema.clone()),
+            "title": "A Test",
+            "text": 0
+        });
+        Document::new(doc).expect("Should've been able to encode as document")
+    }
+
+    #[test]
+    fn use_simple_schema() {
+        let schema = simple_schema();
+        let mut schema = Schema::from_doc(schema).unwrap();
+        let mut no_schema = NoSchema::new();
+        let test = simple_doc(schema.hash());
+        let mut enc = Vec::new();
+
+        schema.encode_doc(test.clone(), &mut enc).unwrap();
+        let dec = schema.decode_doc(&mut &enc[..]).unwrap();
+        assert!(test == dec, "Document didn't stay same through enc/dec");
+
+        enc.clear();
+        let test = simple_bad_doc(schema.hash());
+        assert!(schema.encode_doc(test.clone(), &mut enc).is_err());
+        assert!(no_schema.encode_doc(test.clone(), &mut enc).is_err());
+        CompressType::Uncompressed.encode(&mut enc);
+        enc.extend_from_slice(&test.raw_doc()[..]);
+        assert!(schema.decode_doc(&mut &enc[..]).is_err());
+    }
+}
+

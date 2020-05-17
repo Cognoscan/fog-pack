@@ -46,7 +46,7 @@ impl ValidHash {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>)
+    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>, schema_hash: &Hash)
         -> io::Result<bool>
     {
         // Note about this match: because fields are lexicographically ordered, the items in this 
@@ -61,12 +61,23 @@ impl ValidHash {
                     MarkerType::Hash(len) => {
                         let v = read_raw_hash(raw, len)?;
                         self.in_vec.reserve_exact(1);
-                        self.in_vec.push(v);
+                        if v.version() == 0 {
+                            self.in_vec.push(schema_hash.clone());
+                        }
+                        else {
+                            self.in_vec.push(v);
+                        }
                     },
                     MarkerType::Array(len) => {
                         self.in_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
-                            self.in_vec.push(read_hash(raw)?);
+                            let v = read_hash(raw)?;
+                            if v.version() == 0 {
+                                self.in_vec.push(schema_hash.clone());
+                            }
+                            else {
+                                self.in_vec.push(v);
+                            }
                         };
                         self.in_vec.sort_unstable();
                         self.in_vec.dedup();
@@ -78,7 +89,7 @@ impl ValidHash {
                 Ok(true)
             },
             "link" => {
-                self.link = Some(Validator::read_validator(raw, is_query, types, type_names)?);
+                self.link = Some(Validator::read_validator(raw, is_query, types, type_names, schema_hash)?);
                 Ok(true)
             }
             "link_ok" => {
@@ -90,12 +101,23 @@ impl ValidHash {
                     MarkerType::Hash(len) => {
                         let v = read_raw_hash(raw, len)?;
                         self.nin_vec.reserve_exact(1);
-                        self.nin_vec.push(v);
+                        if v.version() == 0 {
+                            self.nin_vec.push(schema_hash.clone());
+                        }
+                        else {
+                            self.nin_vec.push(v);
+                        }
                     },
                     MarkerType::Array(len) => {
                         self.nin_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
-                            self.nin_vec.push(read_hash(raw)?);
+                            let v = read_hash(raw)?;
+                            if v.version() == 0 {
+                                self.nin_vec.push(schema_hash.clone());
+                            }
+                            else {
+                                self.nin_vec.push(v);
+                            }
                         };
                         self.nin_vec.sort_unstable();
                         self.nin_vec.dedup();
@@ -115,12 +137,23 @@ impl ValidHash {
                     MarkerType::Hash(len) => {
                         let v = read_raw_hash(raw, len)?;
                         self.schema.reserve_exact(1);
-                        self.schema.push(v);
+                        if v.version() == 0 {
+                            self.schema.push(schema_hash.clone());
+                        }
+                        else {
+                            self.schema.push(v);
+                        }
                     },
                     MarkerType::Array(len) => {
                         self.schema.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
-                            self.schema.push(read_hash(raw)?);
+                            let v = read_hash(raw)?;
+                            if v.version() == 0 {
+                                self.schema.push(schema_hash.clone());
+                            }
+                            else {
+                                self.schema.push(v);
+                            }
                         };
                         self.schema.sort_unstable();
                         self.schema.dedup();

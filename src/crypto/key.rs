@@ -220,7 +220,7 @@ impl FullKey {
 
     pub fn sign(&self, hash: &Hash) -> Signature {
         Signature { 
-            hash_version: hash.get_version(),
+            hash_version: hash.version(),
             id: Identity { version: self.version, id: self.get_id() },
             sig: sign_detached(&self.signing, hash.digest())
         }

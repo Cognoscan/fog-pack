@@ -20,6 +20,7 @@ pub struct Document {
     compression: Option<i32>,
     signed_by: Vec<Identity>,
     schema_hash: Option<Hash>,
+    validated: bool,
 }
 
 // Documents with matching hashes are completely identical
@@ -59,6 +60,7 @@ impl Document {
             compression,
             signed_by,
             schema_hash,
+            validated: true
         }
     }
 
@@ -66,17 +68,17 @@ impl Document {
     /// has an empty string ("") field that doesn't contain a hash, or if the encoded value is 
     /// greater than the maximum allowed document size.
     pub fn new(v: Value) -> Result<Document, ()> {
-        let schema_hash = if let Some(obj) = v.as_obj() {
+        let (schema_hash, validated) = if let Some(obj) = v.as_obj() {
             if let Some(val) = obj.get("") {
                 if let Some(hash) = val.as_hash() {
-                    Some(hash.clone())
+                    (Some(hash.clone()), false)
                 }
                 else {
                     return Err(()); // Empty string field doesn't contain a hash.
                 }
             }
             else {
-                None
+                (None, true)
             }
         }
         else {
@@ -103,6 +105,7 @@ impl Document {
             compression: None,
             signed_by: Vec::new(),
             schema_hash,
+            validated,
         })
     }
 
@@ -144,17 +147,31 @@ impl Document {
     /// Specifically set compression, overriding default schema settings. If None, no compression 
     /// will be used. If some `i32`, the value will be passed to the zstd compressor. Note: if the 
     /// document has no schema settings, it defaults to generic compression with default zstd 
-    /// settings.
+    /// settings. This also clears out any cached compression data.
     pub fn set_compression(&mut self, compression: Option<i32>) {
         self.override_compression = true;
         self.compression = compression;
+        self.compressed = None;
     }
 
-    /// Remove any overrides on the compression settings set by [`set_compression`].
+    /// Remove any overrides on the compression settings set by [`set_compression`], and clears any 
+    /// cached compression data.
     ///
     /// [`set_compression`]: #method.set_compression
     pub fn reset_compression(&mut self) {
         self.override_compression = false;
+        self.compressed = None;
+    }
+
+    /// Clear out any cached compression data. If the Document was decoded and had been compressed, 
+    /// the compressed version is cached on load in case this is to be re-encoded. This can be 
+    /// called to clear out the cached compressed version - it will also be cleared if either
+    /// [`set_compression`] or [`reset_compression`] is called.
+    ///
+    /// [`set_compression`]: #method.set_compression
+    /// [`reset_compression`]: #method.reset_compression
+    pub fn clear_compress_cache(&mut self) {
+        self.compressed = None;
     }
 
     /// Get an iterator over all known signers of the document.
@@ -192,6 +209,13 @@ impl Document {
     /// [`compression`]: #method.compression
     pub fn override_compression(&self) -> bool {
         self.override_compression
+    }
+
+    /// Returns true if the document has previously been validated by a schema or the general 
+    /// fog-pack validator. This is always true on Documents that were decoded from raw byte 
+    /// slices.
+    pub fn validated(&self) -> bool {
+        self.validated
     }
 
     /// Retrieve the value stored inside the document as a `ValueRef`. This value has the same 

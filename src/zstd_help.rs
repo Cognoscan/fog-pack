@@ -35,7 +35,7 @@ pub fn decompress(dctx: &mut DCtx, max_size: usize, buf: &[u8], decode: &mut Vec
         decode.set_len(decode_len + expected_len);
         let len = decompress_dctx(
             dctx,
-            &mut decode[..],
+            &mut decode[decode_len..],
             buf
         ).map_err(|_| Error::new(InvalidData, "Decompression failed"))?;
         decode.set_len(decode_len + len);
@@ -73,7 +73,7 @@ pub fn dict_decompress(dctx: &mut DCtx, dict: &DDict, max_size: usize, buf: &[u8
         decode.set_len(decode_len + expected_len);
         let len = decompress_using_ddict(
             dctx,
-            &mut decode[..],
+            &mut decode[decode_len..],
             buf,
             dict
         ).map_err(|_| Error::new(InvalidData, "Decompression failed"))?;

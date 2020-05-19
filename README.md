@@ -1,12 +1,9 @@
-# <a href="#"><img src="media/fog_pack.svg" alt="fog-pack" height=50></a>
-
-
-**This README is a work-in-progress and currently documents a far-from-complete library**
+# <a href="#"><img src="media/fog_pack.svg" alt="fog-pack" height=100></a>
 
 fog-pack builds on msgpack with a set of extensions useful for all structured 
 data. The ultimate goal is to provide a single coherent approach to encoding 
-data, validating it, and compressing it. Any existing data format should be 
-replaceable with fog-pack, without compromise.
+data, validating it, and compressing it. Any existing data format can be 
+replaced with fog-pack, without compromise.
 
 To meet this lofty goal, it extends msg-pack by providing:
 
@@ -34,4 +31,24 @@ To meet this lofty goal, it extends msg-pack by providing:
 - Entries, consisting of a fog-pack object, a key string, and the hash of a 
 	fog-pack Document. These may be used to form mutable links between documents.
 - Support for compression. A document or entry may be compressed after encoding 
-	& hashing. Dictionary compression of values is supported if a schema is used.
+	& hashing. Dictionary compression of values is supported if a schema is used, 
+	allowing for exceptionally fast compression and high ratios. See 
+	[`zstd`](https://facebook.github.io/zstd/) for more information on the 
+	compression used.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0
+	([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license
+	([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.

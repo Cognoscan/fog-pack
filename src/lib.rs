@@ -104,6 +104,7 @@ mod query;
 mod compress_type;
 mod no_schema;
 mod zstd_help;
+mod checklist;
 
 pub mod crypto;
 pub mod encode;

@@ -85,6 +85,10 @@ impl ValidatorChecklist {
         }
     }
 
+    pub fn to_map(self) -> HashMap<Hash, Vec<usize>> {
+        self.list
+    }
+
     pub fn iter(&self) -> ::std::collections::hash_map::Iter<Hash, Vec<usize>> {
         self.list.iter()
     }

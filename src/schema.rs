@@ -5,13 +5,73 @@ use std::collections::HashMap;
 
 use crypto;
 use decode::*;
+use encode;
 use document::{extract_schema_hash, parse_schema_hash};
 use validator::{ValidObj, Validator, ValidatorChecklist};
-use {MAX_DOC_SIZE, Hash, Document, MarkerType, CompressType};
+use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Value, Entry, Hash, Document, MarkerType, CompressType};
+use checklist::{EncodeChecklist, DecodeChecklist};
 use super::zstd_help;
 
-
 /**
+Struct holding the validation portions of a schema. Can be used for validation of a document or 
+entry.
+
+Schema are a special type of [`Document`](./struct.Document.html) that describes 
+the format of other documents and their associated entries. They also include 
+recommended compression settings for documents adhering to them, and optionally 
+may include compression dictionaries for improved compression.
+
+Much like how many file formats start with a "magic number" to indicate what 
+their format is, any document adhering to a schema uses the schema's document 
+hash in the empty field. For example, a schema may look like:
+
+```json
+{
+    "": "<Hash(fog-pack Core Schema)>",
+    "name": "Simple Schema",
+    "req": {
+        "title": { "type": "Str", "max_len": 255},
+        "text": { "type": "Str" }
+    }
+}
+```
+
+A document that uses this "Basic Schema" would look like:
+
+```json
+{
+    "": "<Hash(Basic Schema)>",
+    "title": "Example Document",
+    "text": "This is an example document that meets a schema"
+}
+```
+
+Schema Document Format
+======================
+
+The most important concept in a schema document is the validator. A validator is 
+a fog-pack object containing the validation rules for a particular part of a 
+document. It can directly define the rules, or be aliased and used throughout 
+the schema document. Validators are always one of the base fog-pack value types, 
+or allow for several of them. See the Validation Language for more info.
+
+At the top level, a schema is a validator for an object but without support for 
+the `in`, `nin`, `comment`, `default`, or `query` optional fields.  Instead, it 
+supports a few additional optional fields for documentation, entry validation, 
+and compression:
+
+- `name`: A brief string to name the schema.
+- `description`: A brief string describing the purpose of the schema.
+- `version`: An integer for tracking schema versions.
+- `entries`: An object containing validators for each allowed Entry that may be 
+	attached to a Document following the schema.
+- `types`: An object containing aliased validators that may be referred to 
+- anywhere within the schema
+- `doc_compress`: Optionally specifies recommended compression settings for 
+	Documents using the schema.
+- `entries_compress`: Optionally specifies recommended compression settings for 
+	entries attached to documents using the schema.
+
 */
 pub struct Schema {
     hash: Hash,
@@ -22,7 +82,7 @@ pub struct Schema {
     compressor: zstd_safe::CCtx<'static>,
     decompressor: zstd_safe::DCtx<'static>,
     doc_compress: Compression,
-    entry_compress: Vec<(String, Compression)>,
+    entries_compress: Vec<(String, Compression)>,
 }
 
 impl Schema {
@@ -46,7 +106,7 @@ impl Schema {
         let mut object = ValidObj::new_schema(); // Documents can always be queried, hence "true"
         let mut object_valid = true;
         let mut doc_compress = Default::default();
-        let mut entry_compress = Vec::new();
+        let mut entries_compress = Vec::new();
         types.push(Validator::Invalid);
         types.push(Validator::Valid);
 
@@ -87,7 +147,7 @@ impl Schema {
                     if let MarkerType::Object(len) = read_marker(raw)? {
                         object_iterate(raw, len, |field, raw| {
                             let c = Compression::read_raw(raw)?;
-                            entry_compress.push((field.to_string(), c));
+                            entries_compress.push((field.to_string(), c));
                             Ok(())
                         })?;
                     }
@@ -140,7 +200,7 @@ impl Schema {
             compressor: zstd_safe::create_cctx(),
             decompressor: zstd_safe::create_dctx(),
             doc_compress,
-            entry_compress,
+            entries_compress,
         })
     }
 
@@ -227,7 +287,7 @@ impl Schema {
     }
 
     /// Read a document from a byte slices, trusting the origin of the slice and doing as few 
-    /// checks as possible when decoding. It fails if there isn't a valid fogpack value, The 
+    /// checks as possible when decoding. It fails if there isn't a valid fog-pack value, The 
     /// compression isn't valid, the slice terminates early, or if the document isn't using this 
     /// schema.
     ///
@@ -309,11 +369,13 @@ impl Schema {
     /// - Any of the attached signatures are invalid
     pub fn decode_doc(&mut self, buf: &mut &[u8]) -> io::Result<Document> {
         let mut buf_ptr: &[u8] = buf;
+        let mut doc = Vec::new();
+
+        // Decompress the document
         let compress_type = CompressType::decode(&mut buf_ptr)?;
         if let CompressType::CompressedNoSchema = compress_type {
             return Err(io::Error::new(InvalidData, "Schema does not support decoding non-schema document"));
         }
-        let mut doc = Vec::new();
         let mut buf_post_hash: &[u8] = buf_ptr;
         parse_schema_hash(&mut buf_post_hash)?; // Just pull off the schema hash & object header
         doc.extend_from_slice(&buf_ptr[..(buf_ptr.len()-buf_post_hash.len())]);
@@ -371,18 +433,244 @@ impl Schema {
         ))
     }
 
-    //pub fn encode_entry(&self, entry: &Entry, buf: &mut Vec<u8>) -> io::Result<ValidatorChecklist> {
+    /// Encodes an [`Entry`]'s contents and returns an [`EncodeChecklist`] containing the encoded 
+    /// byte vector. The entry's parent hash and field are not included. This will fail if entry 
+    /// validation fails, or the entry's field is not covered by the schema.
+    ///
+    /// [`Entry`]: ./struct.Entry.html
+    /// [`EncodeChecklist`]: ./struct.EncodeChecklist.html
+    pub fn encode_entry(&mut self, entry: &Entry) -> io::Result<EncodeChecklist> {
+        let mut buf = Vec::new();
+        let len = entry.len();
+        let raw: &[u8] = entry.raw_entry();
+        assert!(len <= MAX_ENTRY_SIZE,
+            "Entry was larger than maximum size! Entry implementation should've made this impossible!");
 
-    //}
+        // Verify the entry passes validation
+        let checklist = if !entry.validated() {
+            let mut checklist = ValidatorChecklist::new();
+            let v = self.entries.binary_search_by(|x| x.0.as_str().cmp(entry.field()));
+            if let Ok(v) = v {
+                let v = self.entries[v].1;
+                self.types[v].validate("", &mut entry.raw_entry(), &self.types, 0, &mut checklist)?;
+            }
+            else {
+                return Err(io::Error::new(InvalidData, "Entry field is not in schema"));
+            }
+            checklist
+        }
+        else {
+            ValidatorChecklist::new()
+        };
 
-    /// Validates a given entry against this schema.
-    pub fn validate_entry(&self, entry: &str, doc: &mut &[u8]) -> io::Result<ValidatorChecklist> {
+        if entry.override_compression() {
+            // Compression defaults overridden by entry settings
+            if let Some(level) = entry.compression() {
+                CompressType::CompressedNoSchema.encode(&mut buf);
+                zstd_help::compress(&mut self.compressor, level, raw, &mut buf);
+            }
+            else {
+                CompressType::Uncompressed.encode(&mut buf);
+                buf.extend_from_slice(raw);
+            }
+        }
+        else {
+            // Look up default settings for this entry field type
+            let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(entry.field()));
+            if let Ok(compress_index) = compress {
+                // Entry has associated compression settings; use them
+                let compress = &self.entries_compress[compress_index].1;
+                match compress {
+                    Compression::NoCompress => {
+                        CompressType::Uncompressed.encode(&mut buf);
+                    }
+                    Compression::Compress(_) => {
+                        CompressType::CompressedNoSchema.encode(&mut buf);
+                    }
+                    Compression::DictCompress(_) => {
+                        CompressType::DictCompressed.encode(&mut buf);
+                    }
+                }
+               compress.compress(&mut self.compressor, raw, &mut buf);
+            }
+            else {
+                // Entry has no associated compression settings; use default
+                CompressType::CompressedNoSchema.encode(&mut buf);
+                zstd_help::compress(&mut self.compressor, zstd_safe::CLEVEL_DEFAULT, raw, &mut buf);
+            }
+        }
+
+        Ok(EncodeChecklist::new(checklist, buf))
+    }
+
+    /// Read an [`Entry`] from a byte slice, trusting the origin of the slice and doing as few 
+    /// checks as possible when decoding. It fails if there isn't a valid fog-pack value, the 
+    /// compression isn't valid, or the slice terminates early.
+    ///
+    /// Rather than compute the hash, the entry's hash can optionally be provided. If integrity 
+    /// checking is desired, provide no hash and compare the expected hash with the hash of the 
+    /// resulting entry.
+    ///
+    /// The *only* time this should be used is if the byte slice is coming from a well-trusted 
+    /// location, like an internal database.
+    ///
+    /// [`Entry`]: ./struct.Entry.html
+    /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
+    pub fn trusted_decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String, hash: Option<Hash>) -> io::Result<Entry> {
+        let mut buf_ptr: &[u8] = buf;
+        let mut entry = Vec::new();
+
+        // Decompress the entry
+        let compress_type = CompressType::decode(&mut buf_ptr)?;
+        match compress_type {
+            CompressType::Compressed => {
+                return Err(io::Error::new(InvalidData, "Entries don't allow compression with schema!"));
+            },
+            CompressType::Uncompressed => {
+                entry.extend_from_slice(buf_ptr);
+            },
+            CompressType::CompressedNoSchema => {
+                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &mut buf_ptr, &mut entry)?;
+            },
+            CompressType::DictCompressed => {
+                let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
+                    .map_err(|_| io::Error::new(InvalidData,
+                            format!("Schema has no dictionary for field \"{}\"", field)))?;
+                let compress = &self.entries_compress[compress].1;
+                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
+            }
+        }
+
+        // Parse the entry itself & load in the optional hash
+        let entry_len = verify_value(&mut &entry[..])?;
+        let hash_provided = hash.is_some();
+        let hash = hash.unwrap_or(Hash::new_empty());
+
+        // Get signatures
+        let mut signed_by = Vec::new();
+        let mut index = &mut &entry[entry_len..];
+        while index.len() > 0 {
+            let signature = crypto::Signature::decode(&mut index)
+                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw entry"))?;
+            signed_by.push(signature.signed_by().clone());
+        }
+
+        let override_compression = false;
+        let compression = None;
+        let compressed = None;
+
+        let mut entry = Entry::from_parts(
+            None,
+            None,
+            hash,
+            doc,
+            field,
+            entry_len,
+            entry,
+            signed_by,
+            compressed,
+            override_compression,
+            compression,
+        );
+
+        if !hash_provided {
+            entry.populate_hash_state();
+        }
+
+        Ok(entry)
+    }
+
+    /// Read an [`Entry`] from a byte slice, performing a full set of validation checks when decoding. 
+    /// On successful validation of the entry, a [`DecodeChecklist`] is returned, which contains 
+    /// the decoded entry. Processing the checklist with this schema will complete the checklist 
+    /// and yield the decoded [`Entry`].
+    ///
+    /// [`Entry`]: ./struct.Entry.html
+    /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
+    pub fn decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> io::Result<DecodeChecklist> {
+        let mut buf_ptr: &[u8] = buf;
+        let mut entry = Vec::new();
+
+        let validator = self.entries.binary_search_by(|x| x.0.as_str().cmp(&field))
+            .map_err(|_| io::Error::new(InvalidData, "Entry field is not in schema"))?;
+        let validator = self.entries[validator].1;
+
+        // Decompress the entry
+        let compress_type = CompressType::decode(&mut buf_ptr)?;
+        match compress_type {
+            CompressType::Compressed => {
+                return Err(io::Error::new(InvalidData, "Entries don't allow compression with schema!"));
+            },
+            CompressType::Uncompressed => {
+                entry.extend_from_slice(buf_ptr);
+            },
+            CompressType::CompressedNoSchema => {
+                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &mut buf_ptr, &mut entry)?;
+            },
+            CompressType::DictCompressed => {
+                let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
+                    .map_err(|_| io::Error::new(InvalidData,
+                            format!("Schema has no dictionary for field \"{}\"", field)))?;
+                let compress = &self.entries_compress[compress].1;
+                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
+            }
+        }
+
+        // Verify the entry passes validation
+        let mut entry_ptr: &[u8] = &entry[..];
         let mut checklist = ValidatorChecklist::new();
-        let v = self.entries.binary_search_by(|x| x.0.as_str().cmp(entry));
-        if v.is_err() { return Err(Error::new(InvalidData, "Entry field type doesn't exist in schema")); }
-        let v = self.entries[v.unwrap()].1;
-        self.types[v].validate("", doc, &self.types, 0, &mut checklist)?;
-        Ok(checklist)
+        self.types[validator].validate("", &mut entry_ptr, &self.types, 0, &mut checklist)?;
+        let entry_len = entry.len() - entry_ptr.len();
+
+        // Compute the entry hashes
+        let mut temp = Vec::new();
+        let mut hash_state = crypto::HashState::new();
+        encode::write_value(&mut temp, &Value::from(doc.clone()));
+        hash_state.update(&temp[..]);
+        temp.clear();
+        encode::write_value(&mut temp, &Value::from(field.clone()));
+        hash_state.update(&temp[..]);
+        hash_state.update(&entry[..entry_len]);
+        let entry_hash = hash_state.get_hash();
+        let hash = if entry.len() > entry_len {
+            hash_state.update(&entry[entry_len..]);
+            hash_state.get_hash()
+        }
+        else {
+            entry_hash.clone()
+        };
+
+
+        // Get & verify signatures
+        let mut signed_by = Vec::new();
+        while entry_ptr.len() > 0 {
+            let signature = crypto::Signature::decode(&mut entry_ptr)
+                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw entry"))?;
+            if !signature.verify(&entry_hash) {
+                return Err(io::Error::new(InvalidData, "Signature doesn't verify against entry"));
+            }
+            signed_by.push(signature.signed_by().clone());
+        }
+
+        let override_compression = false;
+        let compression = None;
+        let compressed = None;
+
+        let entry = Entry::from_parts(
+            Some(hash_state),
+            Some(entry_hash),
+            hash,
+            doc,
+            field,
+            entry_len,
+            entry,
+            signed_by,
+            compressed,
+            override_compression,
+            compression,
+        );
+
+        Ok(DecodeChecklist::new(checklist, entry))
     }
 
     /// Validates a document against a specific Hash Validator. Should be used in conjunction with 
@@ -547,7 +835,7 @@ impl Compression {
         )
     }
 
-    fn compress(&mut self, compressor: &mut zstd_safe::CCtx, raw: &[u8], buf: &mut Vec<u8>) {
+    fn compress(&self, compressor: &mut zstd_safe::CCtx, raw: &[u8], buf: &mut Vec<u8>) {
         match self {
             Compression::NoCompress => {
                 buf.extend_from_slice(raw);
@@ -567,7 +855,7 @@ impl Compression {
     // verify that an Entry didn't start with the Compressed flag, and that a Document didn't start 
     // with the CompressedNoSchema flag.
     fn decompress(
-        &mut self,
+        &self,
         decompressor: &mut zstd_safe::DCtx,
         max_size: usize,
         compress_type: CompressType,

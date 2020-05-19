@@ -19,6 +19,7 @@ pub struct Entry {
     compressed: Option<Vec<u8>>,
     override_compression: bool,
     compression: Option<i32>,
+    validated: bool,
 }
 
 // Entries are completely identical (including parent hash and field) if their hashes match
@@ -63,6 +64,7 @@ impl Entry {
             compressed,
             override_compression,
             compression,
+            validated: true
         }
     }
 
@@ -87,6 +89,7 @@ impl Entry {
             compressed: None,
             override_compression: false,
             compression: None,
+            validated: false
         };
         entry.populate_hash_state();
         Ok(entry)
@@ -193,6 +196,13 @@ impl Entry {
     /// [`compression`]: #method.compression
     pub fn override_compression(&self) -> bool {
         self.override_compression
+    }
+
+    /// Returns true if the document has previously been validated by a schema or the general 
+    /// fog-pack validator. This is always true on Documents that were decoded from raw byte 
+    /// slices.
+    pub fn validated(&self) -> bool {
+        self.validated
     }
 
     /// Retrieve the value stored inside the entry as a `ValueRef`. This value has the same 

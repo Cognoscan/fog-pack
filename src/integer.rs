@@ -13,7 +13,7 @@ pub enum IntPriv {
     NegInt(i64),
 }
 
-/// Represents a MessagePack integer, whether signed or unsigned.
+/// Represents a fog-pack integer, whether signed or unsigned.
 ///
 /// A `Value` or `ValueRef` that contains integer can be constructed using `From` trait.
 #[derive(Copy, Clone, PartialEq, Eq)]

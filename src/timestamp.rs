@@ -5,7 +5,7 @@ use std::time;
 
 const MAX_NANOSEC: u32 = 1_999_999_999;
 
-/// Structure for holding a raw msgpack timestamp.
+/// Structure for holding a raw fog-pack timestamp.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Timestamp {
     pub sec: i64,

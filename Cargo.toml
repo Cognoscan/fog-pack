@@ -5,6 +5,7 @@ authors = ["Scott Teal"]
 readme = "README.md"
 repository = "https://github.com/Cognoscan/fog-pack"
 license = "MIT OR Apache-2.0"
+description = "Binary Data format supporting immutable references, schema, and compression"
 
 [dependencies]
 libc = "0.2"

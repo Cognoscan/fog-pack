@@ -234,6 +234,40 @@ impl Document {
 /// Finds the schema hash for a raw, encoded document. Fails if raw data doesn't fit the document 
 /// format, or if the empty field ("") doesn't contain a Hash. If there is no schema, `None` is 
 /// returned.
+///
+/// This function is primarily meant for finding what schema to use for decoding of a byte vector 
+/// into a document.
+///
+/// # Examples
+///
+/// Basic Usage, assuming a HashMap of schemas is available:
+///
+/// ```
+/// # use fog_pack::*;
+/// # use std::collections::HashMap;
+/// # use std::io;
+/// # fn decode_doc(
+/// #   no_schema: &mut NoSchema,
+/// #   schema_db: &mut HashMap<Hash, Schema>,
+/// #   buffer: &[u8]
+/// # )
+/// # -> io::Result<Document> {
+///
+/// let schema_hash = extract_schema_hash(&buffer)?;
+/// if let Some(schema_hash) = schema_hash {
+///     if let Some(schema) = schema_db.get_mut(&schema_hash) {
+///         let mut buf: &[u8] = buffer;
+///         schema.decode_doc(&mut buf)
+///     }
+///     else {
+///         Err(io::Error::new(io::ErrorKind::Other, "Don't have schema"))
+///     }
+/// }
+/// else {
+///     no_schema.decode_doc(&mut &buffer[..])
+/// }
+/// # }
+/// ```
 pub fn extract_schema_hash(buf: &[u8]) -> io::Result<Option<Hash>> {
     let mut buf: &[u8] = buf;
     let compressed = CompressType::decode(&mut buf)?;

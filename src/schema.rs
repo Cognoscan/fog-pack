@@ -9,7 +9,7 @@ use encode;
 use document::{extract_schema_hash, parse_schema_hash};
 use validator::{ValidObj, Validator, ValidatorChecklist};
 use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Value, Entry, Hash, Document, MarkerType, CompressType};
-use checklist::{EncodeChecklist, DecodeChecklist};
+use checklist::{ChecklistItem, EncodeChecklist, DecodeChecklist};
 use super::zstd_help;
 
 /**
@@ -437,9 +437,9 @@ impl Schema {
     /// byte vector. The entry's parent hash and field are not included. This will fail if entry 
     /// validation fails, or the entry's field is not covered by the schema.
     ///
-    /// [`Entry`]: ./struct.Entry.html
-    /// [`EncodeChecklist`]: ./struct.EncodeChecklist.html
-    pub fn encode_entry(&mut self, entry: &Entry) -> io::Result<EncodeChecklist> {
+    /// [`Entry`]: ./checklist/struct.Entry.html
+    /// [`EncodeChecklist`]: ./checklist/struct.EncodeChecklist.html
+    pub fn encode_entry(&mut self, entry: Entry) -> io::Result<EncodeChecklist> {
         let mut buf = Vec::new();
         let len = entry.len();
         let raw: &[u8] = entry.raw_entry();
@@ -671,6 +671,46 @@ impl Schema {
         );
 
         Ok(DecodeChecklist::new(checklist, entry))
+    }
+
+    /// Checks a document against a given ChecklistItem. Marks the item as done on success. Fails 
+    /// if validation fails.
+    ///
+    /// A [`ChecklistItem`] comes from either a [`EncodeChecklist`] or a [`DecodeChecklist`]. 
+    ///
+    /// [`ChecklistItem`] ./struct.ChecklistItem.html
+    /// [`EncodeChecklist`] ./struct.EncodeChecklist.html
+    /// [`DecodeChecklist`] ./struct.DecodeChecklist.html
+    pub fn check_item(&self, doc: &Document, item: &mut ChecklistItem) -> io::Result<()> {
+        for index in item.iter() {
+            if let Validator::Hash(ref v) = self.types[*index] {
+                // Check against acceptable schemas
+                if v.schema_required() {
+                    if let Some(hash) = doc.schema_hash() {
+                        if !v.schema_in_set(&hash) {
+                            return Err(Error::new(InvalidData, "Document uses unrecognized schema"));
+                        }
+                    }
+                    else {
+                        return Err(Error::new(InvalidData, "Document doesn't have schema, but needs one"));
+                    }
+                }
+                if let Some(link) = v.link() {
+                    let mut checklist = ValidatorChecklist::new();
+                    if let Validator::Object(ref v) = self.types[link] {
+                        v.validate("", &mut doc.raw_doc(), &self.types, &mut checklist, true)?;
+                    }
+                    else {
+                        return Err(Error::new(Other, "Can't validate a document against a non-object validator"));
+                    }
+                }
+            }
+            else {
+                return Err(Error::new(Other, "Can't validate against non-hash validator"));
+            }
+        };
+        item.mark_done();
+        Ok(())
     }
 
     /// Validates a document against a specific Hash Validator. Should be used in conjunction with 

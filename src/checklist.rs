@@ -1,3 +1,6 @@
+/*!
+Checklists used for verifying an Entry.
+*/
 use std::collections::HashMap;
 
 use Entry;
@@ -27,6 +30,10 @@ impl ChecklistItem {
         &self.items
     }
 
+    pub(crate) fn iter(&self) -> ::std::slice::Iter<usize> {
+        self.items.iter()
+    }
+
     pub(crate) fn mark_done(&mut self) {
         self.done = true;
     }
@@ -51,7 +58,7 @@ impl ChecklistItem {
 /// fn encode_entry(e: Entry, schema: &mut Schema, db: &HashMap<Hash, Document>) -> 
 ///     Result<Vec<u8>, ()>
 /// {
-///     let checklist = schema.encode_entry(e);
+///     let mut checklist = schema.encode_entry(e).or(Err(()))?;
 ///     // Fetch each document for verification, and fail if we don't have one
 ///     for (h, item) in checklist.iter_mut() {
 ///         if let Some(doc) = db.get(h) {
@@ -67,7 +74,7 @@ impl ChecklistItem {
 ///
 /// [`ChecklistItem`]: ./struct.ChecklistItem.html
 /// [`complete`]: #method.complete
-/// [`Entry`]: ./struct.Entry.html
+/// [`Entry`]: ../struct.Entry.html
 pub struct EncodeChecklist {
     list: HashMap<Hash, ChecklistItem>,
     encode: Vec<u8>,
@@ -81,7 +88,7 @@ pub struct EncodeChecklist {
 ///
 /// [`ChecklistItem`]: ./struct.ChecklistItem.html
 /// [`complete`]: #method.complete
-/// [`Entry`]: ./struct.Entry.html
+/// [`Entry`]: ../struct.Entry.html
 pub struct DecodeChecklist {
     list: HashMap<Hash, ChecklistItem>,
     decode: Entry,

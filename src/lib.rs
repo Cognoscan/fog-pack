@@ -104,11 +104,11 @@ mod query;
 mod compress_type;
 mod no_schema;
 mod zstd_help;
-mod checklist;
 
 pub mod crypto;
 pub mod encode;
 pub mod decode;
+pub mod checklist;
 
 use marker::{Marker, ExtType, MarkerType};
 use compress_type::CompressType;

@@ -109,6 +109,7 @@ pub mod crypto;
 pub mod encode;
 pub mod decode;
 pub mod checklist;
+pub mod spec;
 
 use marker::{Marker, ExtType, MarkerType};
 use compress_type::CompressType;

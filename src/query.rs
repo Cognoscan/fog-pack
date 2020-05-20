@@ -1,4 +1,5 @@
-use super::Hash;
+use {Hash, Entry, Value};
+use encode;
 
 #[derive(Clone, Copy)]
 pub enum QueryOrder {
@@ -45,3 +46,20 @@ impl Query {
         self.root.iter()
     }
 }
+
+/// Encode an Entry for later decoding into a query.
+///
+/// An [`Entry`] can be used to describe a query to be made against a [`Document`], where the 
+/// Entry's parent document is the document to be queried, and the field is the specific entry type 
+/// to be queried for.
+///
+/// ['Entry`]: ./struct.Entry.html
+/// ['Document`]: ./struct.Document.html
+pub fn encode_query(entry: Entry) -> Vec<u8> {
+    let mut buf = Vec::new();
+    entry.doc_hash().encode(&mut buf);
+    encode::write_value(&mut buf, &Value::from(entry.field()));
+    buf.extend_from_slice(entry.raw_entry());
+    buf
+}
+

@@ -105,10 +105,10 @@ mod compress_type;
 mod no_schema;
 mod zstd_help;
 mod error;
+mod encode;
+mod decode;
 
 pub mod crypto;
-pub mod encode;
-pub mod decode;
 pub mod checklist;
 pub mod spec;
 

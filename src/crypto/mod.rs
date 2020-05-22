@@ -1,9 +1,11 @@
-//! Provides basic cryptographic functionality. Key management, encryption, and signing are all 
-//! done via a Vault. A Vault is created using a password, or can be read in from a file. Once 
-//! created, the Vault stores "permanent" keys and "temporary" keys. The only difference is that 
-//! temporary keys are not saved when the Vault is written to a file.
+/*!
+Provides basic cryptographic functionality. Key management, encryption, and signing are all 
+done via a Vault.
 
-
+A Vault is created using a password, or can be read in (either from a raw byte slice or from a 
+file). It can then be used to create "permanent" keys and "temporary" keys. The only difference is 
+that temporary keys are not saved when the Vault is saved off.
+*/
 
 use std::collections::HashMap;
 use std::fs::File;

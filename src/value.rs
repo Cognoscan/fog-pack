@@ -6,7 +6,7 @@ use super::{Integer, Hash, Identity, Lockbox, Timestamp};
 
 use super::Index;
 
-/// Value stores any type of MessagePack value, and can be encoded into a MessagePack byte sequence
+/// Value stores any type of fog-pack value, and can be encoded into a fog-pack byte sequence
 #[derive(Debug)]
 pub enum Value {
     Null,
@@ -533,7 +533,7 @@ impl Display for Value {
     }
 }
 
-/// ValueRef stores a reference to a decoded MessagePack byte sequence
+/// ValueRef stores a reference to a decoded fog-pack byte sequence
 #[derive(Debug)]
 pub enum ValueRef<'a> {
     Null,

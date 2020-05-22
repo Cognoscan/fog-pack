@@ -1,7 +1,4 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
-
+use Error;
 use decode::*;
 use super::Validator;
 
@@ -24,7 +21,7 @@ impl ValidLock {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -34,15 +31,15 @@ impl ValidLock {
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Lockbox validator expected non-negative value for `max_len` field"))
+                    Err(Error::FailValidate(raw.len(), "Lockbox validator expected non-negative value for `max_len` field"))
                 }
             }
             "query" => {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Lock" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Lock")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Lockbox validator")),
+            "type" => if "Lock" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Lock")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Lockbox validator")),
         }
     }
 
@@ -52,11 +49,10 @@ impl ValidLock {
         true
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let value = read_lockbox(doc)?;
         if value.len() > self.max_len {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains lockbox longer than max length of {}", field, self.max_len)))
+            Err(Error::FailValidate(doc.len(), "Lockbox longer than max length allowed"))
         }
         else {
             Ok(())

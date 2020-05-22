@@ -6,6 +6,7 @@ use super::document::parse_schema_hash;
 use decode;
 use crypto;
 use zstd_help;
+use Error;
 
 /// An encoder/decoder for when no Schema is being used.
 ///
@@ -38,7 +39,7 @@ impl NoSchema {
     ///
     /// Panics if the underlying zstd calls return an error, which shouldn't be possible with the 
     /// way they are used in this library.
-    pub fn encode_doc(&mut self, doc: Document) -> io::Result<Vec<u8>> {
+    pub fn encode_doc(&mut self, doc: Document) -> crate::Result<Vec<u8>> {
         let mut buf = Vec::new();
         let len = doc.len();
         let raw: &[u8] = doc.raw_doc();
@@ -53,7 +54,7 @@ impl NoSchema {
         };
 
         if doc.schema_hash().is_some() {
-            return Err(io::Error::new(InvalidData, "Document has a schema (encode_doc)"));
+            return Err(Error::SchemaMismatch);
         }
 
         if let Some(level) = compress {
@@ -78,13 +79,13 @@ impl NoSchema {
     ///
     /// The *only* time this should be used is if the byte slice is coming from a well-trusted 
     /// location, like an internal database.
-    pub fn trusted_decode_doc(&mut self, buf: &mut &[u8], hash: Option<Hash>) -> io::Result<Document> {
+    pub fn trusted_decode_doc(&mut self, buf: &mut &[u8], hash: Option<Hash>) -> crate::Result<Document> {
         // TODO: Change this function so that it doesn't copy any data until the very end.
         let (doc, compressed) = self.decode_raw(MAX_DOC_SIZE, buf)?;
 
         // Check for a schema
         if let Some(_) = parse_schema_hash(&mut &doc[..])? {
-            return Err(io::Error::new(InvalidData, "Document has a schema (trusted_decode_doc)"));
+            return Err(Error::SchemaMismatch);
         }
 
         // Parse the document itself & optionally start up the hasher
@@ -143,13 +144,13 @@ impl NoSchema {
     /// - The compression requires the schema to decode
     /// - The decompressed document has an associated schema hash
     /// - Any of the attached signatures are invalid
-    pub fn decode_doc(&mut self, buf: &mut &[u8]) -> io::Result<Document> {
+    pub fn decode_doc(&mut self, buf: &mut &[u8]) -> crate::Result<Document> {
         // TODO: Change this function so that it doesn't copy any data until the very end.
         let (doc, compressed) = self.decode_raw(MAX_DOC_SIZE, buf)?;
 
         // Parse the document itself
         if parse_schema_hash(&mut &doc[..])?.is_some() {
-            return Err(io::Error::new(InvalidData, "Document has a schema (decode_doc)"));
+            return Err(Error::SchemaMismatch);
         }
         let doc_len = decode::verify_value(&mut &doc[..])?;
 
@@ -169,10 +170,9 @@ impl NoSchema {
         let mut signed_by = Vec::new();
         let mut index = &mut &doc[doc_len..];
         while index.len() > 0 {
-            let signature = crypto::Signature::decode(&mut index)
-                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
+            let signature = crypto::Signature::decode(&mut index)?;
             if !signature.verify(&doc_hash) {
-                return Err(io::Error::new(InvalidData, "Signature doesn't verify against document"));
+                return Err(Error::BadSignature);
             }
             signed_by.push(signature.signed_by().clone());
         }
@@ -193,12 +193,12 @@ impl NoSchema {
         ))
     }
 
-    fn decode_raw(&mut self, max_size: usize, buf: &mut &[u8]) -> io::Result<(Vec<u8>, Option<Vec<u8>>)> {
+    fn decode_raw(&mut self, max_size: usize, buf: &mut &[u8]) -> crate::Result<(Vec<u8>, Option<Vec<u8>>)> {
         let compress_type = CompressType::decode(buf)?;
         match compress_type {
             CompressType::Uncompressed => {
                 if buf.len() > max_size {
-                    return Err(io::Error::new(InvalidData, "Data is larger than maximum allowed size"));
+                    return Err(Error::BadSize);
                 }
                 let mut doc = Vec::new();
                 doc.extend_from_slice(buf);
@@ -214,7 +214,7 @@ impl NoSchema {
                 Ok((decode, Some(compressed)))
             },
             CompressType::Compressed | CompressType::DictCompressed => {
-                return Err(io::Error::new(InvalidData, "Data uses a schema, but NoSchema struct was used for decoding"));
+                return Err(Error::SchemaMismatch);
             },
         }
     }

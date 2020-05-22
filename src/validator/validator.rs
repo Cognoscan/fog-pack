@@ -1,4 +1,5 @@
 use super::*;
+use Error;
 
 #[derive(Clone,Debug)]
 pub enum Validator {
@@ -22,9 +23,13 @@ pub enum Validator {
 }
 
 impl Validator {
-    pub fn read_validator(raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String, usize>)
-        -> io::Result<usize>
+    pub fn read_validator(
+        raw: &mut &[u8],
+        reader: &mut ValidReader
+    )
+        -> crate::Result<usize>
     {
+        let is_query = reader.is_query;
         let validator = match read_marker(raw)? {
             MarkerType::Null => Validator::Valid,
             MarkerType::Boolean(v) => {
@@ -63,7 +68,7 @@ impl Validator {
                 Validator::Identity(ValidIdentity::from_const(val, is_query))
             }
             MarkerType::Lockbox(_) => {
-                return Err(Error::new(InvalidData, "Lockbox cannot be used in a schema"));
+                return Err(Error::FailValidate(raw.len(), "Lockbox cannot be used in a schema"));
             }
             MarkerType::Timestamp(len) => {
                 let val = read_raw_time(raw, len)?;
@@ -91,6 +96,11 @@ impl Validator {
                     Validator::Timestamp(ValidTime::new(is_query)),
                     Validator::Multi(ValidMulti::new(is_query)),
                 ];
+                // possible_check contains the status of each validator as we iterate through the 
+                // fields:
+                //  - 2: it's still acceptable
+                //  - 1: it's accepted but will never allow a value to pass
+                //  - 0: the validator can't be used
                 let mut possible_check = vec![2u8; possible.len()];
 
                 let mut type_seen = false;
@@ -99,7 +109,7 @@ impl Validator {
                 object_iterate(raw, len, |field, raw| {
                     match field {
                         "comment" => {
-                            read_str(raw).map_err(|_e| Error::new(InvalidData, "`comment` field didn't contain string"))?;
+                            read_str(raw).map_err(|_e| Error::FailValidate(raw.len(), "`comment` field didn't contain string"))?;
                         },
                         _ => {
                             if field == "type" { type_seen = true; }
@@ -109,7 +119,7 @@ impl Validator {
                                 .filter(|(check,_)| **check > 0)
                                 .for_each(|(check,validator)| {
                                     let mut raw_local = &raw_now[..];
-                                    let result = validator.update(field, &mut raw_local, is_query, types, type_names)
+                                    let result = validator.update(field, &mut raw_local, reader)
                                         .and_then(|x| if x { Ok(2) } else { Ok(1) })
                                         .unwrap_or(0);
                                     if result != 0 {
@@ -130,11 +140,15 @@ impl Validator {
                     Validator::Valid
                 }
                 else if possible_count > 1 {
+                    // If there is more than one type, but one of them is Validator::Type, that 
+                    // means we have one that's just one of the basic types with no other 
+                    // constraints
                     if possible_check[1] > 0 {
                         possible[1].clone()
                     }
                     else {
-                        return Err(Error::new(InvalidData, "Validator isn't specific enough. Specify more fields"))
+                        // We didn't actually specify enough fields to narrow it down to one type.
+                        return Err(Error::FailValidate(raw.len(), "Validator isn't specific enough. Specify more fields"))
                     }
                 }
                 else if possible_count != 0 {
@@ -155,19 +169,19 @@ impl Validator {
                         }
                     }
                     else {
-                        return Err(Error::new(InvalidData, "Validator needs to include `type` field"));
+                        return Err(Error::FailValidate(raw.len(), "Validator needs to include `type` field"));
                     }
                 }
                 else {
-                    return Err(Error::new(InvalidData, "Not a recognized validator"));
+                    return Err(Error::FailValidate(raw.len(), "Not a recognized validator"));
                 }
             },
         };
 
         if let Validator::Type(name) = validator {
-            let index = type_names.entry(name.clone()).or_insert(types.len());
-            if *index == types.len() {
-                types.push(match name.as_str() {
+            let index = reader.type_names.entry(name.clone()).or_insert(reader.types.len());
+            if *index == reader.types.len() {
+                reader.types.push(match name.as_str() {
                     "Null"  => Validator::Null,
                     "Bool"  => Validator::Boolean(ValidBool::new(is_query)),
                     "Int"   => Validator::Integer(ValidInt::new(is_query)),
@@ -192,8 +206,8 @@ impl Validator {
                 Validator::Invalid => Ok(INVALID),
                 Validator::Valid => Ok(VALID),
                 _ => {
-                    types.push(validator);
-                    Ok(types.len()-1)
+                    reader.types.push(validator);
+                    Ok(reader.types.len()-1)
                 },
             }
         }
@@ -203,14 +217,12 @@ impl Validator {
     fn update(&mut self,
               field: &str,
               raw: &mut &[u8],
-              is_query: bool,
-              types: &mut Vec<Validator>,
-              type_names: &mut HashMap<String,usize>
+              reader: &mut ValidReader
     )
-        -> io::Result<bool>
+        -> crate::Result<bool>
     {
         if field == "comment" {
-            read_str(raw).map_err(|_e| Error::new(InvalidData, "`comment` field didn't contain string"))?;
+            read_str(raw).map_err(|_e| Error::FailValidate(raw.len(), "`comment` field didn't contain string"))?;
             return Ok(true);
         }
         match self {
@@ -220,13 +232,13 @@ impl Validator {
                         v.push_str(read_str(raw)?);
                         Ok(true)
                     },
-                    _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Type validator")),
+                    _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Type validator")),
                 }
             },
             Validator::Null => {
                 match field {
-                    "type" => if "Null" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Null")) },
-                    _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Null validator")),
+                    "type" => if "Null" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Null")) },
+                    _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Null validator")),
                 }
             },
             Validator::Boolean(v) => v.update(field, raw),
@@ -235,15 +247,15 @@ impl Validator {
             Validator::F32(v) => v.update(field, raw),
             Validator::F64(v) => v.update(field, raw),
             Validator::Binary(v) => v.update(field, raw),
-            Validator::Array(v) => v.update(field, raw, is_query, types, type_names),
-            Validator::Object(v) => v.update(field, raw, is_query, types, type_names),
-            Validator::Hash(v) => v.update(field, raw, is_query, types, type_names),
+            Validator::Array(v) => v.update(field, raw, reader),
+            Validator::Object(v) => v.update(field, raw, reader),
+            Validator::Hash(v) => v.update(field, raw, reader),
             Validator::Identity(v) => v.update(field, raw),
             Validator::Lockbox(v) => v.update(field, raw),
             Validator::Timestamp(v) => v.update(field, raw),
-            Validator::Multi(v) => v.update(field, raw, is_query, types, type_names),
-            Validator::Valid => Err(Error::new(InvalidData, "Fields not allowed in Valid validator")),
-            Validator::Invalid => Err(Error::new(InvalidData, "Fields not allowed in Invalid validator")),
+            Validator::Multi(v) => v.update(field, raw, reader),
+            Validator::Valid => Err(Error::FailValidate(raw.len(), "Fields not allowed in Valid validator")),
+            Validator::Invalid => Err(Error::FailValidate(raw.len(), "Fields not allowed in Invalid validator")),
         }
     }
 
@@ -270,15 +282,14 @@ impl Validator {
     }
 
     pub fn validate(&self,
-                    field: &str,
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
                     index: usize,
-                    list: &mut Checklist,
-                    ) -> io::Result<()>
+                    list: &mut ValidatorChecklist,
+                    ) -> crate::Result<()>
     {
         match self {
-            Validator::Invalid => Err(Error::new(InvalidData, format!("Field \"{}\" is always invalid", field))),
+            Validator::Invalid => Err(Error::FailValidate(doc.len(), "Always Invalid")),
             Validator::Valid => {
                 verify_value(doc)?;
                 Ok(())
@@ -287,25 +298,25 @@ impl Validator {
                 read_null(doc)?;
                 Ok(())
             },
-            Validator::Type(_) => Err(Error::new(Other, "Should never be validating a `Type` validator directly")),
-            Validator::Boolean(v) => v.validate(field, doc),
-            Validator::Integer(v) => v.validate(field, doc),
-            Validator::String(v) => v.validate(field, doc),
-            Validator::F32(v) => v.validate(field, doc),
-            Validator::F64(v) => v.validate(field, doc),
-            Validator::Binary(v) => v.validate(field, doc),
-            Validator::Array(v) => v.validate(field, doc, types, list),
-            Validator::Object(v) => v.validate(field, doc, types, list, false),
+            Validator::Type(_) => Err(Error::FailValidate(doc.len(), "Should never be validating a `Type` validator directly")),
+            Validator::Boolean(v) => v.validate(doc),
+            Validator::Integer(v) => v.validate(doc),
+            Validator::String(v) => v.validate(doc),
+            Validator::F32(v) => v.validate(doc),
+            Validator::F64(v) => v.validate(doc),
+            Validator::Binary(v) => v.validate(doc),
+            Validator::Array(v) => v.validate(doc, types, list),
+            Validator::Object(v) => v.validate(doc, types, list, false),
             Validator::Hash(v) => {
-                if let Some(hash) = v.validate(field, doc)? {
+                if let Some(hash) = v.validate(doc)? {
                     list.add(hash, index);
                 }
                 Ok(())
             },
-            Validator::Identity(v) => v.validate(field, doc),
-            Validator::Lockbox(v) => v.validate(field, doc),
-            Validator::Timestamp(v) => v.validate(field, doc),
-            Validator::Multi(v) => v.validate(field, doc, types, list),
+            Validator::Identity(v) => v.validate(doc),
+            Validator::Lockbox(v) => v.validate(doc),
+            Validator::Timestamp(v) => v.validate(doc),
+            Validator::Multi(v) => v.validate(doc, types, list),
         }
     }
 
@@ -355,3 +366,8 @@ impl Validator {
         }
     }
 }
+
+
+
+
+

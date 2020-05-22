@@ -1,10 +1,6 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
-use std::collections::HashMap;
-
+use Error;
 use decode::*;
-use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator, ValidBuilder};
+use super::*;
 use marker::MarkerType;
 use crypto::Hash;
 
@@ -46,9 +42,9 @@ impl ValidHash {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>, schema_hash: &Hash)
-        -> io::Result<bool>
+    pub fn update(&mut self, field: &str, raw: &mut &[u8], reader: &mut ValidReader) -> crate::Result<bool>
     {
+        let schema_hash = reader.schema_hash;
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -83,13 +79,13 @@ impl ValidHash {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Hash validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(raw.len(), "Hash validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
             },
             "link" => {
-                self.link = Some(Validator::read_validator(raw, is_query, types, type_names, schema_hash)?);
+                self.link = Some(Validator::read_validator(raw, reader)?);
                 Ok(true)
             }
             "link_ok" => {
@@ -123,7 +119,7 @@ impl ValidHash {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Hash validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(raw.len(), "Hash validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -159,7 +155,7 @@ impl ValidHash {
                         self.schema.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Hash validator expected array or constant for `schema` field"));
+                        return Err(Error::FailValidate(raw.len(), "Hash validator expected array or constant for `schema` field"));
                     },
                 }
                 Ok(true)
@@ -168,8 +164,8 @@ impl ValidHash {
                 self.schema_ok = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Hash" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Hash")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Hash validator")),
+            "type" => if "Hash" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Hash")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Hash validator")),
         }
     }
 
@@ -210,15 +206,13 @@ impl ValidHash {
     /// Validates that the next value is a Hash that meets the validator requirements. Fails if the 
     /// requirements are not met. If it passes, the optional returned Hash indicates that an 
     /// additional document (referenced by the Hash) needs to be checked.
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<Option<Hash>> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<Option<Hash>> {
         let value = read_hash(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains Hash not on the `in` list", field)))
+            Err(Error::FailValidate(doc.len(), "Hash is not on the `in` list"))
         }
         else if self.nin_vec.binary_search(&value).is_ok() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains Hash on the `nin` list", field)))
+            Err(Error::FailValidate(doc.len(), "Hash is on the `nin` list"))
         }
         else if let Some(_) = self.link {
             Ok(Some(value))

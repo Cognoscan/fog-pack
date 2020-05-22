@@ -1,8 +1,5 @@
 use zstd_safe::*;
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
-
+use Error;
 
 pub fn compress(cctx: &mut CCtx, level: i32, raw: &[u8], buf: &mut Vec<u8>) {
     let vec_len = buf.len();
@@ -21,13 +18,13 @@ pub fn compress(cctx: &mut CCtx, level: i32, raw: &[u8], buf: &mut Vec<u8>) {
 }
 
 
-pub fn decompress(dctx: &mut DCtx, max_size: usize, buf: &[u8], decode: &mut Vec<u8>) -> io::Result<()> {
+pub fn decompress(dctx: &mut DCtx, max_size: usize, buf: &[u8], decode: &mut Vec<u8>) -> crate::Result<()> {
     // Decompress the data
     // Find the expected size, and fail if it's larger than the maximum allowed size.
     let decode_len = decode.len();
     let expected_len = get_frame_content_size(buf);
     if ((decode_len as u64)+expected_len) > (max_size as u64) {
-        return Err(Error::new(InvalidData, "Expected decompressed size is larger than maximum allowed size"));
+        return Err(Error::BadSize);
     }
     let expected_len = expected_len as usize;
     decode.reserve(expected_len);
@@ -37,7 +34,7 @@ pub fn decompress(dctx: &mut DCtx, max_size: usize, buf: &[u8], decode: &mut Vec
             dctx,
             &mut decode[decode_len..],
             buf
-        ).map_err(|_| Error::new(InvalidData, "Decompression failed"))?;
+        ).map_err(|_| Error::FailDecompress)?;
         decode.set_len(decode_len + len);
     }
     Ok(())
@@ -59,13 +56,13 @@ pub fn dict_compress(cctx: &mut CCtx, dict: &CDict, raw: &[u8], buf: &mut Vec<u8
     }
 }
 
-pub fn dict_decompress(dctx: &mut DCtx, dict: &DDict, max_size: usize, buf: &[u8], decode: &mut Vec<u8>) -> io::Result<()> {
+pub fn dict_decompress(dctx: &mut DCtx, dict: &DDict, max_size: usize, buf: &[u8], decode: &mut Vec<u8>) -> crate::Result<()> {
     // Decompress the data
     // Find the expected size, and fail if it's larger than the maximum allowed size.
     let decode_len = decode.len();
     let expected_len = get_frame_content_size(buf);
     if ((decode_len as u64)+expected_len) > (max_size as u64) {
-        return Err(Error::new(InvalidData, "Expected decompressed size is larger than maximum allowed size"));
+        return Err(Error::BadSize);
     }
     let expected_len = expected_len as usize;
     decode.reserve(expected_len);
@@ -76,7 +73,7 @@ pub fn dict_decompress(dctx: &mut DCtx, dict: &DDict, max_size: usize, buf: &[u8
             &mut decode[decode_len..],
             buf,
             dict
-        ).map_err(|_| Error::new(InvalidData, "Decompression failed"))?;
+        ).map_err(|_| Error::FailDecompress)?;
         decode.set_len(decode_len + len);
     }
     Ok(())

@@ -1,12 +1,10 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
 use std::f64;
 use std::cmp::Ordering;
 
 use byteorder::{ReadBytesExt, BigEndian};
 use ieee754::Ieee754;
 
+use Error;
 use decode::*;
 use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
@@ -52,7 +50,7 @@ impl ValidF64 {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -88,7 +86,7 @@ impl ValidF64 {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "F64 validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(raw.len(), "F64 validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
@@ -96,7 +94,7 @@ impl ValidF64 {
             "max" => {
                 let max = read_f64(raw)?;
                 if max.is_nan() {
-                    Err(Error::new(InvalidData, "F64 validator does not accept NaN for `max` field"))
+                    Err(Error::FailValidate(raw.len(), "F64 validator does not accept NaN for `max` field"))
                 }
                 else if self.ex_max && (max == f64::NEG_INFINITY) {
                     Ok(false)
@@ -110,7 +108,7 @@ impl ValidF64 {
             "min" => {
                 let min = read_f64(raw)?;
                 if min.is_nan() {
-                    Err(Error::new(InvalidData, "F64 validator does not accept NaN for `min` field"))
+                    Err(Error::FailValidate(raw.len(), "F64 validator does not accept NaN for `min` field"))
                 }
                 else if self.ex_min && (min == f64::INFINITY) {
                     Ok(false)
@@ -137,7 +135,7 @@ impl ValidF64 {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "F64 validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(raw.len(), "F64 validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -150,8 +148,8 @@ impl ValidF64 {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "F64" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match F64")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in f64 validator")),
+            "type" => if "F64" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match F64")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in f64 validator")),
         }
     }
 
@@ -193,11 +191,10 @@ impl ValidF64 {
         }
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let value = read_f64(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| probe.total_cmp(&value)).is_err() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
+            Err(Error::FailValidate(doc.len(), "F64 is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
             println!("Passed in_vec test with {}", value);
@@ -205,20 +202,16 @@ impl ValidF64 {
         }
         else if value.is_nan() && !self.nan_ok
         {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is NaN and therefore out of range", field)))
+            Err(Error::FailValidate(doc.len(), "F64 is NaN and therefore out of range"))
         }
         else if !self.nan_ok && (value < self.min) {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, less than minimum of {}", field, value, self.min)))
+            Err(Error::FailValidate(doc.len(), "F64 is less than minimum allowed"))
         }
         else if !self.nan_ok && (value > self.max) {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, greater than maximum of {}", field, value, self.max)))
+            Err(Error::FailValidate(doc.len(), "F64 is greater than maximum allowed"))
         }
         else if self.nin_vec.binary_search_by(|probe| probe.total_cmp(&value)).is_ok() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, which is on the `nin` list", field, value)))
+            Err(Error::FailValidate(doc.len(), "F64 is on the `nin` list"))
         }
         else {
             Ok(())
@@ -290,12 +283,12 @@ mod tests {
     use std::f64;
     use rand::distributions::Uniform;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidF64> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidF64> {
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidF64::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Wasn't a valid F64 validator"))
+                    Err(Error::FailValidate(raw.len(), "Wasn't a valid F64 validator"))
                 }
                 else {
                     Ok(())
@@ -306,7 +299,7 @@ mod tests {
 
         }
         else {
-            Err(Error::new(InvalidData, "Not an object"))
+            Err(Error::FailValidate(raw.len(), "Not an object"))
         }
     }
 
@@ -334,14 +327,14 @@ mod tests {
         for _ in 0..test_count {
             val.clear();
             encode::write_value(&mut val, &Value::from(rand_float(&mut rng)));
-            validator.validate("", &mut &val[..]).unwrap();
+            validator.validate(&mut &val[..]).unwrap();
         }
         encode::write_value(&mut val, &Value::from(f64::NAN));
-        validator.validate("", &mut &val[..]).unwrap();
+        validator.validate(&mut &val[..]).unwrap();
         encode::write_value(&mut val, &Value::from(f64::INFINITY));
-        validator.validate("", &mut &val[..]).unwrap();
+        validator.validate(&mut &val[..]).unwrap();
         encode::write_value(&mut val, &Value::from(f64::NEG_INFINITY));
-        validator.validate("", &mut &val[..]).unwrap();
+        validator.validate(&mut &val[..]).unwrap();
 
         // Test floats in a range
         for _ in 0..valid_count {
@@ -360,7 +353,7 @@ mod tests {
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
-                    validator.validate("", &mut &val[..]).is_ok(),
+                    validator.validate(&mut &val[..]).is_ok(),
                     "{:e} was between {:e} and {:e} but failed validation", test_val, min, max);
             }
         }
@@ -383,13 +376,13 @@ mod tests {
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
-                    validator.validate("", &mut &val[..]).is_ok(),
+                    validator.validate(&mut &val[..]).is_ok(),
                     "{} was between {} and {} but failed validation", test_val, min, max);
             }
             val.clear();
             let test_val = f64::NAN;
             encode::write_value(&mut val, &Value::from(test_val.clone()));
-            assert!(validator.validate("", &mut &val[..]).is_err(), "NAN passed a F64 validator with range");
+            assert!(validator.validate(&mut &val[..]).is_err(), "NAN passed a F64 validator with range");
         }
 
         // Test -10 to 10 with in/nin
@@ -415,7 +408,7 @@ mod tests {
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
-                    validator.validate("", &mut &val[..]).is_ok(),
+                    validator.validate(&mut &val[..]).is_ok(),
                     "{:e} was in `in` and not `nin` but failed validation", test_val);
             }
         }
@@ -428,16 +421,16 @@ mod tests {
         let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
         val.clear();
         encode::write_value(&mut val, &Value::from(f64::NAN));
-        assert!(validator.validate("", &mut &val[..]).is_ok(), "NAN was in `in` but failed validation");
+        assert!(validator.validate(&mut &val[..]).is_ok(), "NAN was in `in` but failed validation");
         val.clear();
         encode::write_value(&mut val, &Value::from(f64::INFINITY));
-        assert!(validator.validate("", &mut &val[..]).is_ok(), "INFINITY was in `in` but failed validation");
+        assert!(validator.validate(&mut &val[..]).is_ok(), "INFINITY was in `in` but failed validation");
         val.clear();
         encode::write_value(&mut val, &Value::from(f64::NEG_INFINITY));
-        assert!(validator.validate("", &mut &val[..]).is_ok(), "NEG_INFINITY was in `in` but failed validation");
+        assert!(validator.validate(&mut &val[..]).is_ok(), "NEG_INFINITY was in `in` but failed validation");
         val.clear();
         encode::write_value(&mut val, &Value::from(0f64));
-        assert!(validator.validate("", &mut &val[..]).is_err(), "0 was not in `in` but passed validation");
+        assert!(validator.validate(&mut &val[..]).is_err(), "0 was not in `in` but passed validation");
 
         // Test nin with NAN & infinities
         test1.clear();
@@ -447,16 +440,16 @@ mod tests {
         let validator = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
         val.clear();
         encode::write_value(&mut val, &Value::from(f64::NAN));
-        assert!(validator.validate("", &mut &val[..]).is_err(), "NAN was in `nin` but passed validation");
+        assert!(validator.validate(&mut &val[..]).is_err(), "NAN was in `nin` but passed validation");
         val.clear();
         encode::write_value(&mut val, &Value::from(f64::INFINITY));
-        assert!(validator.validate("", &mut &val[..]).is_err(), "INFINITY was in `nin` but passed validation");
+        assert!(validator.validate(&mut &val[..]).is_err(), "INFINITY was in `nin` but passed validation");
         val.clear();
         encode::write_value(&mut val, &Value::from(f64::NEG_INFINITY));
-        assert!(validator.validate("", &mut &val[..]).is_err(), "NEG_INFINITY was in `nin` but passed validation");
+        assert!(validator.validate(&mut &val[..]).is_err(), "NEG_INFINITY was in `nin` but passed validation");
         val.clear();
         encode::write_value(&mut val, &Value::from(0f64));
-        assert!(validator.validate("", &mut &val[..]).is_ok(), "0 was not in `nin` but failed validation");
+        assert!(validator.validate(&mut &val[..]).is_ok(), "0 was not in `nin` but failed validation");
     }
 
     #[test]
@@ -503,9 +496,9 @@ mod tests {
                 val.clear();
                 let test_val = rng.sample(range) as f64;
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
-                let res1 = valid1.validate("", &mut &val[..]);
-                let res2 = valid2.validate("", &mut &val[..]);
-                let resi = validi.validate("", &mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new());
+                let res1 = valid1.validate(&mut &val[..]);
+                let res2 = valid2.validate(&mut &val[..]);
+                let resi = validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new());
                 if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
                     println!("Valid 1   Err = {:?}", res1);
                     println!("Valid 2   Err = {:?}", res2);
@@ -548,9 +541,9 @@ mod tests {
             val.clear();
             let test_val = rng.sample(range) as f64;
             encode::write_value(&mut val, &Value::from(test_val.clone()));
-            let res1 = valid1.validate("", &mut &val[..]);
-            let res2 = valid2.validate("", &mut &val[..]);
-            let resi = validi.validate("", &mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new());
+            let res1 = valid1.validate(&mut &val[..]);
+            let res2 = valid2.validate(&mut &val[..]);
+            let resi = validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new());
             if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
                 println!("Valid 1   Err = {:?}", res1);
                 println!("Valid 2   Err = {:?}", res2);

@@ -1,5 +1,4 @@
-use std::io;
-use std::io::{Error, ErrorKind::InvalidData};
+use Error;
 use decode::*;
 use super::Validator;
 
@@ -29,7 +28,7 @@ impl ValidBool {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
         match field {
             "default" => {
                 read_bool(raw)?;
@@ -58,8 +57,8 @@ impl ValidBool {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Bool" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Bool")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in boolean validator")),
+            "type" => if "Bool" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Bool")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in boolean validator")),
         }
     }
 
@@ -67,7 +66,7 @@ impl ValidBool {
         true
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let value = read_bool(doc)?;
         match self.constant {
             Some(b) => {
@@ -75,7 +74,7 @@ impl ValidBool {
                     Ok(())
                 }
                 else {
-                    Err(Error::new(InvalidData, format!("Field \"{}\" isn't set to {}", field, b)))
+                    Err(Error::FailValidate(doc.len(), "Boolean isn't set to required value"))
                 }
             },
             None => Ok(()),
@@ -125,12 +124,12 @@ mod tests {
     use value::Value;
     use super::*;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidBool> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidBool> {
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidBool::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Wasn't a valid bool validator"))
+                    Err(Error::FailValidate(raw.len(), "Wasn't a valid bool validator"))
                 }
                 else {
                     Ok(())
@@ -141,14 +140,14 @@ mod tests {
 
         }
         else {
-            Err(Error::new(InvalidData, "Not an object"))
+            Err(Error::FailValidate(raw.len(), "Not an object"))
         }
     }
 
-    fn validate_bool(v: bool, validator: &ValidBool) -> io::Result<()> {
+    fn validate_bool(v: bool, validator: &ValidBool) -> crate::Result<()> {
         let mut val = Vec::with_capacity(1);
         encode::write_value(&mut val, &Value::from(v));
-        validator.validate("", &mut &val[..])
+        validator.validate(&mut &val[..])
     }
 
     #[test]

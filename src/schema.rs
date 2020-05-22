@@ -1,13 +1,11 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::{InvalidData,Other};
 use std::collections::HashMap;
 
+use Error;
 use crypto;
 use decode::*;
 use encode;
 use document::{extract_schema_hash, parse_schema_hash};
-use validator::{ValidObj, Validator, ValidatorChecklist};
+use validator::{ValidObj, Validator, ValidReader, ValidatorChecklist};
 use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Value, Entry, Hash, Document, MarkerType, CompressType};
 use checklist::{ChecklistItem, EncodeChecklist, DecodeChecklist};
 use super::zstd_help;
@@ -87,11 +85,11 @@ pub struct Schema {
 
 impl Schema {
 
-    pub fn from_doc(doc: Document) -> io::Result<Self> {
-        Self::from_raw(&mut doc.raw_doc(), Some(doc.hash().clone()))
+    pub fn from_doc(doc: Document) -> crate::Result<Self> {
+        Ok(Self::from_raw(&mut doc.raw_doc(), Some(doc.hash().clone()))?)
     }
 
-    fn from_raw(raw: &mut &[u8], hash: Option<Hash>) -> io::Result<Self> {
+    fn from_raw(raw: &mut &[u8], hash: Option<Hash>) -> crate::Result<Self> {
         let hash = if let Some(hash) = hash {
             hash
         }
@@ -110,37 +108,39 @@ impl Schema {
         types.push(Validator::Invalid);
         types.push(Validator::Valid);
 
+        let mut reader = ValidReader::new(false, &mut types, &mut type_names, &hash);
+
         let num_fields = match read_marker(raw)? {
             MarkerType::Object(len) => len,
-            _ => return Err(Error::new(InvalidData, "Schema wasn't an object")),
+            _ => return Err(Error::BadEncode(raw.len(), "Schema isn't a Document")),
         };
         object_iterate(raw, num_fields, |field, raw| {
             match field {
                 "" => {
-                    read_hash(raw).map_err(|_e| Error::new(InvalidData, "Schema's empty field didn't contain root Schema Hash"))?;
+                    read_hash(raw)?;
                 },
                 "doc_compress" => {
                     doc_compress = Compression::read_raw(raw)?;
                 }
                 "description" => {
-                    read_str(raw).map_err(|_e| Error::new(InvalidData, "`description` field didn't contain string"))?;
+                    read_str(raw)?;
                 },
                 "name" => {
-                    read_str(raw).map_err(|_e| Error::new(InvalidData, "`name` field didn't contain string"))?;
+                    read_str(raw)?;
                 },
                 "version" => {
-                    read_integer(raw).map_err(|_e| Error::new(InvalidData, "`name` field didn't contain integer"))?;
+                    read_integer(raw)?;
                 },
                 "entries" => {
                     if let MarkerType::Object(len) = read_marker(raw)? {
                         object_iterate(raw, len, |field, raw| {
-                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names, &hash)?;
+                            let v = Validator::read_validator(raw, &mut reader)?;
                             entries.push((field.to_string(), v));
                             Ok(())
                         })?;
                     }
                     else {
-                        return Err(Error::new(InvalidData, "`entries` field doesn't contain an Object"));
+                        return Err(Error::FailValidate(raw.len(), "`entries` field doesn't contain an Object"));
                     }
                 },
                 "entries_compress" => {
@@ -152,25 +152,25 @@ impl Schema {
                         })?;
                     }
                     else {
-                        return Err(Error::new(InvalidData, "`entries_compress` field doesn't contain an Object"));
+                        return Err(Error::FailValidate(raw.len(), "`entries_compress` field doesn't contain an Object"));
                     }
                 },
                "field_type" | "max_fields" | "min_fields" | "req" | "opt" | "ban" | "unknown_ok" => {
-                   let valid = object.update(field, raw, false, &mut types, &mut type_names, &hash)?;
+                   let valid = object.update(field, raw, &mut reader)?;
                    object_valid = object_valid && valid;
                 },
                 "types" => {
                     if let MarkerType::Object(len) = read_marker(raw)? {
                         object_iterate(raw, len, |field, raw| {
-                            let v = Validator::read_validator(raw, false, &mut types, &mut type_names, &hash)?;
-                            if v == (types.len() - 1) {
-                                let v = types.pop();
+                            let v = Validator::read_validator(raw, &mut reader)?;
+                            if v == (reader.types.len() - 1) {
+                                let v = reader.types.pop();
                                 match field {
                                     "Null" | "Bool" | "Int" | "Str" | "F32" | "F64" | "Bin" |
                                     "Array" | "Obj" | "Hash" | "Ident" | "Lock" | "Time" | "Multi" => (),
                                     _ => {
-                                        if let Some(index) = type_names.get(field) {
-                                            types[*index] = v.unwrap();
+                                        if let Some(index) = reader.type_names.get(field) {
+                                            reader.types[*index] = v.unwrap();
                                         }
                                     }
                                 }
@@ -179,17 +179,19 @@ impl Schema {
                         })?;
                     }
                     else {
-                        return Err(Error::new(InvalidData, "`entries` field doesn't contain an Object"));
+                        return Err(Error::FailValidate(raw.len(), "`entries` field doesn't contain an Object"));
                     }
                 }
                 _ => {
-                    return Err(Error::new(InvalidData, "Unrecognized field in schema document"));
+                    return Err(Error::FailValidate(raw.len(), "Unrecognized field in schema document"));
                 }
             }
             Ok(())
         })?;
 
         object_valid = object_valid && object.finalize();
+
+        drop(reader);
 
         Ok(Schema {
             hash,
@@ -216,7 +218,7 @@ impl Schema {
     /// Panics if the underlying zstd calls return an error, which shouldn't be possible. Also 
     /// panics if the document somehow became larger than the maximum allowed size, which should be 
     /// impossible with the public Document interface.
-    pub fn encode_doc(&mut self, doc: Document) -> io::Result<Vec<u8>> {
+    pub fn encode_doc(&mut self, doc: Document) -> crate::Result<Vec<u8>> {
         let mut buf = Vec::new();
         let len = doc.len();
         let mut raw: &[u8] = doc.raw_doc();
@@ -225,21 +227,21 @@ impl Schema {
 
         // Verify we're the right schema hash
         if let Some(doc_schema) = doc.schema_hash() {
-            if doc_schema != self.hash() { return Err(io::Error::new(InvalidData, "Document doesn't use this schema")); }
+            if doc_schema != self.hash() { return Err(Error::SchemaMismatch); }
         }
         else {
-            return Err(io::Error::new(InvalidData, "Document doesn't use this schema"));
+            return Err(Error::SchemaMismatch);
         }
 
         // Verify the document passes validation
         if self.object_valid {
             if !doc.validated() {
                 let mut checklist = ValidatorChecklist::new();
-                self.object.validate("", &mut doc.raw_doc(), &self.types, &mut checklist, true)?;
+                self.object.validate(&mut doc.raw_doc(), &self.types, &mut checklist, true)?;
             }
         }
         else {
-            return Err(io::Error::new(InvalidData, "This schema cannot pass anything"));
+            return Err(Error::FailValidate(doc.raw_doc().len(), "This schema cannot pass anything"));
         }
 
         if doc.override_compression() {
@@ -297,11 +299,11 @@ impl Schema {
     ///
     /// The *only* time this should be used is if the byte slice is coming from a well-trusted 
     /// location, like an internal database.
-    pub fn trusted_decode_doc(&mut self, buf: &mut &[u8], hash: Option<Hash>) -> io::Result<Document> {
+    pub fn trusted_decode_doc(&mut self, buf: &mut &[u8], hash: Option<Hash>) -> crate::Result<Document> {
         let mut buf_ptr: &[u8] = buf;
         let compress_type = CompressType::decode(&mut buf_ptr)?;
         if let CompressType::CompressedNoSchema = compress_type {
-            return Err(io::Error::new(InvalidData, "Schema does not support decoding non-schema document"));
+            return Err(Error::SchemaMismatch);
         }
         let mut doc = Vec::new();
         let mut buf_post_hash: &[u8] = buf_ptr;
@@ -334,8 +336,7 @@ impl Schema {
         let mut signed_by = Vec::new();
         let mut index = &mut &doc[doc_len..];
         while index.len() > 0 {
-            let signature = crypto::Signature::decode(&mut index)
-                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
+            let signature = crypto::Signature::decode(&mut index)?;
             signed_by.push(signature.signed_by().clone());
         }
 
@@ -367,14 +368,14 @@ impl Schema {
     /// - The data doesn't adhere to this schema
     /// - The compression is invalid or expands to larger than the maximum allowed size
     /// - Any of the attached signatures are invalid
-    pub fn decode_doc(&mut self, buf: &mut &[u8]) -> io::Result<Document> {
+    pub fn decode_doc(&mut self, buf: &mut &[u8]) -> crate::Result<Document> {
         let mut buf_ptr: &[u8] = buf;
         let mut doc = Vec::new();
 
         // Decompress the document
         let compress_type = CompressType::decode(&mut buf_ptr)?;
         if let CompressType::CompressedNoSchema = compress_type {
-            return Err(io::Error::new(InvalidData, "Schema does not support decoding non-schema document"));
+            return Err(Error::SchemaMismatch);
         }
         let mut buf_post_hash: &[u8] = buf_ptr;
         parse_schema_hash(&mut buf_post_hash)?; // Just pull off the schema hash & object header
@@ -385,10 +386,10 @@ impl Schema {
         let mut doc_ptr: &[u8] = &doc[..];
         if self.object_valid {
             let mut checklist = ValidatorChecklist::new();
-            self.object.validate("", &mut doc_ptr, &self.types, &mut checklist, true)?;
+            self.object.validate(&mut doc_ptr, &self.types, &mut checklist, true)?;
         }
         else {
-            return Err(io::Error::new(InvalidData, "Decoding failed: Schema doesn't allow any documents to pass"));
+            return Err(Error::FailValidate(doc.len(), "This schema cannot pass any documents"));
         }
 
         let doc_len = doc.len() - doc_ptr.len();
@@ -408,10 +409,9 @@ impl Schema {
         // Get & verify signatures
         let mut signed_by = Vec::new();
         while doc_ptr.len() > 0 {
-            let signature = crypto::Signature::decode(&mut doc_ptr)
-                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
+            let signature = crypto::Signature::decode(&mut doc_ptr)?;
             if !signature.verify(&doc_hash) {
-                return Err(io::Error::new(InvalidData, "Signature doesn't verify against document"));
+                return Err(Error::BadSignature);
             }
             signed_by.push(signature.signed_by().clone());
         }
@@ -439,7 +439,7 @@ impl Schema {
     ///
     /// [`Entry`]: ./checklist/struct.Entry.html
     /// [`EncodeChecklist`]: ./checklist/struct.EncodeChecklist.html
-    pub fn encode_entry(&mut self, entry: Entry) -> io::Result<EncodeChecklist> {
+    pub fn encode_entry(&mut self, entry: Entry) -> crate::Result<EncodeChecklist> {
         let mut buf = Vec::new();
         let len = entry.len();
         let raw: &[u8] = entry.raw_entry();
@@ -452,10 +452,10 @@ impl Schema {
             let v = self.entries.binary_search_by(|x| x.0.as_str().cmp(entry.field()));
             if let Ok(v) = v {
                 let v = self.entries[v].1;
-                self.types[v].validate("", &mut entry.raw_entry(), &self.types, 0, &mut checklist)?;
+                self.types[v].validate(&mut entry.raw_entry(), &self.types, 0, &mut checklist)?;
             }
             else {
-                return Err(io::Error::new(InvalidData, "Entry field is not in schema"));
+                return Err(Error::FailValidate(len, "Entry field is not in schema"));
             }
             checklist
         }
@@ -516,7 +516,7 @@ impl Schema {
     ///
     /// [`Entry`]: ./struct.Entry.html
     /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
-    pub fn trusted_decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String, hash: Option<Hash>) -> io::Result<Entry> {
+    pub fn trusted_decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String, hash: Option<Hash>) -> crate::Result<Entry> {
         let mut buf_ptr: &[u8] = buf;
         let mut entry = Vec::new();
 
@@ -524,7 +524,7 @@ impl Schema {
         let compress_type = CompressType::decode(&mut buf_ptr)?;
         match compress_type {
             CompressType::Compressed => {
-                return Err(io::Error::new(InvalidData, "Entries don't allow compression with schema!"));
+                return Err(Error::FailValidate(buf_ptr.len(), "Entries don't allow a compression header with the schema included!"));
             },
             CompressType::Uncompressed => {
                 entry.extend_from_slice(buf_ptr);
@@ -534,8 +534,7 @@ impl Schema {
             },
             CompressType::DictCompressed => {
                 let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
-                    .map_err(|_| io::Error::new(InvalidData,
-                            format!("Schema has no dictionary for field \"{}\"", field)))?;
+                    .map_err(|_| Error::FailDecompress)?;
                 let compress = &self.entries_compress[compress].1;
                 compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
             }
@@ -550,8 +549,7 @@ impl Schema {
         let mut signed_by = Vec::new();
         let mut index = &mut &entry[entry_len..];
         while index.len() > 0 {
-            let signature = crypto::Signature::decode(&mut index)
-                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw entry"))?;
+            let signature = crypto::Signature::decode(&mut index)?;
             signed_by.push(signature.signed_by().clone());
         }
 
@@ -587,19 +585,19 @@ impl Schema {
     ///
     /// [`Entry`]: ./struct.Entry.html
     /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
-    pub fn decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> io::Result<DecodeChecklist> {
+    pub fn decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> crate::Result<DecodeChecklist> {
         let mut buf_ptr: &[u8] = buf;
         let mut entry = Vec::new();
 
         let validator = self.entries.binary_search_by(|x| x.0.as_str().cmp(&field))
-            .map_err(|_| io::Error::new(InvalidData, "Entry field is not in schema"))?;
+            .map_err(|_| Error::FailValidate(buf.len(), "Entry field is not in schema"))?;
         let validator = self.entries[validator].1;
 
         // Decompress the entry
         let compress_type = CompressType::decode(&mut buf_ptr)?;
         match compress_type {
             CompressType::Compressed => {
-                return Err(io::Error::new(InvalidData, "Entries don't allow compression with schema!"));
+                return Err(Error::FailValidate(buf_ptr.len(), "Entries don't allow a compression header with the schema included!"));
             },
             CompressType::Uncompressed => {
                 entry.extend_from_slice(buf_ptr);
@@ -609,8 +607,7 @@ impl Schema {
             },
             CompressType::DictCompressed => {
                 let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
-                    .map_err(|_| io::Error::new(InvalidData,
-                            format!("Schema has no dictionary for field \"{}\"", field)))?;
+                    .map_err(|_| Error::FailDecompress)?;
                 let compress = &self.entries_compress[compress].1;
                 compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
             }
@@ -619,7 +616,7 @@ impl Schema {
         // Verify the entry passes validation
         let mut entry_ptr: &[u8] = &entry[..];
         let mut checklist = ValidatorChecklist::new();
-        self.types[validator].validate("", &mut entry_ptr, &self.types, 0, &mut checklist)?;
+        self.types[validator].validate(&mut entry_ptr, &self.types, 0, &mut checklist)?;
         let entry_len = entry.len() - entry_ptr.len();
 
         // Compute the entry hashes
@@ -644,10 +641,9 @@ impl Schema {
         // Get & verify signatures
         let mut signed_by = Vec::new();
         while entry_ptr.len() > 0 {
-            let signature = crypto::Signature::decode(&mut entry_ptr)
-                .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw entry"))?;
+            let signature = crypto::Signature::decode(&mut entry_ptr)?;
             if !signature.verify(&entry_hash) {
-                return Err(io::Error::new(InvalidData, "Signature doesn't verify against entry"));
+                return Err(Error::BadSignature);
             }
             signed_by.push(signature.signed_by().clone());
         }
@@ -681,32 +677,32 @@ impl Schema {
     /// [`ChecklistItem`] ./struct.ChecklistItem.html
     /// [`EncodeChecklist`] ./struct.EncodeChecklist.html
     /// [`DecodeChecklist`] ./struct.DecodeChecklist.html
-    pub fn check_item(&self, doc: &Document, item: &mut ChecklistItem) -> io::Result<()> {
+    pub fn check_item(&self, doc: &Document, item: &mut ChecklistItem) -> crate::Result<()> {
         for index in item.iter() {
             if let Validator::Hash(ref v) = self.types[*index] {
                 // Check against acceptable schemas
                 if v.schema_required() {
                     if let Some(hash) = doc.schema_hash() {
                         if !v.schema_in_set(&hash) {
-                            return Err(Error::new(InvalidData, "Document uses unrecognized schema"));
+                            return Err(Error::FailValidate(doc.len(), "Document uses unrecognized schema"));
                         }
                     }
                     else {
-                        return Err(Error::new(InvalidData, "Document doesn't have schema, but needs one"));
+                        return Err(Error::FailValidate(doc.len(), "Document doesn't have schema, but needs one"));
                     }
                 }
                 if let Some(link) = v.link() {
                     let mut checklist = ValidatorChecklist::new();
                     if let Validator::Object(ref v) = self.types[link] {
-                        v.validate("", &mut doc.raw_doc(), &self.types, &mut checklist, true)?;
+                        v.validate(&mut doc.raw_doc(), &self.types, &mut checklist, true)?;
                     }
                     else {
-                        return Err(Error::new(Other, "Can't validate a document against a non-object validator"));
+                        return Err(Error::FailValidate(doc.len(), "Can't validate a document against a non-object validator"));
                     }
                 }
             }
             else {
-                return Err(Error::new(Other, "Can't validate against non-hash validator"));
+                return Err(Error::FailValidate(doc.len(), "Can't validate against non-hash validator"));
             }
         };
         item.mark_done();
@@ -716,28 +712,29 @@ impl Schema {
     /// Validates a document against a specific Hash Validator. Should be used in conjunction with 
     /// a ValidatorChecklist returned from `validate_entry` to confirm that all documents referenced in an 
     /// entry meet the schema's criteria.
-    pub fn validate_checklist_item(&self, index: usize, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate_checklist_item(&self, index: usize, doc: &mut &[u8]) -> crate::Result<()> {
         if let Validator::Hash(ref v) = self.types[index] {
             // Extract schema. Also verifies we are dealing with an Object (an actual document)
-            let doc_schema = extract_schema_hash(&doc.clone())?;
+            let doc_ptr: &[u8] = doc;
+            let doc_schema = extract_schema_hash(&doc_ptr)?;
             // Check against acceptable schemas
             if v.schema_required() {
                 if let Some(hash) = doc_schema {
                     if !v.schema_in_set(&hash) {
-                        return Err(Error::new(InvalidData, "Document uses unrecognized schema"));
+                        return Err(Error::FailValidate(doc.len(), "Document uses unrecognized schema"));
                     }
                 }
                 else {
-                    return Err(Error::new(InvalidData, "Document doesn't have schema, but needs one"));
+                    return Err(Error::FailValidate(doc.len(), "Document doesn't have schema, but needs one"));
                 }
             }
             if let Some(link) = v.link() {
                 let mut checklist = ValidatorChecklist::new();
                 if let Validator::Object(ref v) = self.types[link] {
-                    v.validate("", doc, &self.types, &mut checklist, true).and(Ok(()))
+                    v.validate(doc, &self.types, &mut checklist, true).and(Ok(()))
                 }
                 else {
-                    Err(Error::new(Other, "Can't validate a document against a non-object validator"))
+                    Err(Error::FailValidate(doc.len(), "Can't validate a document against a non-object validator"))
                 }
             }
             else {
@@ -745,7 +742,7 @@ impl Schema {
             }
         }
         else {
-            Err(Error::new(Other, "Can't validate against non-hash validator"))
+            Err(Error::FailValidate(doc.len(), "Can't validate against non-hash validator"))
         }
 
     }
@@ -764,7 +761,7 @@ impl std::default::Default for Compression {
 }
 
 impl Compression {
-    fn read_raw(raw: &mut &[u8]) -> io::Result<Compression> {
+    fn read_raw(raw: &mut &[u8]) -> crate::Result<Compression> {
         let mut setting_seen = false;
         let mut format_seen = false;
         let mut level_seen = false;
@@ -775,7 +772,7 @@ impl Compression {
 
         let num_fields = match read_marker(raw)? {
             MarkerType::Object(len) => len,
-            _ => return Err(Error::new(InvalidData, "Compress spec wasn't an object")),
+            _ => return Err(Error::FailValidate(raw.len(), "Compress spec wasn't an object")),
         };
         object_iterate(raw, num_fields, |field, raw| {
             match field {
@@ -783,7 +780,7 @@ impl Compression {
                     format_seen = true;
                     if let Some(i) = read_integer(raw)?.as_u64() {
                         if i > 31 {
-                            Err(Error::new(InvalidData,
+                            Err(Error::FailValidate(raw.len(),
                                 "Compress `format` field didn't contain integer between 0 and 31"))
                         }
                         else {
@@ -792,7 +789,7 @@ impl Compression {
                         }
                     }
                     else {
-                        Err(Error::new(InvalidData,
+                        Err(Error::FailValidate(raw.len(),
                             "Compress `format` field didn't contain integer between 0 and 31"))
                     }
                 },
@@ -800,7 +797,7 @@ impl Compression {
                     level_seen = true;
                     if let Some(i) = read_integer(raw)?.as_u64() {
                         if i > 255 {
-                            Err(Error::new(InvalidData,
+                            Err(Error::FailValidate(raw.len(),
                                 "Compress `level` field didn't contain integer between 0 and 255"))
                         }
                         else {
@@ -813,7 +810,7 @@ impl Compression {
                         }
                     }
                     else {
-                        Err(Error::new(InvalidData,
+                        Err(Error::FailValidate(raw.len(),
                             "Compress `level` field didn't contain integer between 0 and 255"))
                     }
                 },
@@ -831,27 +828,26 @@ impl Compression {
                             Ok(())
                         },
                         _ => {
-                            Err(Error::new(InvalidData,
+                            Err(Error::FailValidate(raw.len(),
                                 "Compress `setting` field didn't contain boolean or binary data"))
                         }
                     }
                 },
                 _ => {
-                    Err(Error::new(InvalidData,
-                        format!("Compress contains unrecognized field `{}`", field)))
+                    Err(Error::FailValidate(raw.len(), "Compress contains unrecognized field"))
                 }
             }
         })?;
 
         // Checks to verify we met the allowed object format
         if !setting_seen {
-            return Err(Error::new(InvalidData, "Compress spec didn't have setting field"));
+            return Err(Error::FailValidate(raw.len(), "Compress spec didn't have setting field"));
         }
         if !setting_bool && (format_seen || level_seen) {
-            return Err(Error::new(InvalidData, "Compress spec had false setting field, but other fields were also present"));
+            return Err(Error::FailValidate(raw.len(), "Compress spec had false setting field, but other fields were also present"));
         }
         if !format_seen && setting_bool {
-            return Err(Error::new(InvalidData, "Compress spec had setting field not set to false, but no format field"));
+            return Err(Error::FailValidate(raw.len(), "Compress spec had setting field not set to false, but no format field"));
         }
 
         Ok(
@@ -902,12 +898,12 @@ impl Compression {
         buf: &mut &[u8],
         decode: &mut Vec<u8>
     )
-        -> io::Result<()>
+        -> crate::Result<()>
     {
         match compress_type {
             CompressType::Uncompressed => {
                 if (buf.len() + decode.len()) > max_size {
-                    return Err(io::Error::new(InvalidData, "Data is larger than maximum allowed size"));
+                    return Err(Error::BadSize);
                 }
                 decode.extend_from_slice(buf);
                 Ok(())
@@ -922,7 +918,7 @@ impl Compression {
                     zstd_help::dict_decompress(decompressor, dict, max_size, buf, decode)
                 }
                 else {
-                    Err(io::Error::new(InvalidData, "Schema has no dictionary for this data"))
+                    Err(Error::FailDecompress)
                 }
             }
         }

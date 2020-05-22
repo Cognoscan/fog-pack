@@ -104,6 +104,7 @@ mod query;
 mod compress_type;
 mod no_schema;
 mod zstd_help;
+mod error;
 
 pub mod crypto;
 pub mod encode;
@@ -114,6 +115,7 @@ pub mod spec;
 use marker::{Marker, ExtType, MarkerType};
 use compress_type::CompressType;
 
+pub use self::error::{Error, Result};
 pub use self::schema::Schema;
 pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
 pub use self::index::Index;

@@ -1,9 +1,6 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
-
 use regex::Regex;
 
+use Error;
 use decode::*;
 use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
@@ -53,7 +50,7 @@ impl ValidStr {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -77,7 +74,7 @@ impl ValidStr {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "String validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(raw.len(), "String validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
@@ -115,7 +112,7 @@ impl ValidStr {
                         Ok(regexes_ok)
                     },
                     _ => {
-                        Err(Error::new(InvalidData, "String validator expected array or string for `matches` field"))
+                        Err(Error::FailValidate(raw.len(), "String validator expected array or string for `matches` field"))
                     },
                 }
             },
@@ -126,7 +123,7 @@ impl ValidStr {
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `max_char` field"))
+                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `max_char` field"))
                 }
             }
             "max_len" => {
@@ -135,7 +132,7 @@ impl ValidStr {
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `max_len` field"))
                 }
             }
             "min_char" => {
@@ -145,7 +142,7 @@ impl ValidStr {
                     Ok(self.max_char >= self.min_char)
                 }
                 else {
-                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `min_char` field"))
+                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `min_char` field"))
                 }
             }
             "min_len" => {
@@ -154,7 +151,7 @@ impl ValidStr {
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Err(Error::new(InvalidData, "String validator requires non-negative integer for `min_len` field"))
+                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `min_len` field"))
                 }
             }
             "nin" => {
@@ -173,7 +170,7 @@ impl ValidStr {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "String validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(raw.len(), "String validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -190,8 +187,8 @@ impl ValidStr {
                 self.size = read_bool(raw)?;
                 Ok(true)
             },
-            "type" => if "Str" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Str")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in string validator")),
+            "type" => if "Str" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Str")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in string validator")),
         }
     }
 
@@ -242,39 +239,32 @@ impl ValidStr {
         }
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let value = read_str(doc)?;
         let len_char = if self.use_char { bytecount::num_chars(value.as_bytes()) } else { 0 };
         if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains string not on the `in` list", field)))
+            Err(Error::FailValidate(doc.len(), "String is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
             Ok(())
         }
         else if self.use_char && (len_char < self.min_char) {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains string shorter than min char length of {}", field, self.min_char)))
+            Err(Error::FailValidate(doc.len(), "String shorter than min char length"))
         }
         else if self.use_char && (len_char > self.max_char) {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains string longer than max char length of {}", field, self.max_char)))
+            Err(Error::FailValidate(doc.len(), "String longer than max char length"))
         }
         else if value.len() < self.min_len {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains string shorter than min length of {}", field, self.min_len)))
+            Err(Error::FailValidate(doc.len(), "String shorter than min length"))
         }
         else if value.len() > self.max_len {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains string longer than max length of {}", field, self.max_len)))
+            Err(Error::FailValidate(doc.len(), "String longer than max length"))
         }
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(value)).is_ok() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains string on the `nin` list", field)))
+            Err(Error::FailValidate(doc.len(), "String is on the `nin` list"))
         }
         else if self.matches.iter().any(|reg| !reg.is_match(value)) {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" fails regex check", field)))
+            Err(Error::FailValidate(doc.len(), "String fails regex check"))
         }
         else {
             Ok(())
@@ -351,12 +341,12 @@ mod tests {
     use value::Value;
     use super::*;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidStr> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidStr> {
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidStr::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Not a valid string validator"))
+                    Err(Error::FailValidate(raw.len(), "Not a valid string validator"))
                 }
                 else {
                     Ok(())
@@ -367,14 +357,14 @@ mod tests {
 
         }
         else {
-            Err(Error::new(InvalidData, "Not an object"))
+            Err(Error::FailValidate(raw.len(), "Not an object"))
         }
     }
 
-    fn validate_str(s: &str, validator: &ValidStr) -> io::Result<()> {
+    fn validate_str(s: &str, validator: &ValidStr) -> crate::Result<()> {
         let mut val = Vec::with_capacity(1+s.len());
         encode::write_value(&mut val, &Value::from(s));
-        validator.validate("", &mut &val[..])
+        validator.validate(&mut &val[..])
     }
 
     #[test]
@@ -391,10 +381,10 @@ mod tests {
         assert!(validate_str("", &validator).is_ok());
         let mut val = Vec::with_capacity(1);
         encode::write_value(&mut val, &Value::from(0u8));
-        assert!(validator.validate("", &mut &val[..]).is_err());
+        assert!(validator.validate(&mut &val[..]).is_err());
         val.clear();
         encode::write_value(&mut val, &Value::from(false));
-        assert!(validator.validate("", &mut &val[..]).is_err());
+        assert!(validator.validate(&mut &val[..]).is_err());
     }
 
     #[test]

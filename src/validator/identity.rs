@@ -1,7 +1,4 @@
-
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
+use Error;
 use decode::*;
 use super::{MAX_VEC_RESERVE, Validator};
 use marker::MarkerType;
@@ -36,7 +33,7 @@ impl ValidIdentity {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -58,7 +55,7 @@ impl ValidIdentity {
                         };
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Identity validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(raw.len(), "Identity validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
@@ -77,7 +74,7 @@ impl ValidIdentity {
                         };
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Identity validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(raw.len(), "Identity validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -86,8 +83,8 @@ impl ValidIdentity {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Ident" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Ident")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Identity validator")),
+            "type" => if "Ident" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Ident")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Identity validator")),
         }
     }
 
@@ -112,15 +109,13 @@ impl ValidIdentity {
         }
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let value = read_id(doc)?;
         if self.nin_vec.contains(&value) {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" has Identity on `nin` list", field)))
+            Err(Error::FailValidate(doc.len(), "Identity is on the `nin` list"))
         }
         else if (self.in_vec.len() > 0) && !self.in_vec.contains(&value) {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" has Identity not on `in` list", field)))
+            Err(Error::FailValidate(doc.len(), "Identity is not on the `in` list"))
         }
         else {
             Ok(())

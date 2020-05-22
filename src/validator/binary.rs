@@ -1,7 +1,6 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
 use std::iter::repeat;
+
+use Error;
 use decode::*;
 use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use marker::MarkerType;
@@ -57,7 +56,7 @@ impl ValidBin {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -104,7 +103,7 @@ impl ValidBin {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Binary validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(raw.len(), "Binary validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
@@ -139,7 +138,7 @@ impl ValidBin {
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Binary validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(raw.len(), "Binary validator requires non-negative integer for `max_len` field"))
                 }
             }
             "min" => {
@@ -166,7 +165,7 @@ impl ValidBin {
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Binary validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(raw.len(), "Binary validator requires non-negative integer for `max_len` field"))
                 }
             }
             "nin" => {
@@ -185,7 +184,7 @@ impl ValidBin {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Binary validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(raw.len(), "Binary validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -202,8 +201,8 @@ impl ValidBin {
                 self.size = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Bin" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Bin")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in binary validator")),
+            "type" => if "Bin" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Bin")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in binary validator")),
         }
     }
 
@@ -256,22 +255,19 @@ impl ValidBin {
         }
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let value = read_bin(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains binary not on the `in` list", field)))
+            Err(Error::FailValidate(doc.len(), "Binary is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
             Ok(())
         }
         else if value.len() < self.min_len {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains binary shorter than min length of {}", field, self.min_len)))
+            Err(Error::FailValidate(doc.len(), "Binary length is shorter than min allowed"))
         }
         else if value.len() > self.max_len {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains binary longer than max length of {}", field, self.min_len)))
+            Err(Error::FailValidate(doc.len(), "Binary length is longer than max allowed"))
         }
         else if self.max.as_ref().map_or(false, |v| {
             let max_len = v.len();
@@ -290,8 +286,7 @@ impl ValidBin {
             }
         })
         {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is greater than maximum", field)))
+            Err(Error::FailValidate(doc.len(), "Binary is greater than max value"))
         }
         else if self.min.as_ref().map_or(false, |v| {
             let min_len = v.len();
@@ -311,26 +306,22 @@ impl ValidBin {
             }
         })
         {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is greater than maximum", field)))
+            Err(Error::FailValidate(doc.len(), "Binary is less than min value"))
         }
         else if self.bits_set.iter()
             .zip(value.iter().chain(repeat(&0u8)))
             .any(|(bit, val)| (bit & val) != *bit)
         {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" does not have all required bits set", field)))
+            Err(Error::FailValidate(doc.len(), "Binary does not have all required bits set"))
         }
         else if self.bits_clr.iter()
             .zip(value.iter().chain(repeat(&0u8)))
             .any(|(bit, val)| (bit & val) != 0)
         {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" does not have all required bits cleared", field)))
+            Err(Error::FailValidate(doc.len(), "Binary does not have all required bits cleared"))
         }
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(value)).is_ok() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains binary on the `nin` list", field)))
+            Err(Error::FailValidate(doc.len(), "Binary is on the `nin` list"))
         }
         else {
             Ok(())
@@ -429,12 +420,12 @@ mod tests {
     use value::Value;
     use super::*;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidBin> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidBin> {
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidBin::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Not a valid binary validator"))
+                    Err(Error::FailValidate(raw.len(), "Not a valid binary validator"))
                 }
                 else {
                     Ok(())
@@ -445,14 +436,14 @@ mod tests {
 
         }
         else {
-            Err(Error::new(InvalidData, "Not an object"))
+            Err(Error::FailValidate(raw.len(), "Not an object"))
         }
     }
 
-    fn validate_bin(bin: Vec<u8>, validator: &ValidBin) -> io::Result<()> {
+    fn validate_bin(bin: Vec<u8>, validator: &ValidBin) -> crate::Result<()> {
         let mut val = Vec::with_capacity(3+bin.len());
         encode::write_value(&mut val, &Value::from(bin));
-        validator.validate("", &mut &val[..])
+        validator.validate(&mut &val[..])
     }
 
     #[test]
@@ -552,10 +543,10 @@ mod tests {
         assert!(validate_bin(vec![255,255,255,255], &validator).is_ok());
         let mut val = Vec::with_capacity(1);
         encode::write_value(&mut val, &Value::from(0u8));
-        assert!(validator.validate("", &mut &val[..]).is_err());
+        assert!(validator.validate(&mut &val[..]).is_err());
         val.clear();
         encode::write_value(&mut val, &Value::from(false));
-        assert!(validator.validate("", &mut &val[..]).is_err());
+        assert!(validator.validate(&mut &val[..]).is_err());
     }
 
     #[test]

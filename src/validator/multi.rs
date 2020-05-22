@@ -1,4 +1,5 @@
 use super::*;
+use Error;
 
 /// Container for multiple accepted Validators
 #[derive(Clone, Debug)]
@@ -18,8 +19,7 @@ impl ValidMulti {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>, schema_hash: &Hash)
-        -> io::Result<bool>
+    pub fn update(&mut self, field: &str, raw: &mut &[u8], reader: &mut ValidReader) -> crate::Result<bool>
     {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
@@ -28,17 +28,17 @@ impl ValidMulti {
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     self.any_of.push(Vec::new());
                     for _ in 0..len {
-                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
+                        let v = Validator::read_validator(raw, reader)?;
                         self.any_of[0].push(v);
                     }
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Multi `any_of` isn't a valid array of validators"))
+                    Err(Error::FailValidate(raw.len(), "Multi `any_of` isn't a valid array of validators"))
                 }
             }
-            "type" => if "Multi" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Multi")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Multi validator")),
+            "type" => if "Multi" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Multi")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Multi validator")),
         }
     }
 
@@ -56,16 +56,15 @@ impl ValidMulti {
     }
 
     pub fn validate(&self,
-                    field: &str,
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
                     list: &mut ValidatorChecklist,
-                    ) -> io::Result<()>
+                    ) -> crate::Result<()>
     {
         if self.any_of.iter().all(|any_list| {
             any_list.iter().any(|v_index| {
                 let mut temp_list = ValidatorChecklist::new();
-                if let Err(_) = types[*v_index].validate(field, doc, types, *v_index, &mut temp_list) {
+                if let Err(_) = types[*v_index].validate(doc, types, *v_index, &mut temp_list) {
                     false
                 }
                 else {
@@ -78,8 +77,7 @@ impl ValidMulti {
             Ok(())
         }
         else {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" failed against all allowed types.", field)))
+            Err(Error::FailValidate(doc.len(), "Failed against all of Multi's any_of validators"))
         }
     }
 

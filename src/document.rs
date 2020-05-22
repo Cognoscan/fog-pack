@@ -1,6 +1,7 @@
 use std::io;
 use std::io::ErrorKind::InvalidData;
 
+use Error;
 use MarkerType;
 use CompressType;
 use super::{MAX_DOC_SIZE, Hash, Value, ValueRef};
@@ -251,7 +252,7 @@ impl Document {
 /// #   schema_db: &mut HashMap<Hash, Schema>,
 /// #   buffer: &[u8]
 /// # )
-/// # -> io::Result<Document> {
+/// # -> fog_pack::Result<Document> {
 ///
 /// let schema_hash = extract_schema_hash(&buffer)?;
 /// if let Some(schema_hash) = schema_hash {
@@ -260,7 +261,7 @@ impl Document {
 ///         schema.decode_doc(&mut buf)
 ///     }
 ///     else {
-///         Err(io::Error::new(io::ErrorKind::Other, "Don't have schema"))
+///         Err(Error::FailValidate(0, "Don't have schema"))
 ///     }
 /// }
 /// else {
@@ -268,7 +269,7 @@ impl Document {
 /// }
 /// # }
 /// ```
-pub fn extract_schema_hash(buf: &[u8]) -> io::Result<Option<Hash>> {
+pub fn extract_schema_hash(buf: &[u8]) -> crate::Result<Option<Hash>> {
     let mut buf: &[u8] = buf;
     let compressed = CompressType::decode(&mut buf)?;
     match compressed {
@@ -280,13 +281,13 @@ pub fn extract_schema_hash(buf: &[u8]) -> io::Result<Option<Hash>> {
 
 /// Parses the schema hash and advances the slice pointer past the hash. Used when we already 
 /// parsed the compression type and want to try reading the schema hash
-pub(crate) fn parse_schema_hash(buf: &mut &[u8]) -> io::Result<Option<Hash>> {
+pub(crate) fn parse_schema_hash(buf: &mut &[u8]) -> crate::Result<Option<Hash>> {
     // Get the object tag & number of field/value pairs it has
     let obj_len = if let MarkerType::Object(len) = decode::read_marker(buf)? {
         len
     }
     else {
-        return Err(io::Error::new(InvalidData, "Raw document isn't a fogpack object"));
+        return Err(Error::BadEncode(buf.len(), "Raw document isn't a fogpack object"));
     };
     if obj_len == 0 { return Ok(None); }
 
@@ -297,7 +298,7 @@ pub(crate) fn parse_schema_hash(buf: &mut &[u8]) -> io::Result<Option<Hash>> {
     }
     decode::read_hash(buf)
         .map(|v| Some(v))
-        .map_err(|_e| io::Error::new(InvalidData, "Empty string field doesn't have a Hash as its value"))
+        .map_err(|_e| Error::BadEncode(buf.len(), "Empty string field doesn't have a Hash as its value"))
 }
 
 #[cfg(test)]

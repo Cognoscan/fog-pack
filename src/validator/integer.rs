@@ -1,6 +1,4 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
+use Error;
 use decode::*;
 use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
 use integer::Integer;
@@ -51,7 +49,7 @@ impl ValidInt {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> io::Result<bool> {
+    pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -102,7 +100,7 @@ impl ValidInt {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Integer validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(raw.len(), "Integer validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
@@ -149,7 +147,7 @@ impl ValidInt {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::new(InvalidData, "Integer validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(raw.len(), "Integer validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -162,8 +160,8 @@ impl ValidInt {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Int" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Int")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Integer validator")),
+            "type" => if "Int" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Int")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Integer validator")),
         }
     }
 
@@ -208,35 +206,29 @@ impl ValidInt {
         }
     }
 
-    pub fn validate(&self, field: &str, doc: &mut &[u8]) -> io::Result<()> {
+    pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let value = read_integer(doc)?;
         let value_raw = value.as_bits();
         if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, which is not in the `in` list", field, value)))
+            Err(Error::FailValidate(doc.len(), "Integer is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
             Ok(())
         }
         else if value < self.min {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, less than minimum of {}", field, value, self.min)))
+            Err(Error::FailValidate(doc.len(), "Integer is less than minimum allowed"))
         }
         else if value > self.max {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, greater than maximum of {}", field, value, self.max)))
+            Err(Error::FailValidate(doc.len(), "Integer is greater than maximum allowed"))
         }
         else if self.nin_vec.binary_search(&value).is_ok() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is {}, which is on the `nin` list", field, value)))
+            Err(Error::FailValidate(doc.len(), "Integer is on the `nin` list"))
         }
         else if (self.bit_set & value_raw) != self.bit_set {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is 0x{:X}, but must have set bits 0x{:X}", field, value_raw, self.bit_set)))
+            Err(Error::FailValidate(doc.len(), "Integer does not have all required bits set"))
         }
         else if (self.bit_clear & value_raw) != 0 {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" is 0x{:X}, but must have cleared bits 0x{:X}", field, value_raw, self.bit_clear)))
+            Err(Error::FailValidate(doc.len(), "Integer does not have all required bits cleared"))
         }
         else {
             Ok(())
@@ -311,12 +303,12 @@ mod tests {
     use super::super::ValidatorChecklist;
     use rand::prelude::*;
 
-    fn read_it(raw: &mut &[u8], is_query: bool) -> io::Result<ValidInt> {
+    fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidInt> {
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidInt::new(is_query);
             object_iterate(raw, len, |field, raw| {
                 if !validator.update(field, raw)? {
-                    Err(Error::new(InvalidData, "Wasn't a valid integer validator"))
+                    Err(Error::FailValidate(raw.len(), "Wasn't a valid integer validator"))
                 }
                 else {
                     Ok(())
@@ -327,7 +319,7 @@ mod tests {
 
         }
         else {
-            Err(Error::new(InvalidData, "Not an object"))
+            Err(Error::FailValidate(raw.len(), "Not an object"))
         }
     }
 
@@ -367,7 +359,7 @@ mod tests {
         for _ in 0..test_count {
             val.clear();
             encode::write_value(&mut val, &Value::from(rand_integer(&mut rng)));
-            validator.validate("", &mut &val[..]).unwrap();
+            validator.validate(&mut &val[..]).unwrap();
         }
 
         // Test integers in a range
@@ -387,7 +379,7 @@ mod tests {
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
-                    validator.validate("", &mut &val[..]).is_ok(),
+                    validator.validate(&mut &val[..]).is_ok(),
                     "{} was between {} and {} but failed validation", test_val, min, max);
             }
         }
@@ -409,7 +401,7 @@ mod tests {
                 let test_val = test_val.as_bits();
                 assert_eq!(
                     ((test_val & set) == set) && ((test_val & clr) == 0),
-                    validator.validate("", &mut &val[..]).is_ok(),
+                    validator.validate(&mut &val[..]).is_ok(),
                     "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
             }
         }
@@ -431,7 +423,7 @@ mod tests {
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
                     (test_val >= min) && (test_val <= max),
-                    validator.validate("", &mut &val[..]).is_ok(),
+                    validator.validate(&mut &val[..]).is_ok(),
                     "{} was between {} and {} but failed validation", test_val, min, max);
             }
         }
@@ -453,7 +445,7 @@ mod tests {
                 let test_val = test_val.as_bits();
                 assert_eq!(
                     ((test_val & set) == set) && ((test_val & clr) == 0),
-                    validator.validate("", &mut &val[..]).is_ok(),
+                    validator.validate(&mut &val[..]).is_ok(),
                     "{:X} had {:X} set and {:X} clear but failed validation", test_val, set, clr);
             }
         }
@@ -479,7 +471,7 @@ mod tests {
             encode::write_value(&mut val, &Value::from(test_val.clone()));
             assert_eq!(
                 in_vec.contains(&test_val) && !nin_vec.contains(&test_val),
-                validator.validate("", &mut &val[..]).is_ok(),
+                validator.validate(&mut &val[..]).is_ok(),
                 "{:X} was in `in` and not `nin` but failed validation", test_val);
         }
     }
@@ -521,9 +513,9 @@ mod tests {
                 let test_val = rand_i8(&mut rng);
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
-                    valid1.validate("", &mut &val[..]).is_ok()
-                    && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
+                    valid1.validate(&mut &val[..]).is_ok()
+                    && valid2.validate(&mut &val[..]).is_ok(),
+                    validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
                     "Min/Max intersection for Integer validators fails");
             }
         }
@@ -552,9 +544,9 @@ mod tests {
                 let test_val = rand_i8(&mut rng);
                 encode::write_value(&mut val, &Value::from(test_val.clone()));
                 assert_eq!(
-                    valid1.validate("", &mut &val[..]).is_ok()
-                    && valid2.validate("", &mut &val[..]).is_ok(),
-                    validi.validate("", &mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
+                    valid1.validate(&mut &val[..]).is_ok()
+                    && valid2.validate(&mut &val[..]).is_ok(),
+                    validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
                     "Bit set/clear intersection for Integer validators fails");
             }
         }
@@ -601,9 +593,9 @@ mod tests {
             let test_val = rand_i8(&mut rng);
             encode::write_value(&mut val, &Value::from(test_val.clone()));
             assert_eq!(
-                valid1.validate("", &mut &val[..]).is_ok()
-                && valid2.validate("", &mut &val[..]).is_ok(),
-                validi.validate("", &mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
+                valid1.validate(&mut &val[..]).is_ok()
+                && valid2.validate(&mut &val[..]).is_ok(),
+                validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
                 "Set intersection for Integer validators fails with {}", test_val);
         }
     }

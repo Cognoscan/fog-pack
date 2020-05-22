@@ -1,8 +1,6 @@
-use std::io;
-use std::io::Error;
-use std::io::ErrorKind::InvalidData;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 
+use Error;
 use decode::*;
 use super::*;
 use marker::MarkerType;
@@ -53,8 +51,8 @@ impl ValidArray {
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
-    pub fn update(&mut self, field: &str, raw: &mut &[u8], is_query: bool, types: &mut Vec<Validator>, type_names: &mut HashMap<String,usize>, schema_hash: &Hash)
-        -> io::Result<bool>
+    pub fn update(&mut self, field: &str, raw: &mut &[u8], reader: &mut ValidReader)
+        -> crate::Result<bool>
     {
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
@@ -66,13 +64,13 @@ impl ValidArray {
             "contains" => {
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     for _ in 0..len {
-                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
+                        let v = Validator::read_validator(raw, reader)?;
                         self.contains.push(v);
                     }
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Array `contains` isn't a valid array of validators"))
+                    Err(Error::FailValidate(raw.len(), "Array `contains` isn't a valid array of validators"))
                 }
             },
             "contains_ok" => {
@@ -87,11 +85,11 @@ impl ValidArray {
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Array `default` isn't a valid array"))
+                    Err(Error::FailValidate(raw.len(), "Array `default` isn't a valid array"))
                 }
             },
             "extra_items" => {
-                self.extra_items = Some(Validator::read_validator(raw, is_query, types, type_names, schema_hash)?);
+                self.extra_items = Some(Validator::read_validator(raw, reader)?);
                 Ok(true)
             },
             "in" => {
@@ -103,7 +101,7 @@ impl ValidArray {
                             get_raw_array(raw, len)?
                         }
                         else {
-                            return Err(Error::new(InvalidData, "Array validator expected array of arrays for `in` field"));
+                            return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
                         };
                         self.in_vec.push(v);
                     };
@@ -111,20 +109,20 @@ impl ValidArray {
                     self.in_vec.dedup();
                 }
                 else {
-                    return Err(Error::new(InvalidData, "Array validator expected array of arrays for `in` field"));
+                    return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
                 }
                 Ok(true)
             },
             "items" => {
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     for _ in 0..len {
-                        let v = Validator::read_validator(raw, is_query, types, type_names, schema_hash)?;
+                        let v = Validator::read_validator(raw, reader)?;
                         self.items.push(v);
                     }
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Array `items` isn't a valid array of validators"))
+                    Err(Error::FailValidate(raw.len(), "Array `items` isn't a valid array of validators"))
                 }
             },
             "max_len" => {
@@ -133,7 +131,7 @@ impl ValidArray {
                     Ok(true)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Array validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(raw.len(), "Array validator requires non-negative integer for `max_len` field"))
                 }
             },
             "min_len" => {
@@ -142,7 +140,7 @@ impl ValidArray {
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Err(Error::new(InvalidData, "Array validator requires non-negative integer for `min_len` field"))
+                    Err(Error::FailValidate(raw.len(), "Array validator requires non-negative integer for `min_len` field"))
                 }
             },
             "nin" => {
@@ -154,7 +152,7 @@ impl ValidArray {
                             get_raw_array(raw, len)?
                         }
                         else {
-                            return Err(Error::new(InvalidData, "Array validator expected array of arrays for `in` field"));
+                            return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
                         };
                         self.nin_vec.push(v);
                     };
@@ -162,7 +160,7 @@ impl ValidArray {
                     self.nin_vec.dedup();
                 }
                 else {
-                    return Err(Error::new(InvalidData, "Array validator expected array of arrays for `in` field"));
+                    return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
                 }
                 Ok(true)
             },
@@ -174,8 +172,8 @@ impl ValidArray {
                 self.query = read_bool(raw)?;
                 Ok(true)
             },
-            "type" => if "Array" == read_str(raw)? { Ok(true) } else { Err(Error::new(InvalidData, "Type doesn't match Array")) },
-            _ => Err(Error::new(InvalidData, "Unknown fields not allowed in Array validator")),
+            "type" => if "Array" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Array")) },
+            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Array validator")),
         }
     }
 
@@ -209,15 +207,14 @@ impl ValidArray {
     /// requirements are not met. If it passes, the optional returned Hash indicates that an 
     /// additional document (referenced by the Hash) needs to be checked.
     pub fn validate(&self,
-                    field: &str,
                     doc: &mut &[u8],
                     types: &Vec<Validator>,
                     list: &mut ValidatorChecklist,
-                    ) -> io::Result<()>
+                    ) -> crate::Result<()>
     {
         let num_items = match read_marker(doc)? {
             MarkerType::Array(len) => len,
-            _ => return Err(Error::new(InvalidData, format!("Array for field \"{}\"not found", field))),
+            _ => return Err(Error::FailValidate(doc.len(), "Expected array")),
         };
         if num_items == 0 && self.min_len == 0 && self.items.len() == 0 && self.contains.len() == 0 {
             return Ok(());
@@ -227,12 +224,10 @@ impl ValidArray {
 
         // Size checks
         if num_items < self.min_len {
-            return Err(Error::new(InvalidData,
-                format!("Field {} contains array with {} items, less than minimum of {}", field, num_items, self.min_len)));
+            return Err(Error::FailValidate(doc.len(), "Array has fewer than minimum number of items allowed"))
         }
         if num_items > self.max_len {
-            return Err(Error::new(InvalidData,
-                format!("Field {} contains array with {} items, greater than maximum of {}", field, num_items, self.max_len)));
+            return Err(Error::FailValidate(doc.len(), "Array has greater than maximum number of items allowed"))
         }
 
         // Setup for iterating over array
@@ -249,12 +244,12 @@ impl ValidArray {
             // Validate as appropriate
             let item_start = doc.clone();
             if let Some(v_index) = self.items.get(i) {
-                if let Err(e) = types[*v_index].validate(field, doc, types, *v_index, list) {
+                if let Err(e) = types[*v_index].validate(doc, types, *v_index, list) {
                     return Err(e);
                 }
             }
             else if let Some(v_index) = self.extra_items {
-                if let Err(e) = types[v_index].validate(field, doc, types, v_index, list) {
+                if let Err(e) = types[v_index].validate(doc, types, v_index, list) {
                     return Err(e);
                 }
             }
@@ -266,8 +261,7 @@ impl ValidArray {
             // Check for uniqueness
             if self.unique {
                 if !unique_set.insert(item) {
-                    return Err(Error::new(InvalidData,
-                        format!("Field {} contains a repeated item at index {}", field, i)));
+                    return Err(Error::FailValidate(doc.len(), "Array contains a repeated item"));
                 }
             }
             // Check to see if any `contains` requirements are met
@@ -275,7 +269,7 @@ impl ValidArray {
                 .zip(self.contains.iter())
                 .filter(|(checked,_)| !**checked)
                 .for_each(|(checked,contains_item)| {
-                    if let Ok(()) = types[*contains_item].validate(field, &mut item.clone(), types, *contains_item, list) {
+                    if let Ok(()) = types[*contains_item].validate(&mut item.clone(), types, *contains_item, list) {
                         *checked = true;
                     }
                 });
@@ -283,16 +277,13 @@ impl ValidArray {
 
         let (array, _) = array_start.split_at(array_start.len()-doc.len());
         if contain_set.contains(&false) {
-            Err(Error::new(InvalidData,
-                format!("Field {} does not satisfy all `contains` requirements", field)))
+            Err(Error::FailValidate(doc.len(), "Array does not satisfy all `contains` requirements"))
         }
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(array)).is_ok() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains array on `nin` list", field)))
+            Err(Error::FailValidate(doc.len(), "Array is on `nin` list"))
         }
         else if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(array)).is_err() {
-            Err(Error::new(InvalidData,
-                format!("Field \"{}\" contains array not on `in` list", field)))
+            Err(Error::FailValidate(doc.len(), "Array is not on `in` list"))
         }
         else {
             Ok(())
@@ -437,7 +428,7 @@ impl ValidArray {
     }
 }
 
-pub fn get_raw_array(raw: &mut &[u8], len: usize) -> io::Result<Box<[u8]>> {
+pub fn get_raw_array(raw: &mut &[u8], len: usize) -> crate::Result<Box<[u8]>> {
     let start = raw.clone();
     for _ in 0..len {
         verify_value(raw)?;

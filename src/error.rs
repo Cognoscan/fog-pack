@@ -45,6 +45,9 @@ impl From<io::Error> for Error {
 
 impl From<CryptoError> for Error {
     fn from(err: CryptoError) -> Error {
-        Error::CryptoError(err)
+        match err {
+            CryptoError::Io(err) => Error::Io(err),
+            _ => Error::CryptoError(err),
+        }
     }
 }

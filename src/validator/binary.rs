@@ -238,10 +238,11 @@ impl ValidBin {
         else {
             let min_len = self.min_len;
             let max_len = self.max_len;
-            let bits_set = self.bits_set.clone();
-            let bits_clr = self.bits_clr.clone();
+            let bits_set = &self.bits_set;
+            let bits_clr = &self.bits_clr;
+            let nin_vec = &mut self.nin_vec;
             // Only keep `nin` values that would otherwise pass
-            self.nin_vec.retain(|val| {
+            nin_vec.retain(|val| {
                 (val.len() >= min_len) && (val.len() <= max_len) 
                     && bits_set.iter()
                         .zip(val.iter().chain(repeat(&0u8)))
@@ -250,7 +251,7 @@ impl ValidBin {
                         .zip(val.iter().chain(repeat(&0u8)))
                         .all(|(bit, val)| (bit & val) == 0)
             });
-            self.nin_vec.shrink_to_fit();
+            nin_vec.shrink_to_fit();
             true
         }
     }

@@ -249,7 +249,6 @@ mod tests {
     use encode;
     use value::Value;
     use super::*;
-    use super::super::ValidatorChecklist;
     use rand::prelude::*;
     use std::f32;
     use rand::distributions::Uniform;

@@ -270,7 +270,6 @@ mod tests {
     use encode;
     use value::Value;
     use super::*;
-    use super::super::ValidatorChecklist;
     use rand::prelude::*;
 
     fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidInt> {

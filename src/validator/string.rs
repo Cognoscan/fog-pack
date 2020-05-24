@@ -344,7 +344,29 @@ impl ValidStr {
 
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let fail_len = doc.len();
-        let value = read_str(doc)?;
+        let temp_string: String; // Define here so it lives past the if-else block below
+        let v = read_str(doc)?;
+        let value = if self.force_nfkc {
+            if unicode_normalization::is_nfkc(v) {
+                v
+            }
+            else {
+                temp_string = v.nfkc().collect::<String>();
+                temp_string.as_str()
+            }
+        }
+        else if self.force_nfc {
+            if unicode_normalization::is_nfc(v) {
+                v
+            }
+            else {
+                temp_string = v.nfc().collect::<String>();
+                temp_string.as_str()
+            }
+        }
+        else {
+            v
+        };
         let len_char = if self.use_char { bytecount::num_chars(value.as_bytes()) } else { 0 };
         if !self.matches_work {
             Err(Error::FailValidate(fail_len, "Validator has regexes that don't compile"))
@@ -506,68 +528,38 @@ mod tests {
     }
 
     #[test]
-    fn range_intersect() {
+    fn unicode_normalization() {
+        let non_nfc = "ÅΩ";
+        let nfc = "ÅΩ";
         let mut test1 = Vec::new();
-
-        // Test min/max length
         encode::write_value(&mut test1, &fogpack!({
-            "type": "Str",
-            "min_len": 2,
-            "max_len": 6
+            "force_nfc": true,
+            "in": non_nfc,
         }));
-        let valid1 = read_it(&mut &test1[..], false).unwrap();
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_str(non_nfc, &validator).is_ok());
+        assert!(validate_str(nfc, &validator).is_ok());
+        assert!(validate_str("AO", &validator).is_err());
+
         test1.clear();
         encode::write_value(&mut test1, &fogpack!({
-            "type": "Str",
-            "min_len": 3,
-            "max_len": 10
+            "force_nfkc": true,
+            "in": non_nfc,
         }));
-        let valid2 = read_it(&mut &test1[..], false).unwrap();
-        let validi = valid1.intersect(&Validator::String(valid2), false).unwrap();
-        let validi = if let Validator::String(v) = validi {
-            v
-        }
-        else {
-            panic!("Intersection invalid");
-        };
-        assert!(validate_str("", &validi).is_err());
-        assert!(validate_str("Te", &validi).is_err());
-        assert!(validate_str("Tes", &validi).is_ok());
-        assert!(validate_str("Test", &validi).is_ok());
-        assert!(validate_str("TestSt", &validi).is_ok());
-        assert!(validate_str("TestStr", &validi).is_err());
-        assert!(validate_str("TestString", &validi).is_err());
-    }
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_str(non_nfc, &validator).is_ok());
+        assert!(validate_str(nfc, &validator).is_ok());
+        assert!(validate_str("AO", &validator).is_err());
 
-    #[test]
-    fn regex_intersect() {
-        let mut test1 = Vec::new();
-
-        // Test min/max length
-        encode::write_value(&mut test1, &fogpack!({
-            "matches": "test",
-        }));
-        let valid1 = read_it(&mut &test1[..], false).unwrap();
         test1.clear();
         encode::write_value(&mut test1, &fogpack!({
-            "matches": "str",
+            "force_nfkc": true,
+            "in": "⁵",
         }));
-        let valid2 = read_it(&mut &test1[..], false).unwrap();
-        let validi = valid1.intersect(&Validator::String(valid2), false).unwrap();
-        let validi = if let Validator::String(v) = validi {
-            v
-        }
-        else {
-            panic!("Intersection invalid");
-        };
-        assert!(validate_str("", &validi).is_err());
-        assert!(validate_str("te", &validi).is_err());
-        assert!(validate_str("tes", &validi).is_err());
-        assert!(validate_str("test", &validi).is_err());
-        assert!(validate_str("testst", &validi).is_err());
-        assert!(validate_str("teststr", &validi).is_ok());
-        assert!(validate_str("teststring", &validi).is_ok());
-        assert!(validate_str("string", &validi).is_err());
+        let validator = read_it(&mut &test1[..], false).unwrap();
+        assert!(validate_str("⁵", &validator).is_ok());
+        assert!(validate_str("5", &validator).is_ok());
+        assert!(validate_str("Five", &validator).is_err());
     }
 
 }

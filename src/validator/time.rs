@@ -219,7 +219,6 @@ impl ValidTime {
 mod tests {
     use encode;
     use value::Value;
-    use super::super::ValidatorChecklist;
     use super::*;
     use rand::prelude::*;
 

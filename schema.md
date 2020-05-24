@@ -258,8 +258,9 @@ number of Unicode scalar values. They have the following optional fields:
 - `in`: A string or array of strings the value must be among.
 - `nin`: A string or array of strings the value must not be among.
 - `matches`: A string or array of strings, each of which contains a regex the 
-	described field must match. General perl-style regular expressions are 
-	supported, but without look around and backreferences.
+	described field must match. General Perl-style regular expressions are 
+	supported, but without look around and backreferences. Unicode character 
+	classes are supported.
 - `max_len`: The maximum number of bytes allowed for the value. Must be at least 
 	0.
 - `min_len`: The minimum number of bytes allowed for the value. Must be at least
@@ -285,6 +286,32 @@ Note that the Unicode NFC and NFKC forms are never enforced when encoding a
 string, but are only used for the purposes of validation. This ensures that 
 precise UTF-8 can be preserved while still allowing matching with NFC/NFKC 
 forms.
+
+#### Regular Expressions
+
+Regular expressions can be set for schema using the `matches` field, but should 
+be used sparingly, and should generally be avoided if possible. If they must be 
+used, be aware of their limitations due to their memory, computation, and 
+general consistency issues.
+
+Regular expression can rapidly use up a lot of memory when compiled. It is 
+expected that most users will have some in-memory limits for schema to stop 
+untrusted schema from exhausting working memory, and thus schema that make heavy 
+use of regular expressions are less likely to work consistently across users. 
+
+Beyond their memory cost, regular expressions have a second problem: there's not 
+really a universal standard for regular expressions; at least, not one that is 
+rigidly followed in implementations. The Rust fog-pack library uses the 
+[`regex`](https://crates.io/crates/regex) crate for regular expressions, 
+supporting Perl-style expression syntax, unicode character classes, and flags 
+for unicode support and case insensitivity. Look around and backreferences are 
+*not* supported. It is hoped that other implementations will support the same 
+syntax, with the same limitations on look around and backreferences.
+
+Finally, because unicode support is enabled, it is possible to have a string 
+that fails on one machine and succeeds on another due to Unicode versions 
+changing their character class definitions. This is a corner case, but any 
+schema writer should be aware of it as a possibility.
 
 #### Examples
 

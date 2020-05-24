@@ -27,6 +27,55 @@ easier. The main differences are:
     interval of 0 to 1,999,999,999.
 - Decoding fails if any of the above limitations aren't met.
 
+Lexicographical order, here, means ordered by the string's encoded UTF-8 byte sequence, with 
+absence of a byte being the absolute minimum, followed by 0-255.
+
+## Why This Differs from MessagePack
+
+MessagePack is already a great binary encoding format, but it's easy to end up encoding data 
+differently each time - for example, 0 can be encoded 9 different ways! This is useful for 
+extremely optimized encoders, where one might want to serialize a 32-bit signed value into a 1 byte 
+tag plus the value itself, but it causes problems for when we want identical data to have identical 
+hashes. This is where a "canonical" encoding comes in: identical data will always have a single 
+defined encoding. Any format that refers to data by its hash should want this, as it prevents 
+duplication and prevents identical data from hashing differently depending on how the encoder was 
+written.
+
+As a baseline, MessagePack can create a "canonical" encoding by simply choosing the shortest 
+available encoding for each of its base types.
+
+However, fog-pack doesn't stop there. It also makes some assumptions about how the format will be 
+used, and limits MessagePack accordingly.
+
+### Strings are UTF-8
+
+First, MessagePack allows invalid UTF-8 in order to allow broken data to be easily serialized, and 
+leaves it up to the data consumer to make decisions about invalid UTF-8. fog-pack takes a different 
+approach, expecting that the consumer should always want valid UTF-8 strings, and requires the data 
+producer to decide how to handle invalid UTF-8 input - usually, by failing or by coercing it into 
+valid UTF-8.
+
+### Map only allows unique strings as keys, ordered lexicographically
+
+Second, MessagePack allows maps to contain arbitrary data as their keys, and allows them to be in 
+any order. This makes serialization trivial for many objects, and allows one to easily encode a 
+hash map with arbitrary keys. fog-pack limits the map type to only allow unique keys, requires 
+they be strings, and requires they be lexicographically ordered by key. The expectation is that 
+maps will be deserialized into structures with named fields, or into a key-value struct that 
+expects unique keys (which is almost all of them). Requiring an order makes deserialization easier, 
+as the exact order is known ahead of time, and ensures identical structures can't be encoded in 
+multiple ways. Further limiting the keys to strings makes schema creation easier, makes data order 
+more intuitive (no need to order by encoded byte sequence), and maps well to structures with named 
+fields.
+
+### Limited extension types
+
+Finally, MessagePack allows for arbitrary extension types for end-users to mark byte sequences with 
+special handling requirements. fog-pack uses this to define 3 additional types for working with 
+cryptographic primitives, and bans the remainder. Since fog-pack is meant to be a public 
+interchange format, allowing for custom obscured types would create conflicting interpretations of 
+identical data. As such, non-recognized extensions are prohibited.
+
 # Types
 
 fog-pack takes the existing MessagePack type families and defines required 

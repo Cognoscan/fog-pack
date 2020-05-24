@@ -116,6 +116,10 @@ A special validator type, `Multi`, doesn't validate a specify fog-pack value
 type, but can be used to make a validator that matches if *any* of its 
 sub-validators pass.
 
+Finally, a validator may be an object with 0 field-value pairs, in which case it 
+is the empty validator. The empty validator passes for any value, but permits no 
+queries against it.
+
 ### Aliasing Validators
 
 Besides the basic type validators, schema allow for validator aliasing. A 
@@ -125,8 +129,17 @@ schema. See the schema documentation for details.
 Common Validator Fields
 -----------------------
 
-All validators have the optional fields `type` and `comment`. Many of them 
-also have the `query`, `in`, `nin`, and `default` fields.
+All validators (except for the empty validator) have the required firled `type` 
+and the optional field `comment`. Many of them also have the `query`, `in`, 
+`nin`, and `default` fields. Optional fields limit the accepted values in some 
+way, or determine what optional fields a query validator in the same spot may 
+have.
+
+### `type`
+
+All validators besides the empty validator must have the `type` field, set to 
+that name of the base type or set to an aliased type name. In the latter's case, 
+no other fields besides `type` and `comment` are allowed.
 
 ### `comment`
 
@@ -142,10 +155,9 @@ fog-pack value and needs a default value.
 
 ### `query`, `in`, and `nin`
 
-The `query` field (if present) contains a boolean. If set to true, it generally 
-allows queries to have validators with `in` and `nin` fields. `in` specifies a 
-limited set of allowed values, while `nin` specifies a limited set of prohibited 
-values.
+The `query` field (if present) contains a boolean. If set to true, it allows 
+queries to have validators with `in` and `nin` fields. `in` specifies a limited 
+set of allowed values, while `nin` specifies a limited set of prohibited values.
 
 Validator Types
 ---------------
@@ -157,7 +169,7 @@ Null types describe the Null value. They have no additional fields besides
 
 If the provided value is Null, validation passes.
 
-Example:
+#### Examples
 
 ```json
 {
@@ -180,7 +192,9 @@ optional fields:
 Validation fails if the value is not boolean or does not meet the `nin` and 
 `in` requirements.
 
-As an example, a boolean validator allowing only "true" would look like:
+#### Examples
+
+A boolean validator allowing only "true" would look like:
 
 ```json
 {
@@ -217,7 +231,9 @@ optional fields:
 Validation fails if the value is not an integer or does not meet all of the 
 optional requirements.
 
-As an example, an integer validator allowing any positive value between 0 and 
+#### Examples
+
+An integer validator allowing any positive value between 0 and 
 255, while not allowing bit 6 to be set, would look like:
 
 ```json
@@ -252,6 +268,11 @@ number of Unicode scalar values. They have the following optional fields:
 	Must be at least 0.
 - `min_char`: The minimum number of unicode scalar values allowed for the value.
 	Must be at least 0.
+- `force_nfc`: Boolean. Runs the string to be validated, `in`, `nin`, and 
+	`matches` through Unicode normalization to NFC before performing validation.
+- `force_nfkc`: Boolean. Runs the string to be validated, `in`, `nin`, and 
+	`matches` through Unicode normalization to NFKC before performing validation.
+	This overrides `force_nfc` if it is also set to true.
 - `query`: Boolean. Allows queries to use `in` and `nin`.
 - `regex`: Boolean. Allows queries to use `matches`.
 - `size`: Boolean. Allows queries to use `min_len`, `max_len`, `min_char`, and 
@@ -260,11 +281,18 @@ number of Unicode scalar values. They have the following optional fields:
 Validation fails if the value is not a string or does not meet all of the 
 optional requirements.
 
-As an example, say we want a string validator that only allows valid Unix file 
-names and excludes the special "." and ".." file names. We thus want to only 
-allow strings without a forward slash or null character, that are between 1 and 
-255 bytes in size, but aren't "." or "..". Perhaps we also want to allow exact 
-queries with `in` and `nin` as well. The resulting validator could be:
+Note that the Unicode NFC and NFKC forms are never enforced when encoding a 
+string, but are only used for the purposes of validation. This ensures that 
+precise UTF-8 can be preserved while still allowing matching with NFC/NFKC 
+forms.
+
+#### Examples
+
+Say we want a string validator that only allows valid Unix file names and 
+excludes the special "." and ".." file names. We thus want to only allow strings 
+without a forward slash or null character, that are between 1 and 255 bytes in 
+size, but aren't "." or "..". Perhaps we also want to allow exact queries with 
+`in` and `nin` as well. The resulting validator could be:
 
 ```json
 {
@@ -303,8 +331,10 @@ optional fields:
 Validation fails if the value is not the correct type of floating-point value or 
 does not meet all of the optional requirements.
 
-As an example, say we want to accept any float64 value that isn't NaN or +/- 
-infinity. The validator could be:
+#### Examples
+
+Say we want to accept any float64 value that isn't NaN or +/- infinity. The 
+validator could be:
 
 ```json
 {
@@ -347,8 +377,10 @@ purposes of ordinal comparisons. They have the following optional fields:
 Validation fails if the value is not a binary value or does not meet all of the 
 optional requirements.
 
-As an example, say we want to accept a 32-byte bitfield, but only if bit 31 is 
-set. The resulting schema would be:
+#### Examples
+
+Say we want to accept a 32-byte bitfield, but only if bit 31 is set. The 
+resulting schema would be:
 
 ```json
 {
@@ -384,13 +416,31 @@ fields:
 	0.
 - `min_len`: The minimum number of items allowed in the array. Must be at least 
 	0.
-- `query`: Boolean. Allows queries to use `in`, `nin`, `min_len`, `max_len`, and 
-	`unique`.
+- `unique`: Boolean. Requires that every value in the array be unique if true.
+- `query`: Boolean. Allows queries to use `in`, and `nin`.
+- `size`: Boolean. Allows queries to use `min_len` and `max_len`.
 - `contains_ok`: Boolean. Allows queries to use `contains`.
+- `unique_ok`: Boolean. Allows queries to use `unique`.
 - `array`: Boolean. Allows queries to use `items` and `extra_items`.
 
 Validation fails if the value is not an array or does not meet all of the 
 optional requirements.
+
+When checking validity of queries, validators are matched against the ones they 
+would be used against. So:
+
+- Each `items` validator is checked against the schema's corresponding one, or 
+	against the schema's `extra_items` if the schema has that field. If there is 
+	no `extra_items` field in the schema and no corresponding `items` validator, 
+	the validator is allowed in the query.
+- The `extra_items` validator is checked against the schema's `extra_items` 
+	validator, as well as any unmatched `items` validators in the schema's array 
+	validator.
+- Validators in the query's `contains` are checked against all validators in 
+	the schema's `items` array, as well as against the validator in the schema's 
+	`extra_items` field.
+
+#### Examples
 
 As an example, say we wanted to accept an array of arrays, where each sub-array 
 is exactly three items and contains a string, then two integers. The resulting 
@@ -437,10 +487,49 @@ optional fields:
 	must adhere to.
 - `unknown_ok`: Allows field-value pairs not covered by `req` and `opt`. This 
 	must be set for `field_type` to be useful.
-- `query`: Boolean. Allows queries to use any of the optional fields.
+- `query`: Boolean. Allows queries to use `in` and `nin`.
+- `obj_ok`: Boolean. Allows queries to use `req`, `opt`, `ban`, `field_type`, 
+	and `unknown_ok`.
 
-Validation fails if the value is not an object or does not meet all of the 
-optional requirements.
+Unlike other validators, Object does not default to "anything goes" if none of 
+the optional fields are specified. "Anything goes" can be enabled by setting 
+`unknown_ok` to true and not defining anything else. Additionally, anything can 
+be allowed with no queries permitted by setting `unknown_ok` to true and setting 
+`field_type` to the empty validator.
+
+The validation procedure for Object types is a bit more complex, and proceeds as 
+follows:
+
+1. If the number of fields in the object is outside the optional ranges set by 
+	`max_fields` and `min_fields`, validation fails.
+2. For each field-value pair:
+	1. Check the field.
+	2. If it is in the `ban` array, validation fails.
+	3. If it is in the `req` object, verify against the corresponding validator.
+	4. If it is not in `req` but is in `opt`, verify against the corresponding 
+		validator.
+	5. If it is not in `req` or `opt`, and `unknown_ok` is set to true, check it 
+		against the optional `field_type` validator. If `field_type` is not present, 
+		it passes regardless.
+	6. If it isn't in `req` or `opt` and `unknown_ok` is not set to true, 
+		validation fails.
+3. Check the object against the objects in the optional `nin` list. If it is in 
+	the list, validation fails.
+4. If the `in` list exists, check the object agaisnt the objects in that list. 
+	If it isn't in the list, validation fails.
+
+When checking validity of queries, validators are matched against the ones they 
+would be used against. So:
+
+- Fields in the query's `req` object are matched first against the schema's 
+	`req`, then against the schema's `opt` if nothing is in `req`, and finally 
+	against `field_type` if nothing is in either. If it finds nothing to match 
+	against, the query is invalid if `unknown_ok` is not set to true.
+- Fields in the query's `opt` object go through the same procedure as the ones 
+	in the query's `req` object.
+- If the query has `field_type`, that validator is matched against the schema's 
+	`field_type` validator, along with any validators in `req` and `opt` that 
+	weren't covered by the query's `req` and `opt` objects.
 
 ### Hash
 
@@ -487,7 +576,7 @@ encrypted value of some kind. They have the following optional fields:
 - `comment`
 - `max_len`: The maximum number of bytes allowed in a complete lockbox (not 
 	counting the `ext_type` wrapper).
-- `query`: Boolean. Allows queries to use `max_len`.
+- `size`: Boolean. Allows queries to use `max_len`.
 
 Validation fails if the value is not a lockbox or has a length greater than 
 allowed by `max_len`.

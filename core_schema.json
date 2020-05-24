@@ -172,6 +172,8 @@
 								{ "type": "Array", "extra_items": { "type": "Str" } }
 							]
 						},
+						"force_nfc": { "type": "Bool" },
+						"force_nfkc": { "type": "Bool" },
 						"query": { "type": "Bool" },
 						"regex": { "type": "Bool" },
 						"size": { "type": "Bool" }
@@ -284,10 +286,12 @@
 						"max_len": { "type": "Int", "min": 0 },
 						"min_len": { "type": "Int", "min": 0 },
 						"nin": { "type": "Array", "extra_items": { "type": "Array" } },
+            "size": { "type": "Bool" },
 						"array": { "type": "Bool" },
 						"contains_ok": { "type": "Bool" },
 						"query": { "type": "Bool" },
-						"unique": { "type": "Bool" }
+						"unique": { "type": "Bool" },
+						"unique_ok": { "type": "Bool" }
 					}
 				},
 				{
@@ -327,6 +331,8 @@
 							"field_type": { "type": "Validator" }
 						},
 						"query": { "type": "Bool" },
+						"size": { "type": "Bool" },
+						"obj_ok": { "type": "Bool" },
 						"req": {
 							"type": "Obj",
 							"unknown_ok": true,
@@ -400,7 +406,7 @@
 					"opt": {
 						"comment": { "type": "Str" },
 						"max_len": { "type": "Int", "min": 0 },
-						"query": { "type": "Bool" }
+						"size": { "type": "Bool" }
 					}
 				},
 				{

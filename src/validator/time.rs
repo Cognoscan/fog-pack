@@ -1,6 +1,6 @@
 use Error;
 use decode::*;
-use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, Validator};
 use timestamp::Timestamp;
 use marker::MarkerType;
 
@@ -15,6 +15,8 @@ pub struct ValidTime {
     ord: bool,
     ex_min: bool, // setup only
     ex_max: bool, // setup only
+    query_used: bool,
+    ord_used: bool,
 }
 
 impl ValidTime {
@@ -28,6 +30,8 @@ impl ValidTime {
             ord: is_query,
             ex_min: false,
             ex_max: false,
+            query_used: false,
+            ord_used: false,
         }
     }
 
@@ -44,6 +48,7 @@ impl ValidTime {
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
+        let fail_len = raw.len();
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -77,7 +82,7 @@ impl ValidTime {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Timestamp validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(fail_len, "Timestamp validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
@@ -119,7 +124,7 @@ impl ValidTime {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Timestamp validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(fail_len, "Timestamp validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -132,8 +137,8 @@ impl ValidTime {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Time" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Time")) },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Timestamp validator")),
+            "type" => if "Time" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match Time")) },
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in Timestamp validator")),
         }
     }
 
@@ -173,21 +178,22 @@ impl ValidTime {
     }
 
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
+        let fail_len = doc.len();
         let value = read_time(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
-            Err(Error::FailValidate(doc.len(), "Time is not on the `in` list"))
+            Err(Error::FailValidate(fail_len, "Time is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
             Ok(())
         }
         else if value < self.min {
-            Err(Error::FailValidate(doc.len(), "Time is less than minimum allowed"))
+            Err(Error::FailValidate(fail_len, "Time is less than minimum allowed"))
         }
         else if value > self.max {
-            Err(Error::FailValidate(doc.len(), "Time is greater than maximum allowed"))
+            Err(Error::FailValidate(fail_len, "Time is greater than maximum allowed"))
         }
         else if self.nin_vec.binary_search(&value).is_ok() {
-            Err(Error::FailValidate(doc.len(), "Time is on the `nin` list"))
+            Err(Error::FailValidate(fail_len, "Time is on the `nin` list"))
         }
         else {
             Ok(())
@@ -195,58 +201,18 @@ impl ValidTime {
 
     }
 
-    /// Intersection of Timestamp with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
-        if query && !self.query && !self.ord { return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator) -> bool {
         match other {
             Validator::Timestamp(other) => {
-                if query && (
-                    (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.ord && ((other.min > Timestamp::min_value()) || (other.max < Timestamp::max_value()))))
-                {
-                    Err(())
-                }
-                else if (self.min > other.max) || (self.max < other.min) 
-                {
-                    Ok(Validator::Invalid)
-                }
-                else {
-                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                        sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
-                    }
-                    else if self.in_vec.len() > 0 {
-                        self.in_vec.clone()
-                    }
-                    else {
-                        other.in_vec.clone()
-                    };
-                    if in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        return Ok(Validator::Invalid);
-                    }
-                    let mut new_validator = ValidTime {
-                        in_vec: in_vec,
-                        nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
-                        min: self.min.max(other.min),
-                        max: self.max.min(other.max),
-                        query: self.query && other.query,
-                        ord: self.ord && other.ord,
-                        ex_min: false, // Doesn't get used by this point - for setup of validator only.
-                        ex_max: false, // Doesn't get used by this point - for setup of validator only.
-                    };
-                    let valid = new_validator.finalize();
-                    if !valid {
-                        Ok(Validator::Invalid)
-                    }
-                    else {
-                        Ok(Validator::Timestamp(new_validator))
-                    }
-                }
-            },
-            Validator::Valid => Ok(Validator::Timestamp(self.clone())),
-            _ => Ok(Validator::Invalid),
+                (self.query || !other.query_used) && (self.ord || !other.ord_used)
+            }
+            Validator::Valid => true,
+            _ => false,
         }
     }
+
 }
 
 #[cfg(test)]
@@ -258,11 +224,13 @@ mod tests {
     use rand::prelude::*;
 
     fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidTime> {
+        let fail_len = raw.len();
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidTime::new(is_query);
             object_iterate(raw, len, |field, raw| {
+                let fail_len = raw.len();
                 if !validator.update(field, raw)? {
-                    Err(Error::FailValidate(raw.len(), "Wasn't a valid timestamp validator"))
+                    Err(Error::FailValidate(fail_len, "Wasn't a valid timestamp validator"))
                 }
                 else {
                     Ok(())
@@ -273,7 +241,7 @@ mod tests {
 
         }
         else {
-            Err(Error::FailValidate(raw.len(), "Not an object"))
+            Err(Error::FailValidate(fail_len, "Not an object"))
         }
     }
 
@@ -384,84 +352,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn intersect() {
-        let valid_count = 10;
-        let test_count = 1000;
-
-        // Variables used in all tests
-        let mut rng = rand::thread_rng();
-        let mut test1 = Vec::new();
-        let mut val = Vec::with_capacity(9);
-
-        // Test passing timestamp in a range
-        for _ in 0..valid_count {
-            test1.clear();
-            let val1 = rand_limited_time(&mut rng);
-            let val2 = rand_limited_time(&mut rng);
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &fogpack!({
-                "min": min,
-                "max": max
-            }));
-            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            test1.clear();
-            let val1 = rand_limited_time(&mut rng);
-            let val2 = rand_limited_time(&mut rng);
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &fogpack!({
-                "min": min,
-                "max": max
-            }));
-            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::Timestamp(valid2.clone()), false).unwrap();
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rand_limited_time(&mut rng);
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                assert_eq!(
-                    valid1.validate(&mut &val[..]).is_ok()
-                    && valid2.validate(&mut &val[..]).is_ok(),
-                    validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
-                    "Min/Max intersection for Timestamp validators fails");
-            }
-        }
-
-        // Test passing timestamp with in/nin
-        test1.clear();
-        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_limited_time(&mut rng)));
-            nin_vec.push(Value::from(rand_limited_time(&mut rng)));
-        }
-        encode::write_value(&mut test1, &fogpack!({
-            "in": in_vec,
-            "nin": nin_vec,
-        }));
-        let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        test1.clear();
-        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(Value::from(rand_limited_time(&mut rng)));
-            nin_vec.push(Value::from(rand_limited_time(&mut rng)));
-        }
-        encode::write_value(&mut test1, &fogpack!({
-            "in": in_vec,
-            "nin": nin_vec,
-        }));
-        let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        let validi = valid1.intersect(&Validator::Timestamp(valid2.clone()), false).unwrap();
-        for _ in 0..(10*test_count) {
-            val.clear();
-            let test_val = rand_limited_time(&mut rng);
-            encode::write_value(&mut val, &Value::from(test_val.clone()));
-            assert_eq!(
-                valid1.validate(&mut &val[..]).is_ok()
-                && valid2.validate(&mut &val[..]).is_ok(),
-                validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new()).is_ok(),
-                "Set intersection for Timestamp validators fails with {}", test_val);
-        }
-    }
 }

@@ -2,7 +2,7 @@ use std::iter::repeat;
 
 use Error;
 use decode::*;
-use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, Validator};
 use marker::MarkerType;
 
 /// Binary type validator
@@ -22,6 +22,10 @@ pub struct ValidBin {
     bit: bool,
     ex_min: bool, // setup only
     ex_max: bool, // setup only
+    query_used: bool,
+    ord_used: bool,
+    size_used: bool,
+    bit_used: bool,
 }
 
 impl ValidBin {
@@ -41,6 +45,10 @@ impl ValidBin {
             bit: is_query,
             ex_min: false,
             ex_max: false,
+            query_used: false,
+            ord_used: false,
+            size_used: false,
+            bit_used: false,
         }
     }
 
@@ -57,6 +65,7 @@ impl ValidBin {
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
+        let fail_len = raw.len();
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -65,10 +74,12 @@ impl ValidBin {
                 Ok(true)
             },
             "bits_clr" => {
+                self.bit_used = true;
                 self.bits_clr = read_vec(raw)?;
                 Ok(true)
             },
             "bits_set" => {
+                self.bit_used = true;
                 self.bits_set = read_vec(raw)?;
                 Ok(self.bits_set.iter()
                    .zip(self.bits_clr.iter())
@@ -79,15 +90,18 @@ impl ValidBin {
                 Ok(true)
             }
             "ex_max" => {
+                self.ord_used = true;
                 self.ex_max = read_bool(raw)?;
                 Ok(true)
             },
             "ex_min" => {
+                self.ord_used = true;
                 self.ex_min = read_bool(raw)?;
                 self.min = Some(vec![1u8].into_boxed_slice());
                 Ok(true)
             },
             "in" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::Binary(len) => {
                         let v = read_raw_bin(raw, len)?;
@@ -103,12 +117,13 @@ impl ValidBin {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Binary validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(fail_len, "Binary validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
             },
             "max" => {
+                self.ord_used = true;
                 let mut max = read_vec(raw)?;
                 let res = if self.ex_max {
                     if max.iter_mut().fold(true, |acc, x| {
@@ -133,15 +148,17 @@ impl ValidBin {
                 res
             }
             "max_len" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.max_len = len as usize;
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Binary validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(fail_len, "Binary validator requires non-negative integer for `max_len` field"))
                 }
             }
             "min" => {
+                self.ord_used = true;
                 let mut min = read_vec(raw)?;
                 if self.ex_min {
                     if min.iter_mut().fold(true, |acc, x| {
@@ -160,15 +177,17 @@ impl ValidBin {
                 Ok(true)
             }
             "min_len" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.min_len = len as usize;
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Binary validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(fail_len, "Binary validator requires non-negative integer for `max_len` field"))
                 }
             }
             "nin" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::Binary(len) => {
                         let v = read_raw_bin(raw, len)?;
@@ -184,7 +203,7 @@ impl ValidBin {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Binary validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(fail_len, "Binary validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -201,8 +220,8 @@ impl ValidBin {
                 self.size = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Bin" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Bin")) },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in binary validator")),
+            "type" => if "Bin" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match Bin")) },
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in binary validator")),
         }
     }
 
@@ -257,18 +276,19 @@ impl ValidBin {
     }
 
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
+        let fail_len = doc.len();
         let value = read_bin(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
-            Err(Error::FailValidate(doc.len(), "Binary is not on the `in` list"))
+            Err(Error::FailValidate(fail_len, "Binary is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
             Ok(())
         }
         else if value.len() < self.min_len {
-            Err(Error::FailValidate(doc.len(), "Binary length is shorter than min allowed"))
+            Err(Error::FailValidate(fail_len, "Binary length is shorter than min allowed"))
         }
         else if value.len() > self.max_len {
-            Err(Error::FailValidate(doc.len(), "Binary length is longer than max allowed"))
+            Err(Error::FailValidate(fail_len, "Binary length is longer than max allowed"))
         }
         else if self.max.as_ref().map_or(false, |v| {
             let max_len = v.len();
@@ -287,7 +307,7 @@ impl ValidBin {
             }
         })
         {
-            Err(Error::FailValidate(doc.len(), "Binary is greater than max value"))
+            Err(Error::FailValidate(fail_len, "Binary is greater than max value"))
         }
         else if self.min.as_ref().map_or(false, |v| {
             let min_len = v.len();
@@ -307,110 +327,40 @@ impl ValidBin {
             }
         })
         {
-            Err(Error::FailValidate(doc.len(), "Binary is less than min value"))
+            Err(Error::FailValidate(fail_len, "Binary is less than min value"))
         }
         else if self.bits_set.iter()
             .zip(value.iter().chain(repeat(&0u8)))
             .any(|(bit, val)| (bit & val) != *bit)
         {
-            Err(Error::FailValidate(doc.len(), "Binary does not have all required bits set"))
+            Err(Error::FailValidate(fail_len, "Binary does not have all required bits set"))
         }
         else if self.bits_clr.iter()
             .zip(value.iter().chain(repeat(&0u8)))
             .any(|(bit, val)| (bit & val) != 0)
         {
-            Err(Error::FailValidate(doc.len(), "Binary does not have all required bits cleared"))
+            Err(Error::FailValidate(fail_len, "Binary does not have all required bits cleared"))
         }
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(value)).is_ok() {
-            Err(Error::FailValidate(doc.len(), "Binary is on the `nin` list"))
+            Err(Error::FailValidate(fail_len, "Binary is on the `nin` list"))
         }
         else {
             Ok(())
         }
     }
 
-    /// Intersection of Binary with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
-        if query && !self.query && !self.ord && !self.size && !self.bit { return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator) -> bool {
         match other {
             Validator::Binary(other) => {
-                if query && (
-                    (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.size && ((other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
-                    || (!self.ord && (other.min.is_some() || other.max.is_some()))
-                    || (!self.bit && ((other.bits_set.len() > 0) || (other.bits_clr.len() > 0))))
-                {
-                    Err(())
-                }
-                else if (self.min_len > other.max_len) || (self.max_len < other.min_len) 
-                    || self.bits_set.iter().zip(other.bits_clr.iter()).any(|(a,b)| (a&b) != 0)
-                    || self.bits_clr.iter().zip(other.bits_set.iter()).any(|(a,b)| (a&b) != 0)
-                {
-                    Ok(Validator::Invalid)
-                }
-                else {
-                    // Calculate in_vec
-                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                        sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
-                    }
-                    else if self.in_vec.len() > 0 {
-                        self.in_vec.clone()
-                    }
-                    else {
-                        other.in_vec.clone()
-                    };
-                    // Create new min
-                    let min = if let (Some(s), Some(o)) = (&self.min, &other.min) {
-                        if s < o { other.min.clone() } else { self.min.clone() }
-                    }
-                    else if self.min.is_some() {
-                        self.min.clone()
-                    }
-                    else {
-                        other.min.clone()
-                    };
-                    // Create new max
-                    let max = if let (Some(s), Some(o)) = (&self.max, &other.max) {
-                        if s > o { other.max.clone() } else { self.max.clone() }
-                    }
-                    else if self.max.is_some() {
-                        self.max.clone()
-                    }
-                    else {
-                        other.max.clone()
-                    };
-
-                    let mut new_validator = ValidBin {
-                        in_vec: in_vec,
-                        nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
-                        min_len: self.min_len.max(other.min_len),
-                        max_len: self.max_len.min(other.max_len),
-                        min: min,
-                        max: max,
-                        bits_set: self.bits_set.iter().zip(other.bits_set.iter()).map(|(a,b)| a | b).collect(),
-                        bits_clr: self.bits_clr.iter().zip(other.bits_clr.iter()).map(|(a,b)| a | b).collect(),
-                        query: self.query && other.query,
-                        ord: self.ord && other.ord,
-                        size: self.size && other.size,
-                        bit: self.bit && other.bit,
-                        ex_min: false,
-                        ex_max: false,
-                    };
-                    if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        return Ok(Validator::Invalid);
-                    }
-                    let valid = new_validator.finalize();
-                    if !valid {
-                        Ok(Validator::Invalid)
-                    }
-                    else {
-                        Ok(Validator::Binary(new_validator))
-                    }
-                }
-            },
-            Validator::Valid => Ok(Validator::Binary(self.clone())),
-            _ => Ok(Validator::Invalid),
+                (self.query || !other.query_used)
+                    && (self.ord || !other.query_used)
+                    && (self.size || !other.size_used)
+                    && (self.bit || !other.bit_used)
+            }
+            Validator::Valid => true,
+            _ => false,
         }
     }
 }
@@ -422,11 +372,13 @@ mod tests {
     use super::*;
 
     fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidBin> {
+        let fail_len = raw.len();
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidBin::new(is_query);
             object_iterate(raw, len, |field, raw| {
+                let fail_len = raw.len();
                 if !validator.update(field, raw)? {
-                    Err(Error::FailValidate(raw.len(), "Not a valid binary validator"))
+                    Err(Error::FailValidate(fail_len, "Not a valid binary validator"))
                 }
                 else {
                     Ok(())
@@ -437,7 +389,7 @@ mod tests {
 
         }
         else {
-            Err(Error::FailValidate(raw.len(), "Not an object"))
+            Err(Error::FailValidate(fail_len, "Not an object"))
         }
     }
 

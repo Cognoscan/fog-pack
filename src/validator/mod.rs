@@ -17,7 +17,6 @@
 // place. If it isn't at the very end, then it is referencing another type and is ignored.
 use std::collections::HashMap;
 use std::cmp::Ordering;
-use std::mem;
 
 use byteorder::{ReadBytesExt, BigEndian};
 
@@ -40,6 +39,7 @@ mod array;
 mod object;
 mod multi;
 
+pub use self::validator::query_check;
 pub use self::validator::Validator;
 pub use self::bool::ValidBool;
 pub use self::integer::ValidInt;
@@ -125,95 +125,6 @@ impl <'a> ValidReader<'a> {
             type_names,
             schema_hash,
         }
-    }
-}
-
-
-pub struct ValidBuilder<'a> {
-    types1: &'a [Validator],
-    types2: &'a [Validator],
-    dest: Vec<Validator>,
-    map1: Vec<usize>,
-    map2: Vec<usize>
-}
-
-impl <'a> ValidBuilder<'a> {
-    fn init(types1: &'a [Validator], types2: &'a [Validator]) -> ValidBuilder<'a> {
-        ValidBuilder {
-            types1,
-            types2,
-            dest: Vec::new(),
-            map1: vec![0; types1.len()],
-            map2: vec![0; types2.len()],
-        }
-    }
-
-    fn push(&mut self, new_type: Validator) -> usize {
-        self.dest.push(new_type);
-        self.len() - 1
-    }
-
-    fn intersect(&mut self, query: bool, type1: usize, type2: usize) -> Result<usize,()> {
-        Ok(if ((type1 <= 1) && (type2 <= 1)) || (type1 == 0) || (type2 == 0) {
-            // Only Valid if both valid, else invalid
-            type1 & type2
-        }
-        else if type1 == 1 {
-            // Clone type2 into the new validator list
-            if self.map2[type2] == 0 {
-                let v = self.types2[type2].intersect(&Validator::Valid, query, self)?;
-                self.dest.push(v);
-                let new_index = self.dest.len() - 1;
-                self.map2[type2] = new_index;
-                new_index
-            }
-            else {
-                self.map2[type2]
-            }
-        }
-        else if type2 == 1 {
-            // Clone type1 into the new validator list
-            if self.map1[type1] == 0 {
-                let v = self.types1[type1].intersect(&Validator::Valid, query, self)?;
-                self.dest.push(v);
-                let new_index = self.dest.len() - 1;
-                self.map1[type1] = new_index;
-                new_index
-            }
-            else {
-                self.map1[type1]
-            }
-        }
-        else {
-            // Actual new validator; perform instersection and add
-            let v = self.types1[type1].intersect(&self.types2[type2], query, self)?;
-            if let Validator::Invalid = v {
-                0
-            }
-            else {
-                self.dest.push(v);
-                self.dest.len() - 1
-            }
-        })
-    }
-
-    fn swap(&mut self) {
-        mem::swap(&mut self.types1, &mut self.types2);
-        mem::swap(&mut self.map1, &mut self.map2);
-    }
-
-    fn len(&self) -> usize {
-        self.dest.len()
-    }
-
-    fn undo_to(&mut self, len: usize) {
-        self.dest.truncate(len);
-        self.map1.iter_mut().for_each(|x| if *x >= len { *x = 0; });
-        self.map2.iter_mut().for_each(|x| if *x >= len { *x = 0; });
-    }
-
-    fn build(self) -> Vec<Validator> {
-        self.dest
     }
 }
 

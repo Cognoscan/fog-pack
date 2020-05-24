@@ -85,6 +85,7 @@ extern crate libc;
 extern crate regex;
 extern crate ieee754;
 extern crate bytecount;
+extern crate unicode_normalization;
 //use std::io::Write;
 
 #[macro_use]

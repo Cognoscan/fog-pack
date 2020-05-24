@@ -160,13 +160,9 @@ impl Validator {
                         }
                     }
                     if type_seen {
-                        let valid = possible[index].finalize();
-                        if possible_check[index] == 1 || !valid {
-                            Validator::Invalid
-                        }
-                        else {
-                            possible[index].clone()
-                        }
+                        possible[index].finalize();
+                        //if possible_check[index] == 1 || !valid {
+                        possible[index].clone()
                     }
                     else {
                         return Err(Error::FailValidate(raw.len(), "Validator needs to include `type` field"));
@@ -320,54 +316,67 @@ impl Validator {
         }
     }
 
-    pub fn intersect(&self,
-                 other: &Validator,
-                 query: bool,
-                 builder: &mut ValidBuilder
-                 )
-        -> Result<Validator, ()>
-    {
-        match self {
-            Validator::Invalid => Ok(Validator::Invalid),
-            Validator::Valid => {
-                if query { return Err(()); } // Can't query a generic "Valid" validator
-                // Check if other is also Valid to avoid infinite recursion
-                if let Validator::Valid = other {
-                    return Ok(Validator::Valid);
-                }
-                // Swap the builder's contents and intersect the other validator.
-                builder.swap();
-                let v = other.intersect(self, query, builder)?;
-                builder.swap();
-                Ok(v)
-            }
-            Validator::Null => {
-                if let Validator::Null = other {
-                    Ok(Validator::Null)
-                }
-                else {
-                    Ok(Validator::Invalid)
-                }
-            },
-            Validator::Type(_) => Err(()),
-            Validator::Boolean(v) => v.intersect(other, query),
-            Validator::Integer(v) => v.intersect(other, query),
-            Validator::String(v) => v.intersect(other, query),
-            Validator::F32(v) => v.intersect(other, query),
-            Validator::F64(v) => v.intersect(other, query),
-            Validator::Binary(v) => v.intersect(other, query),
-            Validator::Array(v) => v.intersect(other, query, builder),
-            Validator::Object(v) => v.intersect(other, query, builder),
-            Validator::Hash(v) => v.intersect(other, query, builder),
-            Validator::Identity(v) => v.intersect(other, query),
-            Validator::Lockbox(v) => v.intersect(other, query),
-            Validator::Timestamp(v) => v.intersect(other, query),
-            Validator::Multi(v) => v.intersect(other, query, builder),
+}
+
+pub fn query_check(s: usize, q: usize, s_types: &[Validator], q_types: &[Validator]) -> bool {
+    let q_index = q;
+    let s_index = s;
+    let s = &s_types[s];
+    let q = &q_types[q];
+
+    // If other is type multi, verify it against each of these. This logic would otherwise have to 
+    // be in each and every validator.
+    if let Validator::Multi(q) = q {
+        q.iter().all(|q| {
+            query_check(s_index, *q, s_types, q_types)
+        })
+    }
+    else {
+        match s {
+            Validator::Invalid => false,
+            Validator::Valid => false,
+            Validator::Null => { if let Validator::Null = q { true } else { false } },
+            Validator::Type(_) => false,
+            Validator::Boolean(v) => v.query_check(q),
+            Validator::Integer(v) => v.query_check(q),
+            Validator::String(v) => v.query_check(q),
+            Validator::F32(v) => v.query_check(q),
+            Validator::F64(v) => v.query_check(q),
+            Validator::Binary(v) => v.query_check(q),
+            Validator::Array(v) => v.query_check(q, s_types, q_types),
+            Validator::Object(v) => v.query_check(q, s_types, q_types),
+            Validator::Hash(v) => v.query_check(q, s_types, q_types),
+            Validator::Identity(v) => v.query_check(q),
+            Validator::Lockbox(v) => v.query_check(q),
+            Validator::Timestamp(v) => v.query_check(q),
+            Validator::Multi(v) => v.query_check(q_index, s_types, q_types),
         }
     }
 }
 
 
+#[cfg(test)]
+mod tests {
+    /*
+    use super::*;
 
-
-
+    #[test]
+    fn sizes() {
+        println!("valid = {}", std::mem::size_of::<Validator>());
+        println!("Bool  = {}", std::mem::size_of::<ValidBool>());
+        println!("Int   = {}", std::mem::size_of::<ValidInt>());
+        println!("Str   = {}", std::mem::size_of::<ValidStr>());
+        println!("F32   = {}", std::mem::size_of::<ValidF32>());
+        println!("F64   = {}", std::mem::size_of::<ValidF64>());
+        println!("Bin   = {}", std::mem::size_of::<ValidBin>());
+        println!("Array = {}", std::mem::size_of::<ValidArray>());
+        println!("Obj   = {}", std::mem::size_of::<ValidObj>());
+        println!("Hash  = {}", std::mem::size_of::<ValidHash>());
+        println!("Ident = {}", std::mem::size_of::<ValidIdentity>());
+        println!("Lock  = {}", std::mem::size_of::<ValidLock>());
+        println!("Time  = {}", std::mem::size_of::<ValidTime>());
+        println!("Multi = {}", std::mem::size_of::<ValidMulti>());
+        panic!("oop");
+    }
+    */
+}

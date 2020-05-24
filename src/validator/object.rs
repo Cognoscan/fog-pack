@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use Error;
 use decode::*;
 use super::*;
@@ -19,6 +17,11 @@ pub struct ValidObj {
     unknown_ok: bool,
     query: bool,
     schema_top: bool,
+    size: bool,
+    obj_ok: bool,
+    query_used: bool,
+    size_used: bool,
+    obj_used: bool,
 }
 
 impl ValidObj {
@@ -34,8 +37,13 @@ impl ValidObj {
             min_fields: usize::min_value(),
             max_fields: usize::max_value(),
             field_type: None,
-            unknown_ok: is_query,
+            unknown_ok: false,
             query: is_query,
+            size: is_query,
+            obj_ok: is_query,
+            query_used: false,
+            size_used: false,
+            obj_used: false,
             schema_top: false,
         }
     }
@@ -53,15 +61,17 @@ impl ValidObj {
     /// `Ok(true)` was returned.
     pub fn update( &mut self, field: &str, raw: &mut &[u8], reader: &mut ValidReader) -> crate::Result<bool>
     {
+        let fail_len = raw.len();
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
             "ban" => {
+                self.obj_used = true;
                 match read_marker(&mut raw.clone())? {
                     MarkerType::String(len) => {
                         let s = read_raw_str(raw, len)?;
                         if self.schema_top && (s == "") {
-                            return Err(Error::FailValidate(raw.len(), "Schema top `ban` cannot have empty string"));
+                            return Err(Error::FailValidate(fail_len, "Schema top `ban` cannot have empty string"));
                         }
                         self.banned.reserve_exact(1);
                         self.banned.push(s.to_string());
@@ -72,7 +82,7 @@ impl ValidObj {
                         for _ in 0..len {
                             let s = read_string(raw)?;
                             if self.schema_top && (s == "") {
-                                return Err(Error::FailValidate(raw.len(), "Schema top `ban` cannot have empty string in array"));
+                                return Err(Error::FailValidate(fail_len, "Schema top `ban` cannot have empty string in array"));
                             }
                             self.banned.push(s);
                         };
@@ -81,7 +91,7 @@ impl ValidObj {
                         Ok(true)
                     },
                     _ => {
-                        Err(Error::FailValidate(raw.len(), "`ban` field must contain string or array of strings"))
+                        Err(Error::FailValidate(fail_len, "`ban` field must contain string or array of strings"))
                     }
                 }
             },
@@ -91,14 +101,16 @@ impl ValidObj {
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Object `default` isn't a valid object"))
+                    Err(Error::FailValidate(fail_len, "Object `default` isn't a valid object"))
                 }
             },
             "field_type" => {
+                self.obj_used = true;
                 self.field_type = Some(Validator::read_validator(raw, reader)?);
                 Ok(true)
             }
             "in" => {
+                self.query_used = true;
                 match read_marker(&mut raw.clone())? {
                     MarkerType::Object(_) => {
                         let v = get_obj(raw)?;
@@ -115,30 +127,33 @@ impl ValidObj {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Object validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(fail_len, "Object validator expected array or constant for `in` field"));
                     }
                 }
                 Ok(true)
             },
             "max_fields" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.max_fields = len as usize;
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Object validator expected non-negative value for `max_fields` field"))
+                    Err(Error::FailValidate(fail_len, "Object validator expected non-negative value for `max_fields` field"))
                 }
             },
             "min_fields" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.min_fields = len as usize;
                     Ok(self.max_fields >= self.min_fields)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Object validator expected non-negative value for `min_fields` field"))
+                    Err(Error::FailValidate(fail_len, "Object validator expected non-negative value for `min_fields` field"))
                 }
             },
             "nin" => {
+                self.query_used = true;
                 match read_marker(&mut raw.clone())? {
                     MarkerType::Object(_) => {
                         let v = get_obj(raw)?;
@@ -155,17 +170,22 @@ impl ValidObj {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Object validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(fail_len, "Object validator expected array or constant for `nin` field"));
                     }
                 }
                 Ok(true)
             },
+            "obj_ok" => {
+                self.obj_ok = read_bool(raw)?;
+                Ok(true)
+            },
             "opt" => {
+                self.obj_used = true;
                 let mut valid = true;
                 if let MarkerType::Object(len) = read_marker(raw)? {
                     object_iterate(raw, len, |field, raw| {
                         if self.schema_top && (field == "") {
-                            return Err(Error::FailValidate(raw.len(), "Schema top `opt` cannot have empty string field"));
+                            return Err(Error::FailValidate(fail_len, "Schema top `opt` cannot have empty string field"));
                         }
                         let v = Validator::read_validator(raw, reader)?;
                         if v == 0 { valid = false; }
@@ -175,7 +195,7 @@ impl ValidObj {
                     Ok(valid)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "`opt` field must contain an object."))
+                    Err(Error::FailValidate(fail_len, "`opt` field must contain an object."))
                 }
             }
             "query" => {
@@ -183,11 +203,12 @@ impl ValidObj {
                 Ok(true)
             },
             "req" => {
+                self.obj_used = true;
                 let mut valid = true;
                 if let MarkerType::Object(len) = read_marker(raw)? {
                     object_iterate(raw, len, |field, raw| {
                         if self.schema_top && (field == "") {
-                            return Err(Error::FailValidate(raw.len(), "Schema top `req` cannot have empty string field"));
+                            return Err(Error::FailValidate(fail_len, "Schema top `req` cannot have empty string field"));
                         }
                         let v = Validator::read_validator(raw, reader)?;
                         if v == 0 { valid = false; }
@@ -197,15 +218,20 @@ impl ValidObj {
                     Ok(valid)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "`req` field must contain an object."))
+                    Err(Error::FailValidate(fail_len, "`req` field must contain an object."))
                 }
             }
-            "type" => if "Obj" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Obj")) },
+            "size" => {
+                self.size = read_bool(raw)?;
+                Ok(true)
+            },
+            "type" => if "Obj" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match Obj")) },
             "unknown_ok" => {
+                self.obj_used = true;
                 self.unknown_ok = read_bool(raw)?;
                 Ok(true)
             },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Object validator")),
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in Object validator")),
         }
     }
 
@@ -228,10 +254,11 @@ impl ValidObj {
                     top_schema: bool
                     ) -> crate::Result<()>
     {
+        let fail_len = doc.len();
         let obj_start = doc.clone();
         let mut num_fields = match read_marker(doc)? {
             MarkerType::Object(len) => len,
-            _ => return Err(Error::FailValidate(doc.len(), "Expected object")),
+            _ => return Err(Error::FailValidate(fail_len, "Expected object")),
         };
 
         // Read out the schema field if this is a Document, and don't count it towards the field 
@@ -240,7 +267,7 @@ impl ValidObj {
             let mut schema = &doc[..];
             if read_str(&mut schema)?.len() == 0 {
                 if read_hash(&mut schema).is_err() {
-                    return Err(Error::FailValidate(doc.len(), "Document schema field doesn't contain a Hash"));
+                    return Err(Error::FailValidate(fail_len, "Document schema field doesn't contain a Hash"));
                 }
                 else {
                     *doc = schema;
@@ -250,11 +277,11 @@ impl ValidObj {
         }
 
         if num_fields < self.min_fields {
-            return Err(Error::FailValidate(doc.len(), "Object has fewer fields than allowed"));
+            return Err(Error::FailValidate(fail_len, "Object has fewer fields than allowed"));
         }
         if num_fields == 0 && self.required.len() == 0 { return Ok(()); }
         if num_fields > self.max_fields {
-            return Err(Error::FailValidate(doc.len(), "Object has more fields than allowed"));
+            return Err(Error::FailValidate(fail_len, "Object has more fields than allowed"));
         }
 
         // Setup for loop
@@ -262,7 +289,7 @@ impl ValidObj {
         object_iterate(doc, num_fields, |field, doc| {
             // Check against required/optional/unknown types
             if self.banned.binary_search_by(|probe| (**probe).cmp(field)).is_ok() {
-                Err(Error::FailValidate(doc.len(), "Banned field present"))
+                Err(Error::FailValidate(fail_len, "Banned field present"))
             }
             else if Some(field) == self.required.get(req_index).map(|x| x.0.as_str()) {
                 let v_index = self.required[req_index].1;
@@ -284,249 +311,122 @@ impl ValidObj {
             }
             else {
                 if self.required.binary_search_by(|probe| (probe.0).as_str().cmp(field)).is_ok() {
-                    Err(Error::FailValidate(doc.len(), "Missing required fields before this"))
+                    Err(Error::FailValidate(fail_len, "Missing required fields before this"))
                 }
                 else {
-                    Err(Error::FailValidate(doc.len(), "Unknown, invalid field in object"))
+                    Err(Error::FailValidate(fail_len, "Unknown, invalid field in object"))
                 }
             }
         })?;
 
         let (obj_start, _) = obj_start.split_at(obj_start.len()-doc.len());
         if self.nin_vec.iter().any(|x| obj_start == &x[..]) {
-            Err(Error::FailValidate(doc.len(), "Object in object `nin` list is present"))
+            Err(Error::FailValidate(fail_len, "Object in object `nin` list is present"))
         }
         else if (self.in_vec.len() > 0) && !self.in_vec.iter().any(|x| obj_start == &x[..]) {
-            Err(Error::FailValidate(doc.len(), "Object not in object `in` list is present"))
+            Err(Error::FailValidate(fail_len, "Object not in object `in` list is present"))
         }
         else if req_index < self.required.len() {
-            Err(Error::FailValidate(doc.len(), "Missing required fields"))
+            Err(Error::FailValidate(fail_len, "Missing required fields"))
         }
         else {
             Ok(())
         }
     }
 
-    /// Intersection of Object with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self,
-                 other: &Validator,
-                 query: bool,
-                 builder: &mut ValidBuilder
-                 )
-        -> Result<Validator, ()>
-    {
-        let builder_len = builder.len();
-        if query && !self.query { return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator, s_types: &[Validator], o_types: &[Validator]) -> bool {
         match other {
             Validator::Object(other) => {
-                // Get intersection of `in` vectors
-                let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                    sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
-                }
-                else if self.in_vec.len() > 0 {
-                    self.in_vec.clone()
-                }
-                else {
-                    other.in_vec.clone()
-                };
-
-                // Get intersection of required & optional
-                let mut required: Vec<(String, usize)> = Vec::new();
-                let mut optional: Vec<(String, usize)> = Vec::new();
-                let mut self_req_i = 0;
-                let mut self_opt_i = 0;
-                let mut other_req_i = 0;
-                let mut other_opt_i = 0;
-                let self_type = ("".to_string(), if self.unknown_ok {
-                    if let Some(self_type) = self.field_type {
-                        self_type
-                    }
-                    else {
-                        VALID
-                    }
-                }
-                else {
-                    INVALID
-                });
-                let other_type = ("".to_string(), if self.unknown_ok {
-                    if let Some(other_type) = other.field_type {
-                        other_type
-                    }
-                    else {
-                        VALID
-                    }
-                }
-                else {
-                    INVALID
-                });
-                while (other_req_i < other.required.len()) || (other_opt_i < other.optional.len())
-                    || (self_req_i < self.required.len()) || (self_opt_i < self.optional.len())
+                if (self.query || !other.query_used)
+                    && (self.size || !other.size_used)
+                    && (self.obj_ok || !other.obj_used)
                 {
-                    let (s, s_is_req, s_is_opt) = match (self.required.get(self_req_i), self.optional.get(self_opt_i)) {
-                        (Some(s_req), Some(s_opt)) => {
-                            match s_req.0.cmp(&s_opt.0) {
-                                Ordering::Less => (s_req, true, false),
-                                Ordering::Equal => (s_req, true, true),
-                                Ordering::Greater => (s_opt, false, true),
+                    let mut req_list = Vec::with_capacity(self.required.len());
+                    req_list.resize(self.required.len(), false);
+                    let mut opt_list = Vec::with_capacity(self.required.len());
+                    opt_list.resize(self.required.len(), false);
+                    // Check required fields
+                    for o_val in other.required.iter() {
+                        if let Ok(s_index) = self.required.binary_search_by(|probe| (probe.0).as_str().cmp(&o_val.0)) {
+                            req_list[s_index] = true;
+                            if !query_check(self.required[s_index].1, o_val.1, s_types, o_types) {
+                                return false;
                             }
-                        },
-                        (Some(s_req), None) => (s_req, true, false),
-                        (None, Some(s_opt)) => (s_opt, false, true),
-                        (None, None) => (&self_type, false, false),
-                    };
-                    let (o, o_is_req, o_is_opt) = match (other.required.get(other_req_i), other.optional.get(other_opt_i)) {
-                        (Some(o_req), Some(o_opt)) => {
-                            match o_req.0.cmp(&o_opt.0) {
-                                Ordering::Less => (o_req, true, false),
-                                Ordering::Equal => (o_req, true, true),
-                                Ordering::Greater => (o_opt, false, true),
+                        }
+                        else if let Ok(s_index) = self.optional.binary_search_by(|probe| (probe.0).as_str().cmp(&o_val.0)) {
+                            opt_list[s_index] = true;
+                            if !query_check(self.optional[s_index].1, o_val.1, s_types, o_types) {
+                                return false;
                             }
-                        },
-                        (Some(o_req), None) => (o_req, true, false),
-                        (None, Some(o_opt)) => (o_opt, false, true),
-                        (None, None) => (&other_type, false, false),
-                    };
-
-                    // Rules:
-                    // - If in req for both, intersect and use in req
-                    // - If in req for one and opt for other, intersect and use in req
-                    // - If in opt for both, intersect and use in opt
-                    // - If in req for one and not in other, intersect with field_type and use in
-                    //   req, but only if unknown_ok true in other
-                    // - If in opt for one and not in other, intersect with field_type and use in 
-                    //   opt, but only if unknown_ok true in other
-                    if (s_is_req || s_is_opt) && (o_is_req || o_is_opt) {
-                        // Detemine intersection & increment pointers
-                        let v = match s.0.cmp(&o.0) {
-                            Ordering::Less => {
-                                if s_is_req { self_req_i += 1; }
-                                if s_is_opt { self_opt_i += 1; }
-                                builder.intersect(query, s.1, other_type.1)?
-                            },
-                            Ordering::Equal => {
-                                if s_is_req { self_req_i += 1; }
-                                if s_is_opt { self_opt_i += 1; }
-                                if o_is_req { other_req_i += 1; }
-                                if o_is_opt { other_opt_i += 1; }
-                                builder.intersect(query, s.1, o.1)?
-                            },
-                            Ordering::Greater => {
-                                if o_is_req { other_req_i += 1; }
-                                if o_is_opt { other_opt_i += 1; }
-                                builder.intersect(query, self_type.1, o.1)?
-                            },
-                        };
-                        // Add to appropriate list
-                        if s_is_req || o_is_req {
-                            required.push((s.0.clone(), v));
-                        }
-                        else {
-                            optional.push((s.0.clone(), v));
                         }
                     }
-                    else if s_is_req || s_is_opt {
-                        let v = builder.intersect(query, s.1, other_type.1)?;
-                        if s_is_req { self_req_i += 1; }
-                        if s_is_opt { self_opt_i += 1; }
-                        if s_is_req {
-                            required.push((s.0.clone(), v));
+                    // Check optional fields
+                    for o_val in other.optional.iter() {
+                        if let Ok(s_index) = self.required.binary_search_by(|probe| (probe.0).as_str().cmp(&o_val.0)) {
+                            req_list[s_index] = true;
+                            if !query_check(self.required[s_index].1, o_val.1, s_types, o_types) {
+                                return false;
+                            }
                         }
-                        else {
-                            optional.push((s.0.clone(), v));
-                        }
-                    }
-                    else if o_is_req || o_is_opt {
-                        let v = builder.intersect(query, self_type.1, o.1)?;
-                        if o_is_req { other_req_i += 1; }
-                        if o_is_opt { other_opt_i += 1; }
-                        if o_is_req {
-                            required.push((o.0.clone(), v));
-                        }
-                        else {
-                            optional.push((o.0.clone(), v));
+                        else if let Ok(s_index) = self.optional.binary_search_by(|probe| (probe.0).as_str().cmp(&o_val.0)) {
+                            opt_list[s_index] = true;
+                            if !query_check(self.optional[s_index].1, o_val.1, s_types, o_types) {
+                                return false;
+                            }
                         }
                     }
-                }
-
-                // Get extra items
-                let field_type = if let (Some(self_type), Some(other_type)) = (self.field_type, other.field_type) {
-                    Some(builder.intersect(query, self_type, other_type)?)
-                }
-                else if let Some(field_type) = self.field_type {
-                    Some(builder.intersect(query, field_type, 1).unwrap())
-                }
-                else if let Some(field_type) = other.field_type {
-                    Some(builder.intersect(query, 1, field_type).unwrap())
+                    if let Some(o) = other.field_type {
+                        // Check field types
+                        if let Some(s) = self.field_type {
+                            if !query_check(s, o, s_types, o_types) { return false; }
+                        }
+                        // Check remaining self.req fields
+                        if !req_list.iter().enumerate().all(|(index, checked)| {
+                            if !checked {
+                                query_check(self.required[index].1, o, s_types, o_types)
+                            }
+                            else {
+                                true
+                            }
+                        })
+                        {
+                            return false;
+                        }
+                        // Check remaining self.opt fields
+                        if !opt_list.iter().enumerate().all(|(index, checked)| {
+                            if !checked {
+                                query_check(self.optional[index].1, o, s_types, o_types)
+                            }
+                            else {
+                                true
+                            }
+                        })
+                        {
+                            return false;
+                        }
+                    }
+                    true
                 }
                 else {
-                    None
-                };
-
-                // Check that this isn't an invalid validator before proceeding
-                /*
-                if items.contains(&0) {
-                    builder.undo_to(builder_len);
-                    return Ok(Validator::Invalid);
+                    false
                 }
-                */
-
-                // Create new Validator
-                let mut new_validator = ValidObj {
-                    in_vec: in_vec,
-                    nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
-                    required: required,
-                    optional: optional,
-                    banned: sorted_union(&self.banned[..], &other.banned[..], |a,b| a.cmp(b)),
-                    min_fields: self.min_fields.max(other.min_fields),
-                    max_fields: self.max_fields.min(other.max_fields),
-                    field_type: field_type,
-                    unknown_ok: self.unknown_ok && other.unknown_ok,
-                    query: self.query && other.query,
-                    schema_top: false, // Only used during initial creation
-                };
-                if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                    builder.undo_to(builder_len);
-                    return Ok(Validator::Invalid);
-                }
-                let valid = new_validator.finalize();
-                if !valid {
-                    builder.undo_to(builder_len);
-                    Ok(Validator::Invalid)
-                }
-                else {
-                    Ok(Validator::Object(new_validator))
-                }
-            },
-            Validator::Valid => {
-                let mut v = self.clone();
-                let mut required = Vec::with_capacity(self.required.len());
-                required.extend(self.required.iter()
-                    .map(|x| (x.0.clone(), builder.intersect(query, x.1, 1).unwrap())));
-                v.required = required;
-
-                let mut optional = Vec::with_capacity(self.optional.len());
-                optional.extend(self.optional.iter()
-                    .map(|x| (x.0.clone(), builder.intersect(query, x.1, 1).unwrap())));
-                v.optional = optional;
-
-                if let Some(field_type) = self.field_type {
-                    v.field_type = Some(builder.intersect(query, field_type, 1).unwrap());
-                }
-                Ok(Validator::Object(v))
             }
-            _ => Ok(Validator::Invalid),
+            Validator::Valid => true,
+            _ => false,
         }
     }
 }
 
 fn get_obj(raw: &mut &[u8]) -> crate::Result<Box<[u8]>> {
+    let fail_len = raw.len();
     let start = raw.clone();
     if let MarkerType::Object(len) = read_marker(raw)? {
         verify_map(raw, len)?;
     }
     else {
-        return Err(Error::FailValidate(raw.len(), "Expected objects in `in`/`nin` fields"));
+        return Err(Error::FailValidate(fail_len, "Expected objects in `in`/`nin` fields"));
     }
     let (obj, _) = start.split_at(start.len()-raw.len());
     Ok(obj.to_vec().into_boxed_slice())

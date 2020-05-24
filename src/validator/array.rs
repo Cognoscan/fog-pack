@@ -1,4 +1,4 @@
-use std::collections::{HashSet};
+use std::collections::HashSet;
 
 use Error;
 use decode::*;
@@ -18,7 +18,14 @@ pub struct ValidArray {
     unique: bool,
     query: bool,
     array: bool,
+    size: bool,
+    unique_ok: bool,
     contains_ok: bool,
+    query_used: bool,
+    array_used: bool,
+    unique_used: bool,
+    contains_used: bool,
+    size_used: bool,
 }
 
 /// Array type validator
@@ -35,7 +42,14 @@ impl ValidArray {
             unique: false,
             query: is_query,
             array: is_query,
+            size: is_query,
             contains_ok: is_query,
+            unique_ok: is_query,
+            query_used: false,
+            array_used: false,
+            unique_used: false,
+            contains_used: false,
+            size_used: false,
         }
     }
 
@@ -54,6 +68,7 @@ impl ValidArray {
     pub fn update(&mut self, field: &str, raw: &mut &[u8], reader: &mut ValidReader)
         -> crate::Result<bool>
     {
+        let fail_len = raw.len();
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -62,6 +77,7 @@ impl ValidArray {
                 Ok(true)
             }
             "contains" => {
+                self.contains_used = true;
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     for _ in 0..len {
                         let v = Validator::read_validator(raw, reader)?;
@@ -70,7 +86,7 @@ impl ValidArray {
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Array `contains` isn't a valid array of validators"))
+                    Err(Error::FailValidate(fail_len, "Array `contains` isn't a valid array of validators"))
                 }
             },
             "contains_ok" => {
@@ -85,14 +101,16 @@ impl ValidArray {
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Array `default` isn't a valid array"))
+                    Err(Error::FailValidate(fail_len, "Array `default` isn't a valid array"))
                 }
             },
             "extra_items" => {
+                self.array_used = true;
                 self.extra_items = Some(Validator::read_validator(raw, reader)?);
                 Ok(true)
             },
             "in" => {
+                self.query_used = true;
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     // Push without reserving - otherwise recursive reserving is possible and 
                     // can lead to an exponential amount of memory reservation.
@@ -101,7 +119,7 @@ impl ValidArray {
                             get_raw_array(raw, len)?
                         }
                         else {
-                            return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
+                            return Err(Error::FailValidate(fail_len, "Array validator expected array of arrays for `in` field"));
                         };
                         self.in_vec.push(v);
                     };
@@ -109,11 +127,12 @@ impl ValidArray {
                     self.in_vec.dedup();
                 }
                 else {
-                    return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
+                    return Err(Error::FailValidate(fail_len, "Array validator expected array of arrays for `in` field"));
                 }
                 Ok(true)
             },
             "items" => {
+                self.array_used = true;
                 if let MarkerType::Array(len) = read_marker(raw)? {
                     for _ in 0..len {
                         let v = Validator::read_validator(raw, reader)?;
@@ -122,7 +141,7 @@ impl ValidArray {
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Array `items` isn't a valid array of validators"))
+                    Err(Error::FailValidate(fail_len, "Array `items` isn't a valid array of validators"))
                 }
             },
             "max_len" => {
@@ -131,7 +150,7 @@ impl ValidArray {
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Array validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(fail_len, "Array validator requires non-negative integer for `max_len` field"))
                 }
             },
             "min_len" => {
@@ -140,7 +159,7 @@ impl ValidArray {
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "Array validator requires non-negative integer for `min_len` field"))
+                    Err(Error::FailValidate(fail_len, "Array validator requires non-negative integer for `min_len` field"))
                 }
             },
             "nin" => {
@@ -152,7 +171,7 @@ impl ValidArray {
                             get_raw_array(raw, len)?
                         }
                         else {
-                            return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
+                            return Err(Error::FailValidate(fail_len, "Array validator expected array of arrays for `in` field"));
                         };
                         self.nin_vec.push(v);
                     };
@@ -160,7 +179,7 @@ impl ValidArray {
                     self.nin_vec.dedup();
                 }
                 else {
-                    return Err(Error::FailValidate(raw.len(), "Array validator expected array of arrays for `in` field"));
+                    return Err(Error::FailValidate(fail_len, "Array validator expected array of arrays for `in` field"));
                 }
                 Ok(true)
             },
@@ -168,12 +187,21 @@ impl ValidArray {
                 self.query = read_bool(raw)?;
                 Ok(true)
             },
-            "unique" => {
-                self.query = read_bool(raw)?;
+            "size" => {
+                self.size = read_bool(raw)?;
                 Ok(true)
             },
-            "type" => if "Array" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Array")) },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Array validator")),
+            "unique" => {
+                self.unique_used = true;
+                self.unique = read_bool(raw)?;
+                Ok(true)
+            },
+            "unique_ok" => {
+                self.unique_ok = read_bool(raw)?;
+                Ok(true)
+            },
+            "type" => if "Array" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match Array")) },
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in Array validator")),
         }
     }
 
@@ -206,15 +234,12 @@ impl ValidArray {
     /// Validates that the next value is a Hash that meets the validator requirements. Fails if the 
     /// requirements are not met. If it passes, the optional returned Hash indicates that an 
     /// additional document (referenced by the Hash) needs to be checked.
-    pub fn validate(&self,
-                    doc: &mut &[u8],
-                    types: &Vec<Validator>,
-                    list: &mut ValidatorChecklist,
-                    ) -> crate::Result<()>
+    pub fn validate(&self, doc: &mut &[u8], types: &Vec<Validator>, list: &mut ValidatorChecklist) -> crate::Result<()>
     {
+        let fail_len = doc.len();
         let num_items = match read_marker(doc)? {
             MarkerType::Array(len) => len,
-            _ => return Err(Error::FailValidate(doc.len(), "Expected array")),
+            _ => return Err(Error::FailValidate(fail_len, "Expected array")),
         };
         if num_items == 0 && self.min_len == 0 && self.items.len() == 0 && self.contains.len() == 0 {
             return Ok(());
@@ -224,10 +249,10 @@ impl ValidArray {
 
         // Size checks
         if num_items < self.min_len {
-            return Err(Error::FailValidate(doc.len(), "Array has fewer than minimum number of items allowed"))
+            return Err(Error::FailValidate(fail_len, "Array has fewer than minimum number of items allowed"))
         }
         if num_items > self.max_len {
-            return Err(Error::FailValidate(doc.len(), "Array has greater than maximum number of items allowed"))
+            return Err(Error::FailValidate(fail_len, "Array has greater than maximum number of items allowed"))
         }
 
         // Setup for iterating over array
@@ -261,7 +286,7 @@ impl ValidArray {
             // Check for uniqueness
             if self.unique {
                 if !unique_set.insert(item) {
-                    return Err(Error::FailValidate(doc.len(), "Array contains a repeated item"));
+                    return Err(Error::FailValidate(fail_len, "Array contains a repeated item"));
                 }
             }
             // Check to see if any `contains` requirements are met
@@ -277,153 +302,81 @@ impl ValidArray {
 
         let (array, _) = array_start.split_at(array_start.len()-doc.len());
         if contain_set.contains(&false) {
-            Err(Error::FailValidate(doc.len(), "Array does not satisfy all `contains` requirements"))
+            Err(Error::FailValidate(fail_len, "Array does not satisfy all `contains` requirements"))
         }
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(array)).is_ok() {
-            Err(Error::FailValidate(doc.len(), "Array is on `nin` list"))
+            Err(Error::FailValidate(fail_len, "Array is on `nin` list"))
         }
         else if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(array)).is_err() {
-            Err(Error::FailValidate(doc.len(), "Array is not on `in` list"))
+            Err(Error::FailValidate(fail_len, "Array is not on `in` list"))
         }
         else {
             Ok(())
         }
     }
 
-    /// Intersection of Array with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self,
-                 other: &Validator,
-                 query: bool,
-                 builder: &mut ValidBuilder
-                 )
-        -> Result<Validator, ()>
-    {
-        let builder_len = builder.len();
-        if query && !self.query && !self.array && !self.contains_ok { return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator, s_types: &[Validator], o_types: &[Validator]) -> bool {
         match other {
             Validator::Array(other) => {
-                if query && (
-                    (!self.query &&
-                     ((other.max_len < usize::max_value()) || (other.min_len > usize::min_value())
-                      || other.unique || !other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.array && 
-                        (!other.items.is_empty() || other.extra_items.is_some()))
-                    || (!self.contains_ok && !other.contains.is_empty()))
+                if (self.query || !other.query_used)
+                    && (self.size || !other.size_used)
+                    && (self.unique_ok || !other.unique_used)
+                    && (self.array || !other.array_used)
+                    && (self.contains_ok || !other.contains_used)
                 {
-                    Err(())
+                    // Check the extra_items
+                    if let Some(s_extra) = self.extra_items {
+                        if let Some(o_extra) = other.extra_items {
+                            if !query_check(s_extra, o_extra, s_types, o_types) { return false; }
+                        }
+                    }
+
+                    // Prepare the iterators to go over the items lists
+                    let s_extra = self.extra_items.unwrap_or(VALID);
+                    let o_extra = other.extra_items.unwrap_or(VALID);
+                    let s_iter = self.items.iter().chain(std::iter::repeat(&s_extra));
+                    let o_iter = other.items.iter().chain(std::iter::repeat(&o_extra));
+
+                    // Go over entire self.items list, and if self.extra_items exists, make sure to 
+                    // validate all the other.items as well if they are longer than self.items.
+                    let take = if self.extra_items.is_some() {
+                        (self.items.len()).max(other.items.len())
+                    }
+                    else {
+                        self.items.len()
+                    };
+
+                    let items_eval = s_iter
+                        .zip(o_iter)
+                        .take(take)
+                        .all(|(&s, &o)| {
+                            query_check(s, o, s_types, o_types)
+                        });
+                    if !items_eval { return false; }
+
+                    // Go over entire other.contains against each and every self.items, plus 
+                    // self.extra_items
+                    if let Some(s) = self.extra_items {
+                        for contain in other.contains.iter() {
+                            if !query_check(s, *contain, s_types, o_types) { return false; }
+                        }
+                    }
+                    for contain in other.contains.iter() {
+                        for item in self.items.iter() {
+                            if !query_check(*item, *contain, s_types, o_types) { return false; }
+                        }
+                    }
+
+                    true
                 }
                 else {
-                    // Get intersection of `in` vectors
-                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                        sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
-                    }
-                    else if self.in_vec.len() > 0 {
-                        self.in_vec.clone()
-                    }
-                    else {
-                        other.in_vec.clone()
-                    };
-
-                    // Get intersection of items
-                    let items_len = self.items.len().max(other.items.len());
-                    let mut items = Vec::with_capacity(items_len);
-                    for i in 0..items_len {
-                        let self_index = if let Some(index) = self.items.get(i) {
-                            *index
-                        }
-                        else if let Some(index) = self.extra_items {
-                            index
-                        }
-                        else {
-                            1
-                        };
-                        let other_index = if let Some(index) = other.items.get(i) {
-                            *index
-                        }
-                        else if let Some(index) = other.extra_items {
-                            index
-                        }
-                        else {
-                            1
-                        };
-
-                        items.push(builder.intersect(query, self_index, other_index)?);
-                    }
-
-                    // Get extra items
-                    let extra_items = if let (Some(self_extra), Some(other_extra)) = (self.extra_items,other.extra_items) {
-                        Some(builder.intersect(query, self_extra, other_extra)?)
-                    }
-                    else if let Some(extra_items) = self.extra_items {
-                        Some(builder.intersect(query, extra_items, 1)?)
-                    }
-                    else if let Some(extra_items) = other.extra_items {
-                        Some(builder.intersect(query, 1, extra_items)?)
-                    }
-                    else {
-                        None
-                    };
-
-                    // Check that this isn't an invalid validator before proceeding
-                    if items.contains(&0) {
-                        builder.undo_to(builder_len);
-                        return Ok(Validator::Invalid);
-                    }
-
-                    let mut contains: Vec<usize> = Vec::with_capacity(self.contains.len() + other.contains.len());
-                    contains.extend(self.contains.iter()
-                        .map(|x| builder.intersect(query, *x, 1).unwrap()));
-                    contains.extend(other.contains.iter()
-                        .map(|x| builder.intersect(query, 1, *x).unwrap()));
-
-                    // Create new Validator
-                    let mut new_validator = ValidArray {
-                        in_vec: in_vec,
-                        nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
-                        min_len: self.min_len.max(other.min_len),
-                        max_len: self.max_len.min(other.max_len),
-                        items: items,
-                        extra_items: extra_items,
-                        contains: contains,
-                        unique: self.unique || other.unique,
-                        query: self.query && other.query,
-                        array: self.array && other.array,
-                        contains_ok: self.contains_ok && other.contains_ok,
-                    };
-                    if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        builder.undo_to(builder_len);
-                        return Ok(Validator::Invalid);
-                    }
-                    let valid = new_validator.finalize();
-                    if !valid {
-                        builder.undo_to(builder_len);
-                        Ok(Validator::Invalid)
-                    }
-                    else {
-                        Ok(Validator::Array(new_validator))
-                    }
+                    false
                 }
-            },
-            Validator::Valid => {
-                // Get intersection of items
-                let mut v = self.clone();
-                let mut items = Vec::with_capacity(self.items.len());
-                items.extend(self.items.iter()
-                    .map(|x| builder.intersect(query, *x, 1).unwrap()));
-                v.items = items;
-
-                if let Some(extra) = self.extra_items {
-                    v.extra_items = Some(builder.intersect(query, extra, 1).unwrap());
-                }
-
-                let mut contains: Vec<usize> = Vec::with_capacity(self.contains.len());
-                contains.extend(self.contains.iter()
-                    .map(|x| builder.intersect(query, *x, 1).unwrap()));
-                v.contains = contains;
-                Ok(Validator::Array(v))
             }
-            _ => Ok(Validator::Invalid),
+            Validator::Valid => true,
+            _ => false,
         }
     }
 }

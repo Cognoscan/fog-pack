@@ -6,7 +6,7 @@ use ieee754::Ieee754;
 
 use Error;
 use decode::*;
-use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, Validator};
 use marker::MarkerType;
 
 /// F64 type validator
@@ -21,6 +21,8 @@ pub struct ValidF64 {
     ord: bool,
     ex_min: bool, // setup only
     ex_max: bool, // setup only
+    query_used: bool,
+    ord_used: bool,
 }
 
 impl ValidF64 {
@@ -35,6 +37,8 @@ impl ValidF64 {
             ord: is_query,
             ex_min: false,
             ex_max: false,
+            query_used: false,
+            ord_used: false,
         }
     }
 
@@ -51,6 +55,7 @@ impl ValidF64 {
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
+        let fail_len = raw.len();
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -59,18 +64,21 @@ impl ValidF64 {
                 Ok(true)
             }
             "ex_max" => {
+                self.ord_used = true;
                 self.ex_max = read_bool(raw)?;
                 self.max = self.max.prev();
                 self.nan_ok = false;
                 Ok(true)
             },
             "ex_min" => {
+                self.ord_used = true;
                 self.ex_min = read_bool(raw)?;
                 self.min = self.min.next();
                 self.nan_ok = false;
                 Ok(true)
             },
             "in" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::F64 => {
                         let v = raw.read_f64::<BigEndian>()?;
@@ -86,15 +94,16 @@ impl ValidF64 {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "F64 validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(fail_len, "F64 validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
             },
             "max" => {
+                self.ord_used = true;
                 let max = read_f64(raw)?;
                 if max.is_nan() {
-                    Err(Error::FailValidate(raw.len(), "F64 validator does not accept NaN for `max` field"))
+                    Err(Error::FailValidate(fail_len, "F64 validator does not accept NaN for `max` field"))
                 }
                 else if self.ex_max && (max == f64::NEG_INFINITY) {
                     Ok(false)
@@ -106,9 +115,10 @@ impl ValidF64 {
                 }
             }
             "min" => {
+                self.ord_used = true;
                 let min = read_f64(raw)?;
                 if min.is_nan() {
-                    Err(Error::FailValidate(raw.len(), "F64 validator does not accept NaN for `min` field"))
+                    Err(Error::FailValidate(fail_len, "F64 validator does not accept NaN for `min` field"))
                 }
                 else if self.ex_min && (min == f64::INFINITY) {
                     Ok(false)
@@ -120,6 +130,7 @@ impl ValidF64 {
                 }
             }
             "nin" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::F64 => {
                         let v = raw.read_f64::<BigEndian>()?;
@@ -135,7 +146,7 @@ impl ValidF64 {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "F64 validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(fail_len, "F64 validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -148,8 +159,8 @@ impl ValidF64 {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "F64" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match F64")) },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in f64 validator")),
+            "type" => if "F64" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match F64")) },
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in f64 validator")),
         }
     }
 
@@ -192,9 +203,10 @@ impl ValidF64 {
     }
 
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
+        let fail_len = doc.len();
         let value = read_f64(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| probe.total_cmp(&value)).is_err() {
-            Err(Error::FailValidate(doc.len(), "F64 is not on the `in` list"))
+            Err(Error::FailValidate(fail_len, "F64 is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
             println!("Passed in_vec test with {}", value);
@@ -202,16 +214,16 @@ impl ValidF64 {
         }
         else if value.is_nan() && !self.nan_ok
         {
-            Err(Error::FailValidate(doc.len(), "F64 is NaN and therefore out of range"))
+            Err(Error::FailValidate(fail_len, "F64 is NaN and therefore out of range"))
         }
         else if !self.nan_ok && (value < self.min) {
-            Err(Error::FailValidate(doc.len(), "F64 is less than minimum allowed"))
+            Err(Error::FailValidate(fail_len, "F64 is less than minimum allowed"))
         }
         else if !self.nan_ok && (value > self.max) {
-            Err(Error::FailValidate(doc.len(), "F64 is greater than maximum allowed"))
+            Err(Error::FailValidate(fail_len, "F64 is greater than maximum allowed"))
         }
         else if self.nin_vec.binary_search_by(|probe| probe.total_cmp(&value)).is_ok() {
-            Err(Error::FailValidate(doc.len(), "F64 is on the `nin` list"))
+            Err(Error::FailValidate(fail_len, "F64 is on the `nin` list"))
         }
         else {
             Ok(())
@@ -219,56 +231,15 @@ impl ValidF64 {
 
     }
 
-    /// Intersection of F64 with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
-        if query && !self.query && !self.ord { return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator) -> bool {
         match other {
             Validator::F64(other) => {
-                if query && (
-                    (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.ord && !other.nan_ok))
-                {
-                    Err(())
-                }
-                else if !self.nan_ok && !other.nan_ok && ((self.min > other.max) || (self.max < other.min)) {
-                    Ok(Validator::Invalid)
-                }
-                else {
-                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                        sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.total_cmp(b))
-                    }
-                    else if self.in_vec.len() > 0 {
-                        self.in_vec.clone()
-                    }
-                    else {
-                        other.in_vec.clone()
-                    };
-                    if in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        return Ok(Validator::Invalid);
-                    }
-                    let mut new_validator = ValidF64 {
-                        in_vec: in_vec,
-                        nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.total_cmp(b)),
-                        min: self.min.max(other.min),
-                        max: self.max.min(other.max),
-                        nan_ok: self.nan_ok && other.nan_ok,
-                        query: self.query && other.query,
-                        ord: self.ord && other.ord,
-                        ex_min: false, // Doesn't get used by this point - for setup of validator only.
-                        ex_max: false, // Doesn't get used by this point - for setup of validator only.
-                    };
-                    let valid = new_validator.finalize();
-                    if !valid {
-                        Ok(Validator::Invalid)
-                    }
-                    else {
-                        Ok(Validator::F64(new_validator))
-                    }
-                }
-            },
-            Validator::Valid => Ok(Validator::F64(self.clone())),
-            _ => Ok(Validator::Invalid),
+                (self.query || !other.query_used) && (self.ord || !other.ord_used)
+            }
+            Validator::Valid => true,
+            _ => false,
         }
     }
 }
@@ -284,11 +255,13 @@ mod tests {
     use rand::distributions::Uniform;
 
     fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidF64> {
+        let fail_len = raw.len();
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidF64::new(is_query);
             object_iterate(raw, len, |field, raw| {
+                let fail_len = raw.len();
                 if !validator.update(field, raw)? {
-                    Err(Error::FailValidate(raw.len(), "Wasn't a valid F64 validator"))
+                    Err(Error::FailValidate(fail_len, "Wasn't a valid F64 validator"))
                 }
                 else {
                     Ok(())
@@ -299,7 +272,7 @@ mod tests {
 
         }
         else {
-            Err(Error::FailValidate(raw.len(), "Not an object"))
+            Err(Error::FailValidate(fail_len, "Not an object"))
         }
     }
 
@@ -452,107 +425,4 @@ mod tests {
         assert!(validator.validate(&mut &val[..]).is_ok(), "0 was not in `nin` but failed validation");
     }
 
-    #[test]
-    fn intersect() {
-        let valid_count = 10;
-        let test_count = 1000;
-
-        // Variables used in all tests
-        let mut rng = rand::thread_rng();
-        let mut test1 = Vec::new();
-        let mut val = Vec::with_capacity(9);
-
-        // Test -10 to 10 in a range
-        let range = Uniform::new(-10i8, 10i8); 
-        for _ in 0..valid_count {
-            test1.clear();
-            let val1 = rng.sample(range) as f64;
-            let val2 = rng.sample(range) as f64;
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &fogpack!({
-                "min": min,
-                "max": max
-            }));
-            let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            test1.clear();
-            let val1 = rng.sample(range) as f64;
-            let val2 = rng.sample(range) as f64;
-            let (min, max) = if val1 < val2 { (val1, val2) } else { (val2, val1) };
-            encode::write_value(&mut test1, &fogpack!({
-                "min": min,
-                "max": max
-            }));
-            let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-            let validi = valid1.intersect(&Validator::F64(valid2.clone()), false).unwrap();
-            println!("Validator 1 = {:?}", valid1);
-            println!("Validator 2 = {:?}", valid2);
-            if let Validator::F64(ref v) = validi {
-                println!("Intersecton = {:?}", v);
-            }
-            else {
-                println!("Intersection always fails to validate");
-            }
-            for _ in 0..test_count {
-                val.clear();
-                let test_val = rng.sample(range) as f64;
-                encode::write_value(&mut val, &Value::from(test_val.clone()));
-                let res1 = valid1.validate(&mut &val[..]);
-                let res2 = valid2.validate(&mut &val[..]);
-                let resi = validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new());
-                if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
-                    println!("Valid 1   Err = {:?}", res1);
-                    println!("Valid 2   Err = {:?}", res2);
-                    println!("Intersect Err = {:?}", resi);
-                }
-                assert_eq!(
-                    res1.is_ok() && res2.is_ok(),
-                    resi.is_ok(),
-                    "Min/Max intersection for F64 validators fails with {}", test_val);
-            }
-        }
-
-        // Test -10 to 10 with in/nin
-        test1.clear();
-        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(Value::from(rng.sample(range) as f64));
-            nin_vec.push(Value::from(rng.sample(range) as f64));
-        }
-        encode::write_value(&mut test1, &fogpack!({
-            "in": in_vec,
-            "nin": nin_vec,
-        }));
-        let valid1 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        test1.clear();
-        let mut in_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        let mut nin_vec: Vec<Value> = Vec::with_capacity(valid_count);
-        for _ in 0..valid_count {
-            in_vec.push(Value::from(rng.sample(range) as f64));
-            nin_vec.push(Value::from(rng.sample(range) as f64));
-        }
-        encode::write_value(&mut test1, &fogpack!({
-            "in": in_vec,
-            "nin": nin_vec,
-        }));
-        let valid2 = read_it(&mut &test1[..], false).expect(&format!("{:X?}",test1));
-        let validi = valid1.intersect(&Validator::F64(valid2.clone()), false).unwrap();
-        for _ in 0..(10*test_count) {
-            val.clear();
-            let test_val = rng.sample(range) as f64;
-            encode::write_value(&mut val, &Value::from(test_val.clone()));
-            let res1 = valid1.validate(&mut &val[..]);
-            let res2 = valid2.validate(&mut &val[..]);
-            let resi = validi.validate(&mut &val[..], &Vec::new(), 0, &mut ValidatorChecklist::new());
-            if (res1.is_ok() && res2.is_ok()) != resi.is_ok() {
-                println!("Valid 1   Err = {:?}", res1);
-                println!("Valid 2   Err = {:?}", res2);
-                println!("Intersect Err = {:?}", resi);
-            }
-            assert_eq!(
-                res1.is_ok() && res2.is_ok(),
-                resi.is_ok(),
-                "Set intersection for F64 validators fails with {}", test_val);
-        }
-    }
 }

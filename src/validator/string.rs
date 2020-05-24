@@ -1,8 +1,10 @@
+use unicode_normalization::UnicodeNormalization;
+use regex;
 use regex::Regex;
 
 use Error;
 use decode::*;
-use super::{MAX_VEC_RESERVE, sorted_union, sorted_intersection, Validator};
+use super::{MAX_VEC_RESERVE, Validator};
 use marker::MarkerType;
 
 /// String type validator
@@ -16,9 +18,15 @@ pub struct ValidStr {
     min_len: usize,
     max_len: usize,
     matches: Vec<Regex>,
+    matches_work: bool,
+    force_nfc: bool,
+    force_nfkc: bool,
     query: bool,
     size: bool,
     regex: bool,
+    query_used: bool,
+    size_used: bool,
+    regex_used: bool,
 }
 
 impl ValidStr {
@@ -32,9 +40,15 @@ impl ValidStr {
             min_len: usize::min_value(),
             max_len: usize::max_value(),
             matches: Vec::with_capacity(0),
+            matches_work: true,
+            force_nfc: false,
+            force_nfkc: false,
             query: is_query,
             size: is_query,
             regex: is_query,
+            query_used: false,
+            size_used: false,
+            regex_used: false,
         }
     }
 
@@ -46,11 +60,80 @@ impl ValidStr {
         v
     }
 
+    fn conv_string(&self, s: &str) -> String {
+        if self.force_nfkc {
+            if unicode_normalization::is_nfkc(s) {
+                s.to_string()
+            }
+            else {
+                s.nfkc().collect::<String>()
+            }
+        }
+        else if self.force_nfc {
+            if unicode_normalization::is_nfc(s) {
+                s.to_string()
+            }
+            else {
+                s.nfc().collect::<String>()
+            }
+        }
+        else {
+            s.to_string()
+        }
+    }
+
+    fn read_regex(&self, raw: &mut &[u8], len: usize) -> crate::Result<Option<Regex>> {
+        let fail_len = raw.len();
+        let temp_string: String; // Define here so it lives past the if-else block below
+        let v = read_raw_str(raw, len)?;
+        let v = if self.force_nfkc {
+            if unicode_normalization::is_nfkc(v) {
+                v
+            }
+            else {
+                temp_string = v.nfkc().collect::<String>();
+                temp_string.as_str()
+            }
+        }
+        else if self.force_nfc {
+            if unicode_normalization::is_nfc(v) {
+                v
+            }
+            else {
+                temp_string = v.nfc().collect::<String>();
+                temp_string.as_str()
+            }
+        }
+        else {
+            v
+        };
+        let v = regex::RegexBuilder::new(v)
+            .size_limit(1<<21)
+            .dfa_size_limit(1<<20)
+            .build();
+        match v {
+            Ok(regex) => {
+                Ok(Some(regex))
+            },
+            Err(e) => {
+                if let regex::Error::CompiledTooBig(_) = e {
+                    return Err(Error::ParseLimit(fail_len, "Regex hit size limit"));
+                }
+                else {
+                    // Regex syntax failure is not an error; just means the validator 
+                    // will always fail
+                    Ok(None)
+                }
+            }
+        }
+    }
+
     /// Update the validator. Returns `Ok(true)` if everything is read out Ok, `Ok(false)` if we 
     /// don't recognize the field type or value, and `Err` if we recognize the field but fail to 
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
+        let fail_len = raw.len();
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -58,119 +141,138 @@ impl ValidStr {
                 read_string(raw)?;
                 Ok(true)
             }
+            "force_nfc" => {
+                self.force_nfc = read_bool(raw)?;
+                Ok(true)
+            },
+            "force_nfkc" => {
+                self.force_nfkc = read_bool(raw)?;
+                Ok(true)
+            },
             "in" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::String(len) => {
                         let v = read_raw_str(raw, len)?;
                         self.in_vec.reserve_exact(1);
-                        self.in_vec.push(v.to_string());
+                        self.in_vec.push(self.conv_string(v));
                     },
                     MarkerType::Array(len) => {
                         self.in_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
-                            self.in_vec.push(read_string(raw)?);
+                            let v = read_str(raw)?;
+                            self.in_vec.push(self.conv_string(v));
                         };
                         self.in_vec.sort_unstable();
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "String validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(fail_len, "String validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
             },
             "matches" => {
+                self.regex_used = true;
                 match read_marker(raw)? {
                     MarkerType::String(len) => {
-                        let v = read_raw_str(raw, len)?;
-                        match Regex::new(v) {
-                            Ok(regex) => {
-                                self.matches.reserve_exact(1);
-                                self.matches.push(regex);
-                                Ok(true)
-                            },
-                            Err(_) => {
-                                // Failed regex creation is not an error, just means the validator 
-                                // will always fail
-                                Ok(false)
-                            }
+                        let regex = self.read_regex(raw, len)?;
+                        if let Some(regex) = regex {
+                            self.matches.reserve_exact(1);
+                            self.matches.push(regex);
+                            Ok(true)
+                        }
+                        else {
+                            Ok(false)
                         }
                     },
                     MarkerType::Array(len) => {
                         self.matches.reserve_exact(len.min(MAX_VEC_RESERVE));
-                        let mut regexes_ok = true;
+                        self.matches_work = true;
                         for _i in 0..len {
-                            let s = read_str(raw)?;
-                            match Regex::new(s) {
-                                Ok(regex) => self.matches.push(regex),
-                                Err(_) => {
-                                    regexes_ok = false;
-                                    break;
+                            let fail_len = raw.len();
+                            let marker = read_marker(raw)?;
+                            if let MarkerType::String(len) = marker {
+                                let regex = self.read_regex(raw, len)?;
+                                if let Some(regex) = regex {
+                                    self.matches.push(regex);
+                                }
+                                else {
+                                    self.matches_work = false;
                                 }
                             }
+                            else {
+                                return Err(Error::FailValidate(fail_len, "Expected a string"))
+                            }
                         };
-                        Ok(regexes_ok)
+                        Ok(self.matches_work)
                     },
                     _ => {
-                        Err(Error::FailValidate(raw.len(), "String validator expected array or string for `matches` field"))
+                        Err(Error::FailValidate(fail_len, "String validator expected array or string for `matches` field"))
                     },
                 }
             },
             "max_char" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.max_char = len as usize;
                     self.use_char = true;
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `max_char` field"))
+                    Err(Error::FailValidate(fail_len, "String validator requires non-negative integer for `max_char` field"))
                 }
             }
             "max_len" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.max_len = len as usize;
                     Ok(true)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `max_len` field"))
+                    Err(Error::FailValidate(fail_len, "String validator requires non-negative integer for `max_len` field"))
                 }
             }
             "min_char" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.min_char = len as usize;
                     self.use_char = true;
                     Ok(self.max_char >= self.min_char)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `min_char` field"))
+                    Err(Error::FailValidate(fail_len, "String validator requires non-negative integer for `min_char` field"))
                 }
             }
             "min_len" => {
+                self.size_used = true;
                 if let Some(len) = read_integer(raw)?.as_u64() {
                     self.min_len = len as usize;
                     Ok(self.max_len >= self.min_len)
                 }
                 else {
-                    Err(Error::FailValidate(raw.len(), "String validator requires non-negative integer for `min_len` field"))
+                    Err(Error::FailValidate(fail_len, "String validator requires non-negative integer for `min_len` field"))
                 }
             }
             "nin" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::String(len) => {
                         let v = read_raw_str(raw, len)?;
                         self.nin_vec.reserve_exact(1);
-                        self.nin_vec.push(v.to_string());
+                        self.nin_vec.push(self.conv_string(v));
                     },
                     MarkerType::Array(len) => {
                         self.nin_vec.reserve_exact(len.min(MAX_VEC_RESERVE));
                         for _i in 0..len {
-                            self.nin_vec.push(read_string(raw)?);
+                            let v = read_str(raw)?;
+                            self.nin_vec.push(self.conv_string(v));
                         };
                         self.nin_vec.sort_unstable();
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "String validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(fail_len, "String validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -187,8 +289,8 @@ impl ValidStr {
                 self.size = read_bool(raw)?;
                 Ok(true)
             },
-            "type" => if "Str" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Str")) },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in string validator")),
+            "type" => if "Str" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match Str")) },
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in string validator")),
         }
     }
 
@@ -212,6 +314,7 @@ impl ValidStr {
                     }
                 }
                 if (val.len() >= self.min_len) && (val.len() <= self.max_len) 
+                    && self.matches_work
                     && self.matches.iter().all(|reg| reg.is_match(val))
                 {
                     in_vec.push(val.clone());
@@ -240,100 +343,57 @@ impl ValidStr {
     }
 
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
+        let fail_len = doc.len();
         let value = read_str(doc)?;
         let len_char = if self.use_char { bytecount::num_chars(value.as_bytes()) } else { 0 };
-        if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
-            Err(Error::FailValidate(doc.len(), "String is not on the `in` list"))
+        if !self.matches_work {
+            Err(Error::FailValidate(fail_len, "Validator has regexes that don't compile"))
+        }
+        else if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
+            Err(Error::FailValidate(fail_len, "String is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
+            // We can short-circuit here because finalize already pre-checked all other conditions
             Ok(())
         }
         else if self.use_char && (len_char < self.min_char) {
-            Err(Error::FailValidate(doc.len(), "String shorter than min char length"))
+            Err(Error::FailValidate(fail_len, "String shorter than min char length"))
         }
         else if self.use_char && (len_char > self.max_char) {
-            Err(Error::FailValidate(doc.len(), "String longer than max char length"))
+            Err(Error::FailValidate(fail_len, "String longer than max char length"))
         }
         else if value.len() < self.min_len {
-            Err(Error::FailValidate(doc.len(), "String shorter than min length"))
+            Err(Error::FailValidate(fail_len, "String shorter than min length"))
         }
         else if value.len() > self.max_len {
-            Err(Error::FailValidate(doc.len(), "String longer than max length"))
+            Err(Error::FailValidate(fail_len, "String longer than max length"))
         }
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(value)).is_ok() {
-            Err(Error::FailValidate(doc.len(), "String is on the `nin` list"))
+            Err(Error::FailValidate(fail_len, "String is on the `nin` list"))
         }
         else if self.matches.iter().any(|reg| !reg.is_match(value)) {
-            Err(Error::FailValidate(doc.len(), "String fails regex check"))
+            Err(Error::FailValidate(fail_len, "String fails regex check"))
         }
         else {
             Ok(())
         }
     }
 
-    /// Intersection of String with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
-        if query && !self.query && !self.size && !self.regex { return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator) -> bool {
         match other {
             Validator::String(other) => {
-                if query && (
-                    (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.size && (other.use_char || (other.min_len > usize::min_value()) || (other.max_len < usize::max_value())))
-                    || (!self.regex && (other.matches.len() > 0)))
-                {
-                    Err(())
-                }
-                else if (self.min_len > other.max_len) || (self.max_len < other.min_len) 
-                {
-                    Ok(Validator::Invalid)
-                }
-                else if (self.min_char > other.max_char) || (self.max_char < other.min_char)
-                {
-                    Ok(Validator::Invalid)
-                }
-                else {
-                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                        sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
-                    }
-                    else if self.in_vec.len() > 0 {
-                        self.in_vec.clone()
-                    }
-                    else {
-                        other.in_vec.clone()
-                    };
-                    let mut matches = self.matches.clone();
-                    matches.extend_from_slice(&other.matches);
-                    let mut new_validator = ValidStr {
-                        in_vec: in_vec,
-                        nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
-                        min_len: self.min_len.max(other.min_len),
-                        max_len: self.max_len.min(other.max_len),
-                        min_char: self.min_char.max(other.min_char),
-                        max_char: self.max_char.min(other.max_char),
-                        use_char: self.use_char || other.use_char,
-                        matches: matches,
-                        query: self.query && other.query,
-                        size: self.size && other.size,
-                        regex: self.regex && other.regex,
-                    };
-                    if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        return Ok(Validator::Invalid);
-                    }
-                    let valid = new_validator.finalize();
-                    if !valid {
-                        Ok(Validator::Invalid)
-                    }
-                    else {
-                        Ok(Validator::String(new_validator))
-                    }
-                }
-            },
-            Validator::Valid => Ok(Validator::String(self.clone())),
-            _ => Ok(Validator::Invalid),
+                (self.query || !other.query_used)
+                    && (self.size || !other.size_used)
+                    && (self.regex || !other.regex_used)
+            }
+            Validator::Valid => true,
+            _ => false,
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -342,11 +402,13 @@ mod tests {
     use super::*;
 
     fn read_it(raw: &mut &[u8], is_query: bool) -> crate::Result<ValidStr> {
+        let fail_len = raw.len();
         if let MarkerType::Object(len) = read_marker(raw)? {
             let mut validator = ValidStr::new(is_query);
             object_iterate(raw, len, |field, raw| {
+                let fail_len = raw.len();
                 if !validator.update(field, raw)? {
-                    Err(Error::FailValidate(raw.len(), "Not a valid string validator"))
+                    Err(Error::FailValidate(fail_len, "Not a valid string validator"))
                 }
                 else {
                     Ok(())
@@ -357,7 +419,7 @@ mod tests {
 
         }
         else {
-            Err(Error::FailValidate(raw.len(), "Not an object"))
+            Err(Error::FailValidate(fail_len, "Not an object"))
         }
     }
 

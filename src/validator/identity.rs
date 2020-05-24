@@ -10,6 +10,7 @@ pub struct ValidIdentity {
     in_vec: Vec<Identity>,
     nin_vec: Vec<Identity>,
     query: bool,
+    query_used: bool,
 }
 
 impl ValidIdentity {
@@ -18,6 +19,7 @@ impl ValidIdentity {
             in_vec: Vec::with_capacity(0),
             nin_vec: Vec::with_capacity(0),
             query: is_query,
+            query_used: false,
         }
     }
 
@@ -34,6 +36,7 @@ impl ValidIdentity {
     /// parse the expected contents. The updated `raw` slice reference is only accurate if 
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8]) -> crate::Result<bool> {
+        let fail_len = raw.len();
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
         match field {
@@ -42,6 +45,7 @@ impl ValidIdentity {
                 Ok(true)
             }
             "in" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::Identity(len) => {
                         let v = read_raw_id(raw, len)?;
@@ -55,12 +59,13 @@ impl ValidIdentity {
                         };
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Identity validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(fail_len, "Identity validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
             },
             "nin" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::Identity(len) => {
                         let v = read_raw_id(raw, len)?;
@@ -74,7 +79,7 @@ impl ValidIdentity {
                         };
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Identity validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(fail_len, "Identity validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -83,8 +88,8 @@ impl ValidIdentity {
                 self.query = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Ident" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Ident")) },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Identity validator")),
+            "type" => if "Ident" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match Ident")) },
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in Identity validator")),
         }
     }
 
@@ -110,66 +115,26 @@ impl ValidIdentity {
     }
 
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
+        let fail_len = doc.len();
         let value = read_id(doc)?;
         if self.nin_vec.contains(&value) {
-            Err(Error::FailValidate(doc.len(), "Identity is on the `nin` list"))
+            Err(Error::FailValidate(fail_len, "Identity is on the `nin` list"))
         }
         else if (self.in_vec.len() > 0) && !self.in_vec.contains(&value) {
-            Err(Error::FailValidate(doc.len(), "Identity is not on the `in` list"))
+            Err(Error::FailValidate(fail_len, "Identity is not on the `in` list"))
         }
         else {
             Ok(())
         }
     }
 
-    /// Intersection of Identity with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self, other: &Validator, query: bool) -> Result<Validator, ()> {
-        if query && !self.query { return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator) -> bool {
         match other {
-            Validator::Identity(other) => {
-                if query && (
-                    (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty())))
-                {
-                    Err(())
-                }
-                else {
-                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                        let mut vec: Vec<Identity> = Vec::new();
-                        for val in other.in_vec.iter() {
-                            if self.in_vec.contains(&val) {
-                                vec.push(val.clone());
-                            }
-                        }
-                        vec
-                    }
-                    else if self.in_vec.len() > 0 {
-                        self.in_vec.clone()
-                    }
-                    else {
-                        other.in_vec.clone()
-                    };
-                    let mut nin_vec = self.nin_vec.clone();
-                    nin_vec.extend_from_slice(&other.nin_vec[..]);
-                    let mut new_validator = ValidIdentity {
-                        in_vec: in_vec,
-                        nin_vec: nin_vec,
-                        query: self.query && other.query,
-                    };
-                    if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        return Ok(Validator::Invalid);
-                    }
-                    let valid = new_validator.finalize();
-                    if !valid {
-                        Ok(Validator::Invalid)
-                    }
-                    else {
-                        Ok(Validator::Identity(new_validator))
-                    }
-                }
-            },
-            Validator::Valid => Ok(Validator::Identity(self.clone())),
-            _ => Ok(Validator::Invalid),
+            Validator::Identity(other) => self.query || !other.query_used,
+            Validator::Valid => true,
+            _ => false,
         }
     }
 }

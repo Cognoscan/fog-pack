@@ -116,114 +116,126 @@ pub fn verify_value(buf: &mut &[u8]) -> crate::Result<usize> {
 }
 
 pub fn read_null(buf: &mut &[u8]) -> crate::Result<()> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Null = marker {
         Ok(())
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected null"))
+        Err(Error::FailValidate(fail_len, "Expected null"))
     }
 }
 
 pub fn read_bool(buf: &mut &[u8]) -> crate::Result<bool> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Boolean(v) = marker {
         Ok(v)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected boolean"))
+        Err(Error::FailValidate(fail_len, "Expected boolean"))
     }
 }
 
 /// Attempt to read an integer from a fogpack data structure. Fails if an integer wasn't retrieved.
 pub fn read_integer(buf: &mut &[u8]) -> crate::Result<Integer> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     match marker {
         MarkerType::PosInt((len, v)) => read_pos_int(buf, len, v),
         MarkerType::NegInt((len, v)) => read_neg_int(buf, len, v),
-        _ => Err(Error::FailValidate(buf.len(), "Expected Integer"))
+        _ => Err(Error::FailValidate(fail_len, "Expected Integer"))
     }
 }
 
 /// Attempt to read a u8 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u8.
 pub fn read_u8(buf: &mut &[u8]) -> crate::Result<u8> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     NumCast::from(int.as_u64()
-        .ok_or(Error::FailValidate(buf.len(), "Value was negative"))?)
-        .ok_or(Error::FailValidate(buf.len(), "Value couldn't be represented as u8"))
+        .ok_or(Error::FailValidate(fail_len, "Value was negative"))?)
+        .ok_or(Error::FailValidate(fail_len, "Value couldn't be represented as u8"))
 }
 
 /// Attempt to read a u16 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u16.
 pub fn read_u16(buf: &mut &[u8]) -> crate::Result<u16> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     NumCast::from(int.as_u64()
-        .ok_or(Error::FailValidate(buf.len(), "Value was negative"))?)
-        .ok_or(Error::FailValidate(buf.len(), "Value couldn't be represented as u16"))
+        .ok_or(Error::FailValidate(fail_len, "Value was negative"))?)
+        .ok_or(Error::FailValidate(fail_len, "Value couldn't be represented as u16"))
 }
 
 /// Attempt to read a u32 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u32.
 pub fn read_u32(buf: &mut &[u8]) -> crate::Result<u32> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     NumCast::from(int.as_u64()
-        .ok_or(Error::FailValidate(buf.len(), "Value was negative"))?)
-        .ok_or(Error::FailValidate(buf.len(), "Value couldn't be represented as u32"))
+        .ok_or(Error::FailValidate(fail_len, "Value was negative"))?)
+        .ok_or(Error::FailValidate(fail_len, "Value couldn't be represented as u32"))
 }
 
 /// Attempt to read a u64 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a u64.
 pub fn read_u64(buf: &mut &[u8]) -> crate::Result<u64> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     int.as_u64()
-        .ok_or(Error::FailValidate(buf.len(), "Value was negative"))
+        .ok_or(Error::FailValidate(fail_len, "Value was negative"))
 }
 
 /// Attempt to read a i8 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i8.
 pub fn read_i8(buf: &mut &[u8]) -> crate::Result<i8> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     NumCast::from(int.as_i64()
-        .ok_or(Error::FailValidate(buf.len(), "Value bigger than i64 maximum"))?)
-        .ok_or(Error::FailValidate(buf.len(), "Value couldn't be represented as i8"))
+        .ok_or(Error::FailValidate(fail_len, "Value bigger than i64 maximum"))?)
+        .ok_or(Error::FailValidate(fail_len, "Value couldn't be represented as i8"))
 }
 
 
 /// Attempt to read a i16 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i16.
 pub fn read_i16(buf: &mut &[u8]) -> crate::Result<i16> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     NumCast::from(int.as_i64()
-        .ok_or(Error::FailValidate(buf.len(), "Value bigger than i64 maximum"))?)
-        .ok_or(Error::FailValidate(buf.len(), "Value couldn't be represented as i16"))
+        .ok_or(Error::FailValidate(fail_len, "Value bigger than i64 maximum"))?)
+        .ok_or(Error::FailValidate(fail_len, "Value couldn't be represented as i16"))
 }
 
 /// Attempt to read a i32 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i32.
 pub fn read_i32(buf: &mut &[u8]) -> crate::Result<i32> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     NumCast::from(int.as_i64()
-        .ok_or(Error::FailValidate(buf.len(), "Value bigger than i64 maximum"))?)
-        .ok_or(Error::FailValidate(buf.len(), "Value couldn't be represented as i32"))
+        .ok_or(Error::FailValidate(fail_len, "Value bigger than i64 maximum"))?)
+        .ok_or(Error::FailValidate(fail_len, "Value couldn't be represented as i32"))
 }
 
 /// Attempt to read a i64 from a fogpack data structure. Fails if an integer wasn't retrieved, or if 
 /// the integer isn't a i64.
 pub fn read_i64(buf: &mut &[u8]) -> crate::Result<i64> {
+    let fail_len = buf.len();
     let int = read_integer(buf)?;
     int.as_i64()
-        .ok_or(Error::FailValidate(buf.len(), "Value bigger than i64 maximum"))
+        .ok_or(Error::FailValidate(fail_len, "Value bigger than i64 maximum"))
 }
 
 /// Attempt to read a str from a fogpack data structure. Fails if str wasn't present/valid.
 pub fn read_str<'a>(buf: &mut &'a [u8]) -> crate::Result<&'a str> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::String(len) = marker {
         read_raw_str(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected a string"))
+        Err(Error::FailValidate(fail_len, "Expected a string"))
     }
 }
 
@@ -234,34 +246,37 @@ pub fn read_string<'a>(buf: &mut &[u8]) -> crate::Result<String> {
 
 /// Attempt to read a F32 from a fogpack data structure. Fails if invalid F32 retrieved.
 pub fn read_f32(buf: &mut &[u8]) -> crate::Result<f32> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::F32 = marker {
         Ok(buf.read_f32::<BigEndian>()?)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected a f32"))
+        Err(Error::FailValidate(fail_len, "Expected a f32"))
     }
 }
 
 /// Attempt to read a F32 from a fogpack data structure. Fails if invalid F64 retrieved.
 pub fn read_f64(buf: &mut &[u8]) -> crate::Result<f64> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::F64 = marker {
         Ok(buf.read_f64::<BigEndian>()?)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected a f64"))
+        Err(Error::FailValidate(fail_len, "Expected a f64"))
     }
 }
 
 /// Attempt to read binary data.
 pub fn read_bin<'a>(buf: &mut &'a [u8]) -> crate::Result<&'a [u8]> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Binary(len) = marker {
         read_raw_bin(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected binary data"))
+        Err(Error::FailValidate(fail_len, "Expected binary data"))
     }
 }
 
@@ -272,6 +287,7 @@ pub fn read_vec<'a>(buf: &mut &[u8]) -> crate::Result<Vec<u8>> {
 
 /// Attempt to read an array as `ValueRef`.
 pub fn read_array_ref<'a>(buf: &mut &'a [u8]) -> crate::Result<Vec<ValueRef<'a>>> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Array(len) = marker {
         let mut v = Vec::with_capacity(len);
@@ -281,12 +297,13 @@ pub fn read_array_ref<'a>(buf: &mut &'a [u8]) -> crate::Result<Vec<ValueRef<'a>>
         Ok(v)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected array"))
+        Err(Error::FailValidate(fail_len, "Expected array"))
     }
 }
 
 /// Attempt to read an array as `Value`.
 pub fn read_array(buf: &mut &[u8]) -> crate::Result<Vec<Value>> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Array(len) = marker {
         let mut v = Vec::with_capacity(len);
@@ -296,79 +313,86 @@ pub fn read_array(buf: &mut &[u8]) -> crate::Result<Vec<Value>> {
         Ok(v)
     }
     else {
-        Err(Error::BadEncode(buf.len(), "Expected array"))
+        Err(Error::BadEncode(fail_len, "Expected array"))
     }
 }
 
 /// Attempt to read an object as `ValueRef`.
 pub fn read_object_ref<'a>(buf: &mut &'a [u8]) -> crate::Result<BTreeMap<&'a str, ValueRef<'a>>> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Object(len) = marker {
         read_to_map_ref(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected object"))
+        Err(Error::FailValidate(fail_len, "Expected object"))
     }
 }
 
 /// Attempt to read an object as `Value`.
 pub fn read_object(buf: &mut &[u8]) -> crate::Result<BTreeMap<String, Value>> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Object(len) = marker {
         read_to_map(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected object"))
+        Err(Error::FailValidate(fail_len, "Expected object"))
     }
 }
 
 /// Attempt to read a `Hash`.
 pub fn read_hash(buf: &mut &[u8]) -> crate::Result<Hash> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Hash(len) = marker {
         read_raw_hash(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected hash"))
+        Err(Error::FailValidate(fail_len, "Expected hash"))
     }
 }
 
 /// Attempt to read an `Identity`.
 pub fn read_id(buf: &mut &[u8]) -> crate::Result<Identity> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Identity(len) = marker {
         read_raw_id(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected Identity"))
+        Err(Error::FailValidate(fail_len, "Expected Identity"))
     }
 }
 
 /// Attempt to read a `Lockbox`.
 pub fn read_lockbox(buf: &mut &[u8]) -> crate::Result<Lockbox> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Lockbox(len) = marker {
         read_raw_lockbox(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected Lockbox"))
+        Err(Error::FailValidate(fail_len, "Expected Lockbox"))
     }
 }
 
 /// Attempt to read a `Timestamp`.
 pub fn read_time(buf: &mut &[u8]) -> crate::Result<Timestamp> {
+    let fail_len = buf.len();
     let marker = read_marker(buf)?;
     if let MarkerType::Timestamp(len) = marker {
         read_raw_time(buf, len)
     }
     else {
-        Err(Error::FailValidate(buf.len(), "Expected Timestamp"))
+        Err(Error::FailValidate(fail_len, "Expected Timestamp"))
     }
 }
 
 /// Read a positive integer straight out of the stream. The size of the integer should be known from the 
 /// fogpack marker that was used. If the marker contained the integer, it should be included as `v`.
 pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> crate::Result<Integer> {
+    let fail_len = buf.len();
     match len {
         0 => Ok(v.into()),
         1 => {
@@ -377,7 +401,7 @@ pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         },
         2 => {
@@ -386,7 +410,7 @@ pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         },
         4 => {
@@ -395,7 +419,7 @@ pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         },
         8 => {
@@ -404,16 +428,17 @@ pub fn read_pos_int(buf: &mut &[u8], len: usize, v: u8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         },
-        _ => Err(Error::BadEncode(buf.len(), "Length of positive integer isn't 0, 1, 2, 4, or 8")),
+        _ => Err(Error::BadEncode(fail_len, "Length of positive integer isn't 0, 1, 2, 4, or 8")),
     }
 }
 
 /// Read a negative integer straight out of the stream. The size of the integer should be known from the 
 /// fogpack marker that was used. If the marker contained the integer, it should be included as `v`.
 pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> crate::Result<Integer> {
+    let fail_len = buf.len();
     match len {
         0 => Ok(v.into()),
         1 => {
@@ -422,10 +447,10 @@ pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else if v >= 0 {
-                Err(not_negative(buf.len()))
+                Err(not_negative(fail_len))
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         },
         2 => {
@@ -434,10 +459,10 @@ pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else if v >= 0 {
-                Err(not_negative(buf.len()))
+                Err(not_negative(fail_len))
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         },
         4 => {
@@ -446,10 +471,10 @@ pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else if v >= 0 {
-                Err(not_negative(buf.len()))
+                Err(not_negative(fail_len))
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         },
         8 => {
@@ -458,26 +483,27 @@ pub fn read_neg_int(buf: &mut &[u8], len: usize, v: i8) -> crate::Result<Integer
                 Ok(v.into())
             }
             else if v >= 0 {
-                Err(not_negative(buf.len()))
+                Err(not_negative(fail_len))
             }
             else {
-                Err(not_shortest(buf.len()))
+                Err(not_shortest(fail_len))
             }
         }
-        _ => Err(Error::BadEncode(buf.len(), "Length of negative integer isn't 0, 1, 2, 4, or 8")),
+        _ => Err(Error::BadEncode(fail_len, "Length of negative integer isn't 0, 1, 2, 4, or 8")),
     }
 }
 
 /// General function for referencing binary data in a buffer. Checks for if the 
 /// length is greater than remaining bytes in the buffer.
 pub fn read_raw_bin<'a>(buf: &mut &'a [u8], len: usize) -> crate::Result<&'a [u8]> {
+    let fail_len = buf.len();
     if buf.len() >= len {
         let (data, rem) = buf.split_at(len);
         *buf = rem;
         Ok(data)
     }
     else {
-        Err(Error::BadEncode(buf.len(), "Binary length larger than amount of data"))
+        Err(Error::BadEncode(fail_len, "Binary length larger than amount of data"))
     }
 }
 
@@ -485,15 +511,16 @@ pub fn read_raw_bin<'a>(buf: &mut &'a [u8], len: usize) -> crate::Result<&'a [u8
 /// length is greater than remaining bytes in the buffer, or if the bytes 
 /// received are not valid UTF-8.
 pub fn read_raw_str<'a>(buf: &mut &'a [u8], len: usize) -> crate::Result<&'a str> {
+    let fail_len = buf.len();
     if buf.len() >= len {
         let (data, rem) = buf.split_at(len);
         *buf = rem;
         let data = std::str::from_utf8(data)
-            .map_err(|_| Error::BadEncode(buf.len(), "String wasn't valid UTF-8"))?;
+            .map_err(|_| Error::BadEncode(fail_len, "String wasn't valid UTF-8"))?;
         Ok(data)
     }
     else {
-        Err(Error::BadEncode(buf.len(), "String length larger than amount of data"))
+        Err(Error::BadEncode(fail_len, "String length larger than amount of data"))
     }
 }
 
@@ -506,6 +533,7 @@ pub fn object_iterate<'a, F>(buf: &mut &'a [u8], len: usize, mut f: F) -> crate:
     f(old_field, buf)?;
     let mut field: &str;
     for _ in 1..len {
+        let fail_len = buf.len();
         field = read_str(buf)?;
         match old_field.cmp(&field) {
             Ordering::Less => {
@@ -513,10 +541,10 @@ pub fn object_iterate<'a, F>(buf: &mut &'a [u8], len: usize, mut f: F) -> crate:
                 f(field, buf)?;
             },
             Ordering::Equal => {
-                return Err(Error::BadEncode(buf.len(), "Object has non-unique field"));
+                return Err(Error::BadEncode(fail_len, "Object has non-unique field"));
             },
             Ordering::Greater => {
-                return Err(Error::BadEncode(buf.len(), "Object fields not in lexicographic order"));
+                return Err(Error::BadEncode(fail_len, "Object fields not in lexicographic order"));
             },
         }
         old_field = field;
@@ -560,6 +588,7 @@ pub fn verify_map(buf: &mut &[u8], len: usize) -> crate::Result<usize> {
 
 /// Read raw Timestamp out from a buffer
 pub fn read_raw_time(buf: &mut &[u8], len: usize) -> crate::Result<Timestamp> {
+    let fail_len = buf.len();
     match len {
         4 => {
             let sec = buf.read_u32::<BigEndian>()?;
@@ -569,22 +598,23 @@ pub fn read_raw_time(buf: &mut &[u8], len: usize) -> crate::Result<Timestamp> {
             let raw_time = buf.read_u64::<BigEndian>()?;
             let sec = (raw_time & 0x3FFFF_FFFFu64) as i64;
             let nano = (raw_time >> 34) as u32;
-            Ok(Timestamp::from_raw(sec,nano).ok_or(Error::BadEncode(buf.len(), "Timestamp nanoseconds is too big"))?)
+            Ok(Timestamp::from_raw(sec,nano).ok_or(Error::BadEncode(fail_len, "Timestamp nanoseconds is too big"))?)
         },
         12 => {
             let nano = buf.read_u32::<BigEndian>()?;
             let sec = buf.read_i64::<BigEndian>()?;
-            Ok(Timestamp::from_raw(sec,nano).ok_or(Error::BadEncode(buf.len(), "Timestamp nanoseconds is too big"))?)
+            Ok(Timestamp::from_raw(sec,nano).ok_or(Error::BadEncode(fail_len, "Timestamp nanoseconds is too big"))?)
         },
-        _ => Err(Error::BadEncode(buf.len(), "Timestamp type has invalid size"))
+        _ => Err(Error::BadEncode(fail_len, "Timestamp type has invalid size"))
     }
 }
 
 /// Read raw Hash out from a buffer
 pub fn read_raw_hash(buf: &mut &[u8], len: usize) -> crate::Result<Hash> {
+    let fail_len = buf.len();
     let hash = Hash::decode(buf)?;
     if hash.len() != len {
-        Err(Error::BadEncode(buf.len(), "Hash type has invalid size"))
+        Err(Error::BadEncode(fail_len, "Hash type has invalid size"))
     }
     else {
         Ok(hash)
@@ -593,9 +623,10 @@ pub fn read_raw_hash(buf: &mut &[u8], len: usize) -> crate::Result<Hash> {
 
 /// Read raw Identity out from a buffer
 pub fn read_raw_id(buf: &mut &[u8], len: usize) -> crate::Result<Identity> {
+    let fail_len = buf.len();
     let id = Identity::decode(buf)?;
     if id.len() != len {
-        Err(Error::BadEncode(buf.len(), "Identity type has invalid size"))
+        Err(Error::BadEncode(fail_len, "Identity type has invalid size"))
     }
     else {
         Ok(id)
@@ -610,6 +641,7 @@ pub fn read_raw_lockbox(buf: &mut &[u8], len: usize) -> crate::Result<Lockbox> {
 
 /// Read a fogpack marker, length, and/or extension type from a buffer.
 pub fn read_marker(buf: &mut &[u8]) -> crate::Result<MarkerType> {
+    let fail_len = buf.len();
     let marker = Marker::from_u8(buf.read_u8()?);
     Ok(match marker {
         Marker::PosFixInt(val) => MarkerType::PosInt((0,val)),
@@ -625,42 +657,42 @@ pub fn read_marker(buf: &mut &[u8]) -> crate::Result<MarkerType> {
         },
         Marker::Bin16 => {
             let len = buf.read_u16::<BigEndian>()? as usize;
-            if len <= (std::u8::MAX as usize) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u8::MAX as usize) { return Err(not_shortest(fail_len)); }
             MarkerType::Binary(len)
         },
         Marker::Bin32 => {
             let len = buf.read_u32::<BigEndian>()? as usize;
-            if len <= (std::u16::MAX as usize) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u16::MAX as usize) { return Err(not_shortest(fail_len)); }
             MarkerType::Binary(len)
         },
         Marker::Ext8 => {
             let len = buf.read_u8()? as usize;
             match len {
-                1  => { return Err(not_shortest(buf.len())); },
-                2  => { return Err(not_shortest(buf.len())); },
-                4  => { return Err(not_shortest(buf.len())); },
-                8  => { return Err(not_shortest(buf.len())); },
-                16 => { return Err(not_shortest(buf.len())); },
+                1  => { return Err(not_shortest(fail_len)); },
+                2  => { return Err(not_shortest(fail_len)); },
+                4  => { return Err(not_shortest(fail_len)); },
+                8  => { return Err(not_shortest(fail_len)); },
+                16 => { return Err(not_shortest(fail_len)); },
                 _  => {
                     let ty = buf.read_i8()?;
                     MarkerType::from_ext_i8(len, ty)
-                        .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                        .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
                 }
             }
         },
         Marker::Ext16 => {
             let len = buf.read_u16::<BigEndian>()? as usize;
-            if len <= (std::u8::MAX as usize) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u8::MAX as usize) { return Err(not_shortest(fail_len)); }
             let ty = buf.read_i8()?;
             MarkerType::from_ext_i8(len, ty)
-                .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
         },
         Marker::Ext32 => {
             let len = buf.read_u32::<BigEndian>()? as usize;
-            if len <= (std::u16::MAX as usize) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u16::MAX as usize) { return Err(not_shortest(fail_len)); }
             let ty = buf.read_i8()?;
             MarkerType::from_ext_i8(len, ty)
-                .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
         },
         Marker::F32 => MarkerType::F32,
         Marker::F64 => MarkerType::F64,
@@ -675,65 +707,65 @@ pub fn read_marker(buf: &mut &[u8]) -> crate::Result<MarkerType> {
         Marker::FixExt1 => {
             let ty = buf.read_i8()?;
             MarkerType::from_ext_i8(1, ty)
-                .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
         },
         Marker::FixExt2 => {
             let ty = buf.read_i8()?;
             MarkerType::from_ext_i8(2, ty)
-                .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
         },
         Marker::FixExt4 => {
             let ty = buf.read_i8()?;
             MarkerType::from_ext_i8(4, ty)
-                .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
         },
         Marker::FixExt8 => {
             let ty = buf.read_i8()?;
             MarkerType::from_ext_i8(8, ty)
-                .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
         },
         Marker::FixExt16 => {
             let ty = buf.read_i8()?;
             MarkerType::from_ext_i8(16, ty)
-                .ok_or(Error::BadEncode(buf.len(), "Unsupported Extension type"))?
+                .ok_or(Error::BadEncode(fail_len, "Unsupported Extension type"))?
         },
         Marker::Str8 => {
             let len = buf.read_u8()? as usize;
-            if len <= 31 { return Err(not_shortest(buf.len())); }
+            if len <= 31 { return Err(not_shortest(fail_len)); }
             MarkerType::String(len)
         }
         Marker::Str16 => {
             let len = buf.read_u16::<BigEndian>()? as usize;
-            if len <= (std::u8::MAX as usize) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u8::MAX as usize) { return Err(not_shortest(fail_len)); }
             MarkerType::String(len)
         }
         Marker::Str32 => {
             let len = buf.read_u32::<BigEndian>()? as usize;
-            if len <= (std::u16::MAX as usize) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u16::MAX as usize) { return Err(not_shortest(fail_len)); }
             MarkerType::String(len)
         }
         Marker::Array16 => {
             let len = buf.read_u16::<BigEndian>()?;
-            if len <= 15 { return Err(not_shortest(buf.len())); }
+            if len <= 15 { return Err(not_shortest(fail_len)); }
             MarkerType::Array(len as usize)
         }
         Marker::Array32 => {
             let len = buf.read_u32::<BigEndian>()?;
-            if len <= (std::u16::MAX as u32) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u16::MAX as u32) { return Err(not_shortest(fail_len)); }
             MarkerType::Array(len as usize)
         }
         Marker::Map16 => {
             let len = buf.read_u16::<BigEndian>()?;
-            if len <= 15 { return Err(not_shortest(buf.len())); }
+            if len <= 15 { return Err(not_shortest(fail_len)); }
             MarkerType::Object(len as usize)
         },
         Marker::Map32 => {
             let len = buf.read_u32::<BigEndian>()?;
-            if len <= (std::u16::MAX as u32) { return Err(not_shortest(buf.len())); }
+            if len <= (std::u16::MAX as u32) { return Err(not_shortest(fail_len)); }
             MarkerType::Object(len as usize)
         },
         Marker::NegFixInt(val) => MarkerType::NegInt((0,val)),
-        Marker::Reserved => { return Err(Error::BadEncode(buf.len(), "Unsupported value type")) },
+        Marker::Reserved => { return Err(Error::BadEncode(fail_len, "Unsupported value type")) },
     })
 }
 

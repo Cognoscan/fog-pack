@@ -14,6 +14,9 @@ pub struct ValidHash {
     query: bool,
     link_ok: bool,
     schema_ok: bool,
+    query_used: bool,
+    schema_used: bool,
+    link_used: bool,
 }
 
 impl ValidHash {
@@ -27,6 +30,9 @@ impl ValidHash {
             query: is_query,
             link_ok: is_query,
             schema_ok: is_query,
+            query_used: false,
+            schema_used: false,
+            link_used: false,
         }
     }
 
@@ -44,6 +50,7 @@ impl ValidHash {
     /// `Ok(true)` was returned.
     pub fn update(&mut self, field: &str, raw: &mut &[u8], reader: &mut ValidReader) -> crate::Result<bool>
     {
+        let fail_len = raw.len();
         let schema_hash = reader.schema_hash;
         // Note about this match: because fields are lexicographically ordered, the items in this 
         // match statement are either executed sequentially or are skipped.
@@ -53,6 +60,7 @@ impl ValidHash {
                 Ok(true)
             }
             "in" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::Hash(len) => {
                         let v = read_raw_hash(raw, len)?;
@@ -79,12 +87,13 @@ impl ValidHash {
                         self.in_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Hash validator expected array or constant for `in` field"));
+                        return Err(Error::FailValidate(fail_len, "Hash validator expected array or constant for `in` field"));
                     },
                 }
                 Ok(true)
             },
             "link" => {
+                self.link_used = true;
                 self.link = Some(Validator::read_validator(raw, reader)?);
                 Ok(true)
             }
@@ -93,6 +102,7 @@ impl ValidHash {
                 Ok(true)
             }
             "nin" => {
+                self.query_used = true;
                 match read_marker(raw)? {
                     MarkerType::Hash(len) => {
                         let v = read_raw_hash(raw, len)?;
@@ -119,7 +129,7 @@ impl ValidHash {
                         self.nin_vec.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Hash validator expected array or constant for `nin` field"));
+                        return Err(Error::FailValidate(fail_len, "Hash validator expected array or constant for `nin` field"));
                     },
                 }
                 Ok(true)
@@ -129,6 +139,7 @@ impl ValidHash {
                 Ok(true)
             }
             "schema" => {
+                self.schema_used = true;
                 match read_marker(raw)? {
                     MarkerType::Hash(len) => {
                         let v = read_raw_hash(raw, len)?;
@@ -155,7 +166,7 @@ impl ValidHash {
                         self.schema.dedup();
                     },
                     _ => {
-                        return Err(Error::FailValidate(raw.len(), "Hash validator expected array or constant for `schema` field"));
+                        return Err(Error::FailValidate(fail_len, "Hash validator expected array or constant for `schema` field"));
                     },
                 }
                 Ok(true)
@@ -164,8 +175,8 @@ impl ValidHash {
                 self.schema_ok = read_bool(raw)?;
                 Ok(true)
             }
-            "type" => if "Hash" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(raw.len(), "Type doesn't match Hash")) },
-            _ => Err(Error::FailValidate(raw.len(), "Unknown fields not allowed in Hash validator")),
+            "type" => if "Hash" == read_str(raw)? { Ok(true) } else { Err(Error::FailValidate(fail_len, "Type doesn't match Hash")) },
+            _ => Err(Error::FailValidate(fail_len, "Unknown fields not allowed in Hash validator")),
         }
     }
 
@@ -207,12 +218,13 @@ impl ValidHash {
     /// requirements are not met. If it passes, the optional returned Hash indicates that an 
     /// additional document (referenced by the Hash) needs to be checked.
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<Option<Hash>> {
+        let fail_len = doc.len();
         let value = read_hash(doc)?;
         if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
-            Err(Error::FailValidate(doc.len(), "Hash is not on the `in` list"))
+            Err(Error::FailValidate(fail_len, "Hash is not on the `in` list"))
         }
         else if self.nin_vec.binary_search(&value).is_ok() {
-            Err(Error::FailValidate(doc.len(), "Hash is on the `nin` list"))
+            Err(Error::FailValidate(fail_len, "Hash is on the `nin` list"))
         }
         else if let Some(_) = self.link {
             Ok(Some(value))
@@ -225,98 +237,38 @@ impl ValidHash {
         }
     }
 
-    /// Intersection of Hash with other Validators. Returns Err only if `query` is true and the 
-    /// other validator contains non-allowed query parameters.
-    pub fn intersect(&self,
-                 other: &Validator,
-                 query: bool,
-                 builder: &mut ValidBuilder
-                 )
-        -> Result<Validator, ()>
-    {
-        if query && !self.query && !self.link_ok && !self.schema_ok{ return Err(()); }
+    /// Verify the query is allowed to proceed. It can only proceed if the query type matches or is 
+    /// a general Valid.
+    pub fn query_check(&self, other: &Validator, s_types: &[Validator], o_types: &[Validator]) -> bool {
         match other {
             Validator::Hash(other) => {
-                let builder_len = builder.len();
-                if query && (
-                    (!self.query && (!other.in_vec.is_empty() || !other.nin_vec.is_empty()))
-                    || (!self.link_ok && other.link.is_some())
-                    || (!self.schema_ok && (other.schema.len() > 0)))
+                if (self.query || !other.query_used)
+                    && (self.schema_ok || !other.schema_used)
+                    && (self.link_ok || !other.link_used)
                 {
-                    Err(())
+                    // Check to see if both have link validators, and run a check if so.
+                    // If schema has none & link_ok is true, anything goes.
+                    // If query has none, then we're also OK.
+                    if let Some(s) = self.link {
+                        if let Some(o) = other.link {
+                            query_check(s, o, s_types, o_types)
+                        }
+                        else {
+                            true
+                        }
+                    }
+                    else {
+                        true
+                    }
                 }
                 else {
-                    // Get instersection of `in` vectors
-                    let in_vec = if (self.in_vec.len() > 0) && (other.in_vec.len() > 0) {
-                        sorted_intersection(&self.in_vec[..], &other.in_vec[..], |a,b| a.cmp(b))
-                    }
-                    else if self.in_vec.len() > 0 {
-                        self.in_vec.clone()
-                    }
-                    else {
-                        other.in_vec.clone()
-                    };
-                    // Get instersection of schema
-                    let schema = if (self.schema.len() > 0) && (other.schema.len() > 0) {
-                        sorted_intersection(&self.schema[..], &other.schema[..], |a,b| a.cmp(b))
-                    }
-                    else if self.schema.len() > 0 {
-                        self.schema.clone()
-                    }
-                    else {
-                        other.schema.clone()
-                    };
-                    // Get link
-                    let link = if let (Some(self_link), Some(other_link)) = (self.link,other.link) {
-                        Some(builder.intersect(query, self_link, other_link)?)
-                    }
-                    else if let Some(link) = self.link {
-                        Some(builder.intersect(query, link, 1)?)
-                    }
-                    else if let Some(link) = other.link {
-                        Some(builder.intersect(query, 1, link)?)
-                    }
-                    else {
-                        None
-                    };
-                    // Create new Validator
-                    let mut new_validator = ValidHash {
-                        in_vec: in_vec,
-                        nin_vec: sorted_union(&self.nin_vec[..], &other.nin_vec[..], |a,b| a.cmp(b)),
-                        schema: schema,
-                        link: link,
-                        query: self.query && other.query,
-                        link_ok: self.link_ok && other.link_ok,
-                        schema_ok: self.schema_ok && other.schema_ok,
-                    };
-                    if new_validator.in_vec.len() == 0 && (self.in_vec.len()+other.in_vec.len() > 0) {
-                        builder.undo_to(builder_len);
-                        return Ok(Validator::Invalid);
-                    }
-                    if new_validator.schema.len() == 0 && (self.schema.len()+other.schema.len() > 0) {
-                        builder.undo_to(builder_len);
-                        return Ok(Validator::Invalid);
-                    }
-                    let valid = new_validator.finalize();
-                    if !valid {
-                        builder.undo_to(builder_len);
-                        Ok(Validator::Invalid)
-                    }
-                    else {
-                        Ok(Validator::Hash(new_validator))
-                    }
+                    false
                 }
-            },
-            Validator::Valid => {
-                // Copy link
-                let mut v = self.clone();
-                if let Some(link) = self.link {
-                    v.link = Some(builder.intersect(query, link, 1)?);
-                }
-                Ok(Validator::Hash(v))
             }
-            _ => Ok(Validator::Invalid),
+            Validator::Valid => true,
+            _ => false,
         }
     }
+
 }
 

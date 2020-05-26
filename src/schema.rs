@@ -4,10 +4,10 @@ use Error;
 use crypto;
 use decode::*;
 use encode;
-use document::{extract_schema_hash, parse_schema_hash};
+use document::parse_schema_hash;
 use validator::{ValidObj, Validator, ValidReader, ValidatorChecklist};
 use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Value, Entry, Hash, Document, MarkerType, CompressType};
-use checklist::{ChecklistItem, EncodeChecklist, DecodeChecklist};
+use checklist::{ChecklistItem, Checklist};
 use super::zstd_help;
 
 /**
@@ -433,13 +433,13 @@ impl Schema {
         ))
     }
 
-    /// Encodes an [`Entry`]'s contents and returns an [`EncodeChecklist`] containing the encoded 
+    /// Encodes an [`Entry`]'s contents and returns an [`Checklist`] containing the encoded 
     /// byte vector. The entry's parent hash and field are not included. This will fail if entry 
     /// validation fails, or the entry's field is not covered by the schema.
     ///
     /// [`Entry`]: ./checklist/struct.Entry.html
-    /// [`EncodeChecklist`]: ./checklist/struct.EncodeChecklist.html
-    pub fn encode_entry(&mut self, entry: Entry) -> crate::Result<EncodeChecklist> {
+    /// [`Checklist`]: ./checklist/struct.Checklist.html
+    pub fn encode_entry(&mut self, entry: Entry) -> crate::Result<Checklist<Vec<u8>>> {
         let mut buf = Vec::new();
         let len = entry.len();
         let raw: &[u8] = entry.raw_entry();
@@ -500,7 +500,7 @@ impl Schema {
             }
         }
 
-        Ok(EncodeChecklist::new(checklist, buf))
+        Ok(Checklist::new(checklist, buf))
     }
 
     /// Read an [`Entry`] from a byte slice, trusting the origin of the slice and doing as few 
@@ -515,7 +515,6 @@ impl Schema {
     /// location, like an internal database.
     ///
     /// [`Entry`]: ./struct.Entry.html
-    /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
     pub fn trusted_decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String, hash: Option<Hash>) -> crate::Result<Entry> {
         let mut buf_ptr: &[u8] = buf;
         let mut entry = Vec::new();
@@ -579,13 +578,13 @@ impl Schema {
     }
 
     /// Read an [`Entry`] from a byte slice, performing a full set of validation checks when decoding. 
-    /// On successful validation of the entry, a [`DecodeChecklist`] is returned, which contains 
-    /// the decoded entry. Processing the checklist with this schema will complete the checklist 
-    /// and yield the decoded [`Entry`].
+    /// On successful validation of the entry, a [`Checklist`] is returned, which contains the 
+    /// decoded entry. Processing the checklist with this schema will complete the checklist and 
+    /// yield the decoded [`Entry`].
     ///
     /// [`Entry`]: ./struct.Entry.html
-    /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
-    pub fn decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> crate::Result<DecodeChecklist> {
+    /// [`Checklist`]: ./checklist/struct.Checklist.html
+    pub fn decode_entry(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> crate::Result<Checklist<Entry>> {
         let mut buf_ptr: &[u8] = buf;
         let mut entry = Vec::new();
 
@@ -666,17 +665,16 @@ impl Schema {
             compression,
         );
 
-        Ok(DecodeChecklist::new(checklist, entry))
+        Ok(Checklist::new(checklist, entry))
     }
 
     /// Checks a document against a given ChecklistItem. Marks the item as done on success. Fails 
     /// if validation fails.
     ///
-    /// A [`ChecklistItem`] comes from either a [`EncodeChecklist`] or a [`DecodeChecklist`]. 
+    /// A [`ChecklistItem`] comes from a [`Checklist`].
     ///
-    /// [`ChecklistItem`] ./struct.ChecklistItem.html
-    /// [`EncodeChecklist`] ./struct.EncodeChecklist.html
-    /// [`DecodeChecklist`] ./struct.DecodeChecklist.html
+    /// [`ChecklistItem`] ./checklist/struct.ChecklistItem.html
+    /// [`Checklist`] ./checklist/struct.Checklist.html
     pub fn check_item(&self, doc: &Document, item: &mut ChecklistItem) -> crate::Result<()> {
         for index in item.iter() {
             if let Validator::Hash(ref v) = self.types[*index] {
@@ -709,52 +707,14 @@ impl Schema {
         Ok(())
     }
 
-    /// Validates a document against a specific Hash Validator. Should be used in conjunction with 
-    /// a ValidatorChecklist returned from `validate_entry` to confirm that all documents referenced in an 
-    /// entry meet the schema's criteria.
-    pub fn validate_checklist_item(&self, index: usize, doc: &mut &[u8]) -> crate::Result<()> {
-        if let Validator::Hash(ref v) = self.types[index] {
-            // Extract schema. Also verifies we are dealing with an Object (an actual document)
-            let doc_ptr: &[u8] = doc;
-            let doc_schema = extract_schema_hash(&doc_ptr)?;
-            // Check against acceptable schemas
-            if v.schema_required() {
-                if let Some(hash) = doc_schema {
-                    if !v.schema_in_set(&hash) {
-                        return Err(Error::FailValidate(doc.len(), "Document uses unrecognized schema"));
-                    }
-                }
-                else {
-                    return Err(Error::FailValidate(doc.len(), "Document doesn't have schema, but needs one"));
-                }
-            }
-            if let Some(link) = v.link() {
-                let mut checklist = ValidatorChecklist::new();
-                if let Validator::Object(ref v) = self.types[link] {
-                    v.validate(doc, &self.types, &mut checklist, true).and(Ok(()))
-                }
-                else {
-                    Err(Error::FailValidate(doc.len(), "Can't validate a document against a non-object validator"))
-                }
-            }
-            else {
-                Ok(())
-            }
-        }
-        else {
-            Err(Error::FailValidate(doc.len(), "Can't validate against non-hash validator"))
-        }
-
-    }
-
     /*
     /// Read an [`Entry`] from a byte slice, performing a full set of validation checks when decoding. 
-    /// On successful validation of the entry, a [`DecodeChecklist`] is returned, which contains 
+    /// On successful validation of the entry, a [`Checklist`] is returned, which contains 
     /// the decoded entry. Processing the checklist with this schema will complete the checklist 
     /// and yield the decoded [`Entry`].
     ///
     /// [`Entry`]: ./struct.Entry.html
-    /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
+    /// [`Checklist`]: ./checklist/struct.Checklist.html
     pub fn decode_query(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> crate::Result<Query> {
         let mut buf_ptr: &[u8] = buf;
         let mut entry = Vec::new();
@@ -836,7 +796,7 @@ impl Schema {
             compression,
         );
 
-        Ok(DecodeChecklist::new(checklist, entry))
+        Ok(Checklist::new(checklist, entry))
     }
         */
 }

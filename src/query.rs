@@ -1,6 +1,6 @@
 use {Hash, Error, Document, Entry, Value, Identity, ValueRef};
 use validator::{Validator, ValidatorChecklist};
-use checklist::{DecodeChecklist, ChecklistItem};
+use checklist::{Checklist, ChecklistItem};
 use encode;
 use decode;
 
@@ -68,13 +68,13 @@ impl Query {
     }
 
     /// Take an entry and verify if it matches the Query or not. May require additional 
-    /// Take an existing entry and validate it against the Query. On success, a [`DecodeChecklist`] 
+    /// Take an existing entry and validate it against the Query. On success, a [`Checklist`] 
     /// is returned. Processing the checklist using this Query will complete the checklist and 
-    /// yield the [`Entry`], successfully verifying it passes thie Query.
+    /// yield an `OK(())` result, indicating the Entry matched this Query.
     ///
     /// [`Entry`]: ./struct.Entry.html
-    /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
-    pub fn validate_entry(&self, entry: Entry) -> crate::Result<DecodeChecklist> {
+    /// [`Checklist`]: ./checklist/struct.Checklist.html
+    pub fn validate_entry(&self, entry: Entry) -> crate::Result<Checklist<()>> {
         let mut entry_ptr: &[u8] = entry.raw_entry();
         if entry.doc_hash() != self.doc_hash() {
             return Err(Error::FailValidate(entry_ptr.len(),"Entry doesn't have same document hash as the query"));
@@ -85,18 +85,17 @@ impl Query {
 
         let mut checklist = ValidatorChecklist::new();
         self.types[self.valid].validate(&mut entry_ptr, &self.types, self.valid, &mut checklist)?;
-        Ok(DecodeChecklist::new(checklist, entry))
+        Ok(Checklist::new(checklist, ()))
     }
 
     /// Checks a document against a given ChecklistItem. Marks the item as done on success. Fails 
-    /// if validation fails. This should only be done with items coming from a DecodeChecklist 
+    /// if validation fails. This should only be done with items coming from a Checklist 
     /// provided by a given Query's validate_entry function.
     ///
-    /// A [`ChecklistItem`] comes from a [`DecodeChecklist`].
+    /// A [`ChecklistItem`] comes from a [`Checklist`].
     ///
     /// [`ChecklistItem`] ./struct.ChecklistItem.html
-    /// [`EncodeChecklist`] ./struct.EncodeChecklist.html
-    /// [`DecodeChecklist`] ./struct.DecodeChecklist.html
+    /// [`Checklist`] ./checklist/struct.Checklist.html
     pub fn check_item(&self, doc: &Document, item: &mut ChecklistItem) -> crate::Result<()> {
         for index in item.iter() {
             if let Validator::Hash(ref v) = self.types[*index] {

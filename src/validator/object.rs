@@ -249,7 +249,7 @@ impl ValidObj {
     /// additional document (referenced by the Hash) needs to be checked.
     pub fn validate(&self,
                     doc: &mut &[u8],
-                    types: &Vec<Validator>,
+                    types: &[Validator],
                     list: &mut ValidatorChecklist,
                     top_schema: bool
                     ) -> crate::Result<()>

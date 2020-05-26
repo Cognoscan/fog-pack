@@ -746,6 +746,99 @@ impl Schema {
         }
 
     }
+
+    /*
+    /// Read an [`Entry`] from a byte slice, performing a full set of validation checks when decoding. 
+    /// On successful validation of the entry, a [`DecodeChecklist`] is returned, which contains 
+    /// the decoded entry. Processing the checklist with this schema will complete the checklist 
+    /// and yield the decoded [`Entry`].
+    ///
+    /// [`Entry`]: ./struct.Entry.html
+    /// [`DecodeChecklist`]: ./struct.DecodeChecklist.html
+    pub fn decode_query(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> crate::Result<Query> {
+        let mut buf_ptr: &[u8] = buf;
+        let mut entry = Vec::new();
+
+        let validator = self.entries.binary_search_by(|x| x.0.as_str().cmp(&field))
+            .map_err(|_| Error::FailValidate(buf.len(), "Entry field is not in schema"))?;
+        let validator = self.entries[validator].1;
+
+        // Decompress the entry
+        let compress_type = CompressType::decode(&mut buf_ptr)?;
+        match compress_type {
+            CompressType::Compressed => {
+                return Err(Error::FailValidate(buf_ptr.len(), "Entries don't allow a compression header with the schema included!"));
+            },
+            CompressType::Uncompressed => {
+                entry.extend_from_slice(buf_ptr);
+            },
+            CompressType::CompressedNoSchema => {
+                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &mut buf_ptr, &mut entry)?;
+            },
+            CompressType::DictCompressed => {
+                let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
+                    .map_err(|_| Error::FailDecompress)?;
+                let compress = &self.entries_compress[compress].1;
+                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
+            }
+        }
+
+        // Verify the entry passes validation
+        let mut entry_ptr: &[u8] = &entry[..];
+        let mut checklist = ValidatorChecklist::new();
+        self.types[validator].validate(&mut entry_ptr, &self.types, 0, &mut checklist)?;
+        let entry_len = entry.len() - entry_ptr.len();
+
+        // Compute the entry hashes
+        let mut temp = Vec::new();
+        let mut hash_state = crypto::HashState::new();
+        encode::write_value(&mut temp, &Value::from(doc.clone()));
+        hash_state.update(&temp[..]);
+        temp.clear();
+        encode::write_value(&mut temp, &Value::from(field.clone()));
+        hash_state.update(&temp[..]);
+        hash_state.update(&entry[..entry_len]);
+        let entry_hash = hash_state.get_hash();
+        let hash = if entry.len() > entry_len {
+            hash_state.update(&entry[entry_len..]);
+            hash_state.get_hash()
+        }
+        else {
+            entry_hash.clone()
+        };
+
+
+        // Get & verify signatures
+        let mut signed_by = Vec::new();
+        while entry_ptr.len() > 0 {
+            let signature = crypto::Signature::decode(&mut entry_ptr)?;
+            if !signature.verify(&entry_hash) {
+                return Err(Error::BadSignature);
+            }
+            signed_by.push(signature.signed_by().clone());
+        }
+
+        let override_compression = false;
+        let compression = None;
+        let compressed = None;
+
+        let entry = Entry::from_parts(
+            Some(hash_state),
+            Some(entry_hash),
+            hash,
+            doc,
+            field,
+            entry_len,
+            entry,
+            signed_by,
+            compressed,
+            override_compression,
+            compression,
+        );
+
+        Ok(DecodeChecklist::new(checklist, entry))
+    }
+        */
 }
 
 enum Compression {

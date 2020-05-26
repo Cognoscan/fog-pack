@@ -57,7 +57,7 @@ impl ValidMulti {
 
     pub fn validate(&self,
                     doc: &mut &[u8],
-                    types: &Vec<Validator>,
+                    types: &[Validator],
                     list: &mut ValidatorChecklist,
                     ) -> crate::Result<()>
     {

@@ -1,8 +1,8 @@
 use std::io;
 use std::io::ErrorKind::InvalidData;
 
-use super::{MAX_ENTRY_SIZE, Hash, Value, ValueRef};
-use super::crypto::{HashState, Vault, Key, Identity, CryptoError};
+use {MAX_ENTRY_SIZE, Hash, Value, ValueRef};
+use crypto::{HashState, Vault, Key, Identity, CryptoError};
 use encode;
 
 #[derive(Clone)]

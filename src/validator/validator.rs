@@ -279,7 +279,7 @@ impl Validator {
 
     pub fn validate(&self,
                     doc: &mut &[u8],
-                    types: &Vec<Validator>,
+                    types: &[Validator],
                     index: usize,
                     list: &mut ValidatorChecklist,
                     ) -> crate::Result<()>

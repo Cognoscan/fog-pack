@@ -234,7 +234,7 @@ impl ValidArray {
     /// Validates that the next value is a Hash that meets the validator requirements. Fails if the 
     /// requirements are not met. If it passes, the optional returned Hash indicates that an 
     /// additional document (referenced by the Hash) needs to be checked.
-    pub fn validate(&self, doc: &mut &[u8], types: &Vec<Validator>, list: &mut ValidatorChecklist) -> crate::Result<()>
+    pub fn validate(&self, doc: &mut &[u8], types: &[Validator], list: &mut ValidatorChecklist) -> crate::Result<()>
     {
         let fail_len = doc.len();
         let num_items = match read_marker(doc)? {

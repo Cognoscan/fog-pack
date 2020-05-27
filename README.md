@@ -1,6 +1,6 @@
 # fog-pack
 
-[Documentation](docs.rs/fog-pack) | [Specs](docs.rs/fog-pack/0.1.0/fog-pack/spec/index.html)
+[Documentation](https://docs.rs/fog-pack) | [Specs](https://docs.rs/fog-pack/0.1.0/fog-pack/spec/index.html)
 
 fog-pack builds on msgpack with a set of extensions useful for all structured 
 data. The ultimate goal is to provide a single coherent approach to encoding 

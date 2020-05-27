@@ -1,6 +1,3 @@
-Struct holding the validation portions of a schema. Can be used for validation of a document or 
-entry.
-
 Schema are a special type of [`Document`](./struct.Document.html) that describes 
 the format of other documents and their associated entries. They also include 
 recommended compression settings for documents adhering to them, and optionally 
@@ -42,9 +39,9 @@ or allow for several of them (see [`Multi`](#multi)). See the [Validation
 Language](#validation-language) for more info.
 
 At the top level, a schema is a validator for an [object](#obj) but without 
-support for the `in`, `nin`, `comment`, `default`, or `query` optional fields. 
-Instead, it supports a few additional optional fields for documentation, entry 
-validation, and compression:
+support for the `in`, `nin`, `comment`, `default`, `obj_ok`, or `query` optional 
+fields. Instead, it supports a few additional optional fields for 
+documentation, entry validation, and compression:
 
 - `name`: A brief string to name the schema.
 - `description`: A brief string describing the purpose of the schema.
@@ -58,6 +55,60 @@ validation, and compression:
 - `entries_compress`: Optionally specifies recommended compression settings for 
 	entries attached to documents using the schema.
 
+## Compression Settings
+
+Compression can be set to a recommended default using `doc_compress` and 
+`entries_compress`; if nothing is specified, zstd with the default compression 
+level is used.
+
+Compression can be specified using an object that may take on one of three 
+forms. The first recommends that no compression be used:
+
+```json
+{
+    "setting": false
+}
+```
+
+The second recommends a specific compression level:
+
+```json
+{
+    "setting": true
+    "format": 0,
+		"level": 3
+}
+```
+
+Finally, the third allows for a zstd dictionary to be attached:
+
+```json
+{
+    "format": 0,
+		"level": 3,
+    "setting": "[ATTACH BINARY DICTIONARY HERE]"
+}
+```
+
+This object format can be directly used as the value for the `doc_compress` 
+field, and is the value for each field in the `entries_compress` format. For 
+example, recommending max compression for a document and none for the entries 
+might look like:
+
+```json
+{
+    "doc_compress": {
+        "setting": true,
+        "format": 0,
+        "level": 22
+    },
+    "entries_compress": {
+        "entry_type0": { "setting": false },
+        "entry_type1": { "setting": false },
+        "entry_type2": { "setting": false }
+    }
+}
+```
 
 Validation Language
 ===================
@@ -313,6 +364,16 @@ that fails on one machine and succeeds on another due to Unicode versions
 changing their character class definitions. This is a corner case, but any 
 schema writer should be aware of it as a possibility.
 
+#### Unicode NFC and NFKC
+
+Unicode normalization can be tricky to get right. Strings are never 
+required to be in a particular normalization form, as it may be that the creator 
+or user of a string specifically wants no normalization, but a query or schema 
+may desire it. To this end, normalization of the string being validated, 
+the `in` and `nin` strings, and the `matches` strings can all be done before 
+running validation. This is settable using the `force_nfc` and `force_nfkc` 
+optional fields.
+
 #### Examples
 
 Say we want a string validator that only allows valid Unix file names and 
@@ -558,6 +619,23 @@ would be used against. So:
 	`field_type` validator, along with any validators in `req` and `opt` that 
 	weren't covered by the query's `req` and `opt` objects.
 
+#### Examples
+
+Say we want to specify an object with any number of field-value string pairs, 
+but want to require a "title" field to exist with a string shorter than 256 
+bytes. This would look like:
+
+```json
+{
+	"type": "Obj",
+	"req": {
+		"title": { "type": "Str", "max_len": 255 },
+	},
+	"unknown_ok": true,
+	"field_type": { "type": "Str" }
+}
+```
+
 ### Hash
 
 Hash types describe an allowed cryptographic [`Hash`](./struct.hash.html). They 
@@ -581,6 +659,38 @@ Validation fails if the value is not a hash or does not meet all of the optional
 requirements. Validation may require fetching additional documents if the tested 
 value is in an entry.
 
+The `link` field requires special attention: in order to be useful, it *must* 
+be an Object validator. Furthermore, if documents with schema are permitted, 
+it must also have the empty field "" in either `req` or `opt` with a Hash 
+validator.
+
+#### Example
+
+Say we want a hash validator that requires the linked document must contain both 
+"title" and "text" fields, as well as any number of additional unknown fields. 
+Furthermore, we want to allow queries, but only against the "title" field. This 
+would look like:
+
+```json
+{
+    "type": "Hash",
+    "link_ok": true,
+    "link": {
+        "type": "Obj",
+        "obj_ok": true,
+        "req": {
+            "title": { "type": "Str", "query": true },
+            "text": { "type": "Str" },
+        },
+        "opt": {
+            "": { "type": "Hash" },
+        },
+        "field_type": {},
+        "unknown_ok": true
+    }
+}
+```
+
 ### Ident
 
 Identity types describe an allowed [`Identity`](./struct.Identity.html) / 
@@ -594,6 +704,18 @@ cryptographic public key. They support the following optional fields:
 
 Validation fails if the value is not an identity or does not meet all of the 
 optional requirements.
+
+#### Example
+
+Identity validators tend to be pretty simple. One that allows queries would look 
+like:
+
+```json
+{
+    "type": "Ident",
+    "query": true
+}
+```
 
 ### Lock
 
@@ -610,6 +732,19 @@ allowed by `max_len`.
 
 `default` is not allowed; No implementation should need or expect a default 
 value for an encrypted value.
+
+#### Example
+
+Lockbox validators are usually just `{ "type": "Lockbox" }`, but if, for 
+example, we are pretty positive the encrypted data with tags and identifiers 
+will be less than 1 kiB, we could do:
+
+```json
+{
+    "type": "Lockbox",
+    "max_len": 1024
+}
+```
 
 ### Time
 
@@ -634,6 +769,20 @@ have the following optional fields:
 Validation fails if the value is not a timestamp or does not meet all of the 
 optional requirements.
 
+#### Example
+
+It's common to not allow negative times in UTC seconds counters. To enforce this 
+as a Timestamp validator, we could do:
+
+```json
+{
+    "type": "Time",
+    "min": "<Timestamp(0)>"
+}
+```
+
+where `<Timestamp(0)>` is a Timestamp with 0 seconds and 0 nanoseconds.
+
 ### Multi
 
 A Multi type is not an actual type; instead, it allows any value that can meet 
@@ -645,3 +794,45 @@ present, then no value is allowed. It has only two optional fields:
 
 When a specified type is queriable, the Multi type is similarly queriable 
 when it meets the type specification.
+
+#### Example
+
+Say we want to allow a field to be either a boolean or a string up to 16 bytes 
+in length. This would require a Multi validator:
+
+```json
+{
+	"type": "Multi",
+	"any_of": [
+		{ "type": "Bool" },
+		{ "type": "Str", "max_len": 16 }
+	]
+}
+```
+
+```json
+{
+    "req": {
+        "name": { "type": "Str" },
+        "owner": { "type": "Ident" }
+    },
+    "entries": {
+        "post": {
+            "type": "Obj",
+            "obj_ok": true,
+            "req": {
+                "text": { "type": "Str" },
+                "time": { "type": "Time", "ord": true, "query": true }
+            }
+        }
+    }
+}
+
+{
+    "type": "Obj",
+    "req": {
+        "time": { "type": "Time" },
+        "text": { "type": "Str", "in": "test" }
+    }
+}
+```

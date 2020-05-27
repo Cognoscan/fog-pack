@@ -98,7 +98,7 @@ impl Entry {
     pub(crate) fn populate_hash_state(&mut self) {
         let mut temp = Vec::new();
         let mut hash_state = HashState::new();
-        encode::write_value(&mut temp, &Value::from(self.doc.clone()));
+        self.doc.encode(&mut temp);
         hash_state.update(&temp[..]);
         temp.clear();
         encode::write_value(&mut temp, &Value::from(self.field.clone()));

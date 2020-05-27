@@ -83,12 +83,17 @@ pub fn identity_from_id(version: u8, id: PublicSignKey) -> Identity {
     Identity { version, id }
 }
 
-/// Signatures are used to authenticate a piece of data based on its hash. One can be generated 
-/// from a [`FullKey`] and a [`Hash`]. The versions of each are stored, along with the identifying 
-/// information of the FullKey used (i.e. the public signing key).
+/// Signatures are used to authenticate a piece of data based on its hash.
+///
+/// One can be generated for a given [`Hash`] using a the [`sign`] function on a Vault. The 
+/// versions of the underlying key and hash are stored, along with the identifying information of 
+/// the key used.
 ///
 /// It can be verified by providing the hash of the data. The signing identity can be determined 
 /// from checking against the Identity returned by `signed_by`.
+///
+/// [`Hash`]: ./struct.Hash.html
+/// [`sign`]: ./struct.Vault.html#method.sign
 #[derive(Debug,PartialEq,Clone)]
 pub struct Signature {
     id: Identity,

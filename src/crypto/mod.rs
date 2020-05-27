@@ -1,6 +1,6 @@
 /*!
 Provides basic cryptographic functionality. Key management, encryption, and signing are all 
-done via a Vault.
+done via a Vault. Before using anything, `crypto::init()` must be called.
 
 A Vault is created using a password, or can be read in (either from a raw byte slice or from a 
 file). It can then be used to create "permanent" keys and "temporary" keys. The only difference is 
@@ -80,6 +80,13 @@ pub enum PasswordLevel {
 }
 
 
+/// A Vault for storing secret keys.
+///
+/// A Vault can be created from a password and a password security level, or can be decoded from an 
+/// encrypted byte vector. It holds private keys and symmetric secret keys, which can be used 
+/// through the Vault interface to create a [`Lockbox`] or to sign hashes.
+///
+/// [`Lockbox`]: ./struct.Lockbox.html
 pub struct Vault {
     config: PasswordConfig,
     root_key: SecretKey,

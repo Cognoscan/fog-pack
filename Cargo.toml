@@ -3,11 +3,14 @@ name = "fog-pack"
 version = "0.1.0"
 authors = ["Scott Teal"]
 readme = "README.md"
+keywords = [ "fog-pack", "validator", "serialization", "deserialization" ]
+categories = [ "Encoding" ]
 repository = "https://github.com/Cognoscan/fog-pack"
 homepage = "https://github.com/Cognoscan/fog-pack"
 documentation = "https://docs.rs/fog-pack"
 license = "MIT OR Apache-2.0"
 description = "Binary Data format supporting immutable references, schema, and compression"
+exclude = [ "media/*" ]
 
 [dependencies]
 libc = "0.2"

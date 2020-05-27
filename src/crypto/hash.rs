@@ -25,6 +25,7 @@ pub struct Hash {
     digest: [u8; HASH_BYTES],
 }
 
+/// A hasher that can incrementally take in data and produce a hash at any time.
 #[derive(Clone)]
 pub struct HashState {
     version: u8,

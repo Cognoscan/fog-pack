@@ -5,8 +5,8 @@ use crypto;
 use decode::*;
 use encode;
 use document::parse_schema_hash;
-use validator::{ValidObj, Validator, ValidReader, ValidatorChecklist};
-use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Value, Entry, Hash, Document, MarkerType, CompressType};
+use validator::{query_check, ValidObj, Validator, ValidReader, ValidatorChecklist};
+use {MAX_DOC_SIZE, MAX_ENTRY_SIZE, Value, Entry, Hash, Document, Query, MarkerType, CompressType};
 use checklist::{ChecklistItem, Checklist};
 use super::zstd_help;
 
@@ -23,25 +23,33 @@ Much like how many file formats start with a "magic number" to indicate what
 their format is, any document adhering to a schema uses the schema's document 
 hash in the empty field. For example, a schema may look like:
 
-```json
+```
+# use fog_pack::*;
+# let core_schema = Document::new(fogpack!({"fake": "schema"})).unwrap();
+# fogpack!(
 {
-    "": "<Hash(fog-pack Core Schema)>",
+    "": core_schema.hash().clone(),
     "name": "Simple Schema",
     "req": {
         "title": { "type": "Str", "max_len": 255},
         "text": { "type": "Str" }
     }
 }
+# );
 ```
 
 A document that uses this "Basic Schema" would look like:
 
-```json
+```
+# use fog_pack::*;
+# let basic_schema = Document::new(fogpack!({"fake": "schema"})).unwrap();
+# fogpack!(
 {
-    "": "<Hash(Basic Schema)>",
+    "": basic_schema.hash().clone(),
     "title": "Example Document",
     "text": "This is an example document that meets a schema"
 }
+# );
 ```
 
 Schema Document Format
@@ -51,7 +59,7 @@ The most important concept in a schema document is the validator. A validator is
 a fog-pack object containing the validation rules for a particular part of a 
 document. It can directly define the rules, or be aliased and used throughout 
 the schema document. Validators are always one of the base fog-pack value types, 
-or allow for several of them. See the Validation Language for more info.
+or allow for several of them. See the [Validation Language] for more info.
 
 At the top level, a schema is a validator for an object but without support for 
 the `in`, `nin`, `comment`, `default`, or `query` optional fields.  Instead, it 
@@ -62,14 +70,15 @@ and compression:
 - `description`: A brief string describing the purpose of the schema.
 - `version`: An integer for tracking schema versions.
 - `entries`: An object containing validators for each allowed Entry that may be 
-	attached to a Document following the schema.
+    attached to a Document following the schema.
 - `types`: An object containing aliased validators that may be referred to 
 - anywhere within the schema
 - `doc_compress`: Optionally specifies recommended compression settings for 
-	Documents using the schema.
+    Documents using the schema.
 - `entries_compress`: Optionally specifies recommended compression settings for 
-	entries attached to documents using the schema.
+    entries attached to documents using the schema.
 
+[Validation Language]: ./spec/validation/index.html
 */
 pub struct Schema {
     hash: Hash,
@@ -191,7 +200,7 @@ impl Schema {
 
         object_valid = object_valid && object.finalize();
 
-        drop(reader);
+        drop(reader); // Drop reference to `types` so we can move it into the Schema
 
         Ok(Schema {
             hash,
@@ -433,7 +442,7 @@ impl Schema {
         ))
     }
 
-    /// Encodes an [`Entry`]'s contents and returns an [`Checklist`] containing the encoded 
+    /// Encodes an [`Entry`]'s contents and returns a [`Checklist`] containing the encoded 
     /// byte vector. The entry's parent hash and field are not included. This will fail if entry 
     /// validation fails, or the entry's field is not covered by the schema.
     ///
@@ -621,7 +630,7 @@ impl Schema {
         // Compute the entry hashes
         let mut temp = Vec::new();
         let mut hash_state = crypto::HashState::new();
-        encode::write_value(&mut temp, &Value::from(doc.clone()));
+        doc.encode(&mut temp);
         hash_state.update(&temp[..]);
         temp.clear();
         encode::write_value(&mut temp, &Value::from(field.clone()));
@@ -673,8 +682,8 @@ impl Schema {
     ///
     /// A [`ChecklistItem`] comes from a [`Checklist`].
     ///
-    /// [`ChecklistItem`] ./checklist/struct.ChecklistItem.html
-    /// [`Checklist`] ./checklist/struct.Checklist.html
+    /// [`ChecklistItem`]: ./checklist/struct.ChecklistItem.html
+    /// [`Checklist`]: ./checklist/struct.Checklist.html
     pub fn check_item(&self, doc: &Document, item: &mut ChecklistItem) -> crate::Result<()> {
         for index in item.iter() {
             if let Validator::Hash(ref v) = self.types[*index] {
@@ -707,98 +716,80 @@ impl Schema {
         Ok(())
     }
 
-    /*
-    /// Read an [`Entry`] from a byte slice, performing a full set of validation checks when decoding. 
-    /// On successful validation of the entry, a [`Checklist`] is returned, which contains 
-    /// the decoded entry. Processing the checklist with this schema will complete the checklist 
-    /// and yield the decoded [`Entry`].
+    /// Read a [`Query`] from a byte slice, performing a set of checks to verify the query is 
+    /// allowed by this schema. It can fail if the encoded query doesn't match allowed validator 
+    /// semantics, or if the query is not permitted by the schema.
     ///
-    /// [`Entry`]: ./struct.Entry.html
-    /// [`Checklist`]: ./checklist/struct.Checklist.html
-    pub fn decode_query(&mut self, buf: &mut &[u8], doc: Hash, field: String) -> crate::Result<Query> {
+    /// [`Query`]: ./struct.Query.html
+    pub fn decode_query(&self, buf: &mut &[u8]) -> crate::Result<Query> {
         let mut buf_ptr: &[u8] = buf;
-        let mut entry = Vec::new();
 
-        let validator = self.entries.binary_search_by(|x| x.0.as_str().cmp(&field))
-            .map_err(|_| Error::FailValidate(buf.len(), "Entry field is not in schema"))?;
-        let validator = self.entries[validator].1;
+        let doc_hash = Hash::decode(&mut buf_ptr)?;
+        let field = read_string(&mut buf_ptr)?;
+        let content = Vec::from(buf_ptr); // Validator plus the signatures
 
-        // Decompress the entry
-        let compress_type = CompressType::decode(&mut buf_ptr)?;
-        match compress_type {
-            CompressType::Compressed => {
-                return Err(Error::FailValidate(buf_ptr.len(), "Entries don't allow a compression header with the schema included!"));
-            },
-            CompressType::Uncompressed => {
-                entry.extend_from_slice(buf_ptr);
-            },
-            CompressType::CompressedNoSchema => {
-                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &mut buf_ptr, &mut entry)?;
-            },
-            CompressType::DictCompressed => {
-                let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
-                    .map_err(|_| Error::FailDecompress)?;
-                let compress = &self.entries_compress[compress].1;
-                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
-            }
+        let self_validator = self.entries.binary_search_by(|x| x.0.as_str().cmp(&field))
+            .map_err(|_| Error::FailValidate(buf.len(), "Query field is not in schema"))?;
+        let self_validator = self.entries[self_validator].1;
+
+        // Read the validator out
+        let mut content_ptr: &[u8] = &content[..];
+        let mut types = Vec::with_capacity(3);
+        let mut type_names = HashMap::new();
+        types.push(Validator::Invalid);
+        types.push(Validator::Valid);
+        let empty_hash = Hash::new_empty();
+        let valid = {
+            let mut reader = ValidReader::new(false, &mut types, &mut type_names, &empty_hash);
+            Validator::read_validator(&mut content_ptr, &mut reader)?
+        };
+
+        // Check to see if validator is allowed by schema
+        if !query_check(self_validator, valid, &self.types, &types) {
+            return Err(Error::FailValidate(content.len(), "Query is not allowed by schema"));
         }
 
-        // Verify the entry passes validation
-        let mut entry_ptr: &[u8] = &entry[..];
-        let mut checklist = ValidatorChecklist::new();
-        self.types[validator].validate(&mut entry_ptr, &self.types, 0, &mut checklist)?;
-        let entry_len = entry.len() - entry_ptr.len();
+        let content_len = content.len() - content_ptr.len();
 
-        // Compute the entry hashes
+        // Compute the hashes
         let mut temp = Vec::new();
         let mut hash_state = crypto::HashState::new();
-        encode::write_value(&mut temp, &Value::from(doc.clone()));
+        doc_hash.encode(&mut temp);
         hash_state.update(&temp[..]);
         temp.clear();
         encode::write_value(&mut temp, &Value::from(field.clone()));
         hash_state.update(&temp[..]);
-        hash_state.update(&entry[..entry_len]);
-        let entry_hash = hash_state.get_hash();
-        let hash = if entry.len() > entry_len {
-            hash_state.update(&entry[entry_len..]);
+        hash_state.update(&content[..content_len]);
+        let content_hash = hash_state.get_hash();
+        let hash = if content.len() > content_len {
+            hash_state.update(&content[content_len..]);
             hash_state.get_hash()
         }
         else {
-            entry_hash.clone()
+            content_hash.clone()
         };
 
 
         // Get & verify signatures
         let mut signed_by = Vec::new();
-        while entry_ptr.len() > 0 {
-            let signature = crypto::Signature::decode(&mut entry_ptr)?;
-            if !signature.verify(&entry_hash) {
+        while content_ptr.len() > 0 {
+            let signature = crypto::Signature::decode(&mut content_ptr)?;
+            if !signature.verify(&content_hash) {
                 return Err(Error::BadSignature);
             }
             signed_by.push(signature.signed_by().clone());
         }
 
-        let override_compression = false;
-        let compression = None;
-        let compressed = None;
-
-        let entry = Entry::from_parts(
-            Some(hash_state),
-            Some(entry_hash),
+        Ok(Query::from_parts(
+            valid,
+            types.into_boxed_slice(),
             hash,
-            doc,
+            doc_hash,
             field,
-            entry_len,
-            entry,
+            content,
             signed_by,
-            compressed,
-            override_compression,
-            compression,
-        );
-
-        Ok(Checklist::new(checklist, entry))
+        ))
     }
-        */
 }
 
 enum Compression {
@@ -1020,7 +1011,6 @@ mod tests {
             "title": "A Test",
             "text": "This is a test of a schema document"
         });
-        println!("{}", doc);
         Document::new(doc).expect("Should've been able to encode as document")
     }
 

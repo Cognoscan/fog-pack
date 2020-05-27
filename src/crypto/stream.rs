@@ -5,6 +5,8 @@ use std::fmt;
 use crypto::error::CryptoError;
 use crypto::sodium::{StreamId, SecretKey, aead_keygen, derive_id};
 
+/// A cryptographic symmetric key, used for creating a Lockbox. Requires accessing a Vault in order 
+/// to use it.
 #[derive(Clone,PartialEq,Eq,Hash)]
 pub struct StreamKey {
     version: u8,

@@ -4,6 +4,19 @@ use checklist::{Checklist, ChecklistItem};
 use encode;
 use decode;
 
+/// A decoded Query, which may be use to check if an Entry matches it or not.
+///
+/// A Query can be produced by calling [`decode_query`] on the schema used by the Document being 
+/// queried. Queries are Entries that have been encoded using [`encode_query`] and have a Validator 
+/// as the contained fog-pack value. See the [Validation Spec] for more information.
+///
+/// It can be passed an [`Entry`] to validate, and will produce a Checklist for further 
+/// validation if necessary. 
+///
+/// [`encode_query`]: ./fn.encode_query.html
+/// [Validation Spec]: ./spec/validation/index.html
+/// [`decode_query`]: ./struct.Schema.html#method.decode_query
+/// [`Entry`]: ./struct.Entry.html
 #[derive(Clone)]
 pub struct Query {
     valid: usize,
@@ -74,7 +87,7 @@ impl Query {
     ///
     /// [`Entry`]: ./struct.Entry.html
     /// [`Checklist`]: ./checklist/struct.Checklist.html
-    pub fn validate_entry(&self, entry: Entry) -> crate::Result<Checklist<()>> {
+    pub fn validate_entry(&self, entry: &Entry) -> crate::Result<Checklist<()>> {
         let mut entry_ptr: &[u8] = entry.raw_entry();
         if entry.doc_hash() != self.doc_hash() {
             return Err(Error::FailValidate(entry_ptr.len(),"Entry doesn't have same document hash as the query"));
@@ -136,8 +149,8 @@ impl Query {
 /// Entry's parent document is the document to be queried, and the field is the specific entry type 
 /// to be queried for.
 ///
-/// ['Entry`]: ./struct.Entry.html
-/// ['Document`]: ./struct.Document.html
+/// [`Entry`]: ./struct.Entry.html
+/// [`Document`]: ./struct.Document.html
 pub fn encode_query(entry: Entry) -> Vec<u8> {
     let mut buf = Vec::new();
     entry.doc_hash().encode(&mut buf);
@@ -145,4 +158,95 @@ pub fn encode_query(entry: Entry) -> Vec<u8> {
     buf.extend_from_slice(entry.raw_entry());
     buf
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use {Schema, Entry, Document};
+
+    fn simple_schema() -> Schema {
+        let schema: Value = fogpack!({
+            "req": {
+                "title": { "type": "Str", "max_len": 200 },
+                "text": { "type": "Str" },
+            },
+            "entries": {
+                "rel": {
+                    "type": "Obj",
+                    "req": {
+                        "name": { "type": "Str", "query": true },
+                        "link": { "type": "Hash" },
+                    },
+                    "obj_ok": true,
+                },
+                "misc": { "type": "Str" }
+            },
+            "doc_compress": {
+                "format": 0,
+                "level": 3,
+                "setting": true,
+            },
+            "entries_compress": {
+                "rel": { "setting": false },
+                "misc": { "setting": false },
+            }
+        });
+        let schema = Document::new(schema).expect("Should've been able to encode as a document");
+        Schema::from_doc(schema).unwrap()
+    }
+
+    fn simple_doc(schema: &Hash) -> Document {
+        let doc: Value = fogpack!({
+            "": Value::from(schema.clone()),
+            "title": "A Test",
+            "text": "This is a test of a schema document"
+        });
+        println!("{}", doc);
+        Document::new(doc).expect("Should've been able to encode as document")
+    }
+
+    fn rel_entry(doc: &Hash) -> Entry {
+        let test: Value = fogpack!({
+            "name": "test_entry",
+            "link": Hash::new(b"fake hash")
+        });
+        Entry::new(doc.clone(), String::from("rel"), test).expect("Should've been able to encode as an entry")
+    }
+
+    fn misc_entry(doc: &Hash) -> Entry {
+        let test: Value = fogpack!( "this is a misc value that can't be queried" );
+        Entry::new(doc.clone(), String::from("misc"), test).expect("Should've been able to encode as an entry")
+    }
+
+
+    #[test]
+    fn make_query() {
+        let schema = simple_schema();
+        let doc = simple_doc(schema.hash());
+        let rel_entry = rel_entry(doc.hash());
+        let misc_entry = misc_entry(doc.hash());
+
+        let query: Value = fogpack!({
+            "type": "Obj",
+            "req": {
+                "name": { "type": "Str", "in": "test_entry" },
+            },
+            "unknown_ok": true
+        });
+        let query = Entry::new(doc.hash().clone(), String::from("rel"), query).unwrap();
+        let query = encode_query(query);
+        let query = schema.decode_query(&mut &query[..]).expect("Should be an accepted query");
+
+
+        let check = query.validate_entry(&rel_entry).expect("Should validate OK");
+        check.complete().expect("Checklist should've already been complete!");
+
+        let query: Value = fogpack!({ "type": "Str", "nin": ""});
+        let query = Entry::new(doc.hash().clone(), String::from("misc"), query).unwrap();
+        let query = encode_query(query);
+        assert!(schema.decode_query(&mut &query[..]).is_err());
+    }
+}
+
+
 

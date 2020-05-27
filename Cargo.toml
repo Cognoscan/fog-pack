@@ -10,7 +10,7 @@ homepage = "https://github.com/Cognoscan/fog-pack"
 documentation = "https://docs.rs/fog-pack"
 license = "MIT OR Apache-2.0"
 description = "Binary Data format supporting immutable references, schema, and compression"
-exclude = [ "media/*" ]
+exclude = [ "media/*", "misc_docs/*" ]
 
 [dependencies]
 libc = "0.2"

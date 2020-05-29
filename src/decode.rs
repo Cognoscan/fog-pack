@@ -769,6 +769,166 @@ pub fn read_marker(buf: &mut &[u8]) -> crate::Result<MarkerType> {
     })
 }
 
+pub fn print_error(buf: &[u8], err: crate::Error) {
+    let (offset, err) = match err {
+        Error::BadEncode(offset, err) => (offset, err),
+        Error::FailValidate(offset, err) => (offset, err),
+        Error::ParseLimit(offset, err) => (offset, err),
+        _ => (0, "no error in the raw data")
+    };
+
+    let mut buf: &[u8] = buf;
+    // Error is only for indicating when we're done parsing and can stop, so we don't need it here
+    let _ = print_error_internal(&mut buf, offset+1, err, 0);
+}
+
+fn indent(n: usize) {
+    for _ in 0..n {
+        print!("  ");
+    }
+}
+
+fn print_error_internal(buf: &mut &[u8], offset: usize, err: &str, cur_indent: usize) -> Result<(),()> {
+
+    if buf.len() <= offset {
+        println!("Error: {}", err);
+        return Err(());
+    }
+
+    let marker = if let Ok(marker) = read_marker(buf) {
+        marker
+    }
+    else {
+        println!("Expected marker, but ran out of data");
+        return Err(());
+    };
+
+    match marker {
+        MarkerType::Null => { print!("null"); },
+        MarkerType::Boolean(v) => { print!("{}", v); },
+        MarkerType::NegInt((len, v)) => {
+            if let Ok(val) = read_neg_int(buf, len, v) {
+                print!("{}", val);
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::PosInt((len, v)) => {
+            if let Ok(val) = read_pos_int(buf, len, v) {
+                print!("{}", val);
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::String(len) => {
+            if let Ok(s) = read_raw_str(buf, len) {
+                print!("\"{}\"", s);
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::F32 => {
+            if let Ok(v) = buf.read_f32::<BigEndian>() {
+                print!("{}", v);
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::F64 => {
+            if let Ok(v) = buf.read_f64::<BigEndian>() {
+                print!("{}", v);
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::Binary(len) => {
+            if let Ok(_) = read_raw_bin(buf, len) {
+                print!("<Bin>");
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::Array(len) => {
+            println!("[");
+            for _i in 0..len {
+                indent(cur_indent+1);
+                print_error_internal(buf, offset, err, cur_indent+1)?;
+                println!(",");
+            }
+            indent(cur_indent);
+        },
+        MarkerType::Object(len) => {
+            println!("{{");
+            if let Err(e) = object_iterate(buf, len, |field, buf| {
+                indent(cur_indent+1);
+                print!("\"{}\": ", field);
+                print_error_internal(buf, offset, err, cur_indent+1)
+                    .map_err(|_| Error::SchemaMismatch)?;
+                println!(",");
+                Ok(())
+            }) {
+                if let Error::SchemaMismatch = e {
+                }
+                else {
+                    println!("Error: {}", err);
+                }
+                return Err(());
+            }
+            indent(cur_indent);
+            print!("}}");
+        },
+        MarkerType::Hash(len) => {
+            if let Ok(hash) = read_raw_hash(buf, len) {
+                print!("<Hash({})>", hash);
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::Identity(len) => {
+            if let Ok(_) = read_raw_id(buf, len) {
+                print!("<Identity>");
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::Lockbox(len) => {
+            if let Ok(_) = read_raw_lockbox(buf, len) {
+                print!("<Lockbox>");
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+        MarkerType::Timestamp(len) => {
+            if let Ok(time) = read_raw_time(buf, len) {
+                print!("<Time({})>", time);
+            }
+            else {
+                println!("Error: {}", err);
+                return Err(());
+            }
+        },
+    }
+
+    Ok(())
+}
 
 
 

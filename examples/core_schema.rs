@@ -1,0 +1,487 @@
+#![recursion_limit="256"]
+
+extern crate fog_pack;
+
+use fog_pack::*;
+
+fn main() {
+    let mut core_schema_val = fogpack!(
+        {
+            "": Hash::new_empty(),
+            "name": "fog-pack Core Schema",
+            "version": 1,
+            "opt": {
+                "name": { "type": "Str" },
+                "doc_compress": { "type": "Compress" },
+                "description": { "type": "Str" },
+                "version": { "type": "Int" },
+                "entries": {
+                    "type": "Obj",
+                    "unknown_ok": true,
+                    "field_type": { "type": "Validator" }
+                },
+                "entries_compress": {
+                    "type": "Obj",
+                    "unknown_ok": true,
+                    "field_type": { "type": "Compress" }
+                },
+                "field_type": { "type": "Validator" },
+                "max_fields": { "type": "Int", "min": 0 },
+                "min_fields": { "type": "Int", "min": 0 },
+                "req": {
+                    "type": "Obj",
+                    "ban": "",
+                    "unknown_ok": true,
+                    "field_type": { "type": "Validator" }
+                },
+                "opt": {
+                    "type": "Obj",
+                    "ban": "",
+                    "unknown_ok": true,
+                    "field_type": { "type": "Validator" }
+                },
+                "ban": {
+                    "type": "Multi",
+                    "any_of": [
+                        { "type": "Str", "nin": "" },
+                        {
+                            "type": "Array",
+                            "extra_items": { "type": "Str", "nin": "" }
+                        }
+                    ]
+                },
+                "unknown_ok": { "type": "Bool" },
+                "types": {
+                    "type": "Obj",
+                    "unknown_ok": true,
+                    "field_type": { "type": "Validator" }
+                }
+            },
+            "types": {
+                "Compress": {
+                    "type": "Multi",
+                    "comment": "Describes a recommended compression format for a doc/entry",
+                    "any_of": [
+                        { "type": "Obj", "req": { "setting": false } },
+                        { 
+                            "type": "Obj",
+                            "req": {
+                                "format": { "type": "Int", "min": 0, "max": 31 },
+                                "setting": { "type": "Multi", "any_of": [
+                                    { "type": "Bin" },
+                                    true
+                                ] },
+                            },
+                            "opt": {
+                                "level": { "type": "Int", "min": 0, "max": 255 }
+                            }
+                        }
+                    ]
+                },
+                "Validator": {
+                    "comment": "Describes any possible fogpack validator",
+                    "type": "Multi",
+                    "any_of": [
+                        { "type": "Null" },
+                        { "type": "Bool" },
+                        { "type": "Int" },
+                        { "type": "F32" },
+                        { "type": "F64" },
+                        { "type": "Bin" },
+                        { "type": "Str" },
+                        { "type": "Hash" },
+                        { "type": "Ident" },
+                        { "type": "Time" },
+                        { "type": "Array" },
+                        {
+                            "type": "Obj",
+                            "comment": "The Null type validator",
+                            "req": { "type": "Null" },
+                            "opt": { "comment": { "type": "Str" } }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "Validator type alias. Refers to a validator in a schema's type list if available, otherwise never matches",
+                            "req": { "type": {"type": "Str" } },
+                            "opt": { "comment": { "type": "Str" } }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Boolean type validator",
+                            "req": { "type": "Bool" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "default": { "type": "Bool" },
+                                "in": { "type": "Bool" },
+                                "nin": { "type": "Bool" },
+                                "query": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Integer type validator",
+                            "req": { "type": "Int" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "bit": { "type": "Bool" },
+                                "bits_clr": { "type": "Int" },
+                                "bits_set": { "type": "Int" },
+                                "default": { "type": "Int" },
+                                "ex_max": { "type": "Bool" },
+                                "ex_min": { "type": "Bool" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Int" },
+                                    { "type": "Array", "extra_items": { "type": "Int" } }
+                                    ]
+                                },
+                                "max": { "type": "Int" },
+                                "min": { "type": "Int" },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Int" },
+                                    { "type": "Array", "extra_items": { "type": "Int" } }
+                                    ]
+                                },
+                                "ord": { "type": "Bool" },
+                                "query": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The String type validator",
+                            "req": { "type": "Str" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "default": { "type": "Str" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Str" },
+                                    { "type": "Array", "extra_items": { "type": "Str" } }
+                                    ]
+                                },
+                                "matches": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Str" },
+                                    { "type": "Array", "extra_items": { "type": "Str" } }
+                                    ]
+                                },
+                                "max_len": { "type": "Int", "min": 0 },
+                                "min_len": { "type": "Int", "min": 0 },
+                                "max_char": { "type": "Int", "min": 0 },
+                                "min_char": { "type": "Int", "min": 0 },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Str" },
+                                    { "type": "Array", "extra_items": { "type": "Str" } }
+                                    ]
+                                },
+                                "force_nfc": { "type": "Bool" },
+                                "force_nfkc": { "type": "Bool" },
+                                "query": { "type": "Bool" },
+                                "regex": { "type": "Bool" },
+                                "size": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The F32 type validator",
+                            "req": { "type": "F32" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "default": { "type": "F32" },
+                                "ex_max": { "type": "Bool" },
+                                "ex_min": { "type": "Bool" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "F32" },
+                                    { "type": "Array", "extra_items": { "type": "F32" } }
+                                    ]
+                                },
+                                "max": { "type": "F32", "min": f32::NEG_INFINITY, "max": f32::INFINITY },
+                                "min": { "type": "F32", "min": f32::NEG_INFINITY, "max": f32::INFINITY },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "F32" },
+                                    { "type": "Array", "extra_items": { "type": "F32" } }
+                                    ]
+                                },
+                                "ord": { "type": "Bool" },
+                                "query": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The F64 type validator",
+                            "req": { "type": "F64" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "default": { "type": "F64" },
+                                "ex_max": { "type": "Bool" },
+                                "ex_min": { "type": "Bool" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "F64" },
+                                    { "type": "Array", "extra_items": { "type": "F64" } }
+                                    ]
+                                },
+                                "max": { "type": "F64", "min": f64::NEG_INFINITY, "max": f64::INFINITY },
+                                "min": { "type": "F64", "min": f64::NEG_INFINITY, "max": f64::INFINITY },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "F64" },
+                                    { "type": "Array", "extra_items": { "type": "F64" } }
+                                    ]
+                                },
+                                "ord": { "type": "Bool" },
+                                "query": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Binary type validator",
+                            "req": { "type": "Bin" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "bit": { "type": "Bool" },
+                                "bits_clr": { "type": "Bin" },
+                                "bits_set": { "type": "Bin" },
+                                "default": { "type": "Bin" },
+                                "ex_max": { "type": "Bool" },
+                                "ex_min": { "type": "Bool" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Bin" },
+                                    { "type": "Array", "extra_items": { "type": "Bin" } }
+                                    ]
+                                },
+                                "max": { "type": "Bin" },
+                                "max_len": { "type": "Int", "min": 0 },
+                                "min": { "type": "Bin" },
+                                "min_len": { "type": "Int", "min": 0 },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Bin" },
+                                    { "type": "Array", "extra_items": { "type": "Bin" } }
+                                    ]
+                                },
+                                "ord": { "type": "Bool" },
+                                "query": { "type": "Bool" },
+                                "size": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Array type validator",
+                            "req": { "type": "Array" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "contains": { "type": "Array", "extra_items": { "type": "Validator" } },
+                                "default": { "type": "Array" },
+                                "extra_items": { "type": "Validator" },
+                                "in": { "type": "Array", "extra_items": { "type": "Array" } },
+                                "items": { "type": "Array", "extra_items": { "type": "Validator" } },
+                                "max_len": { "type": "Int", "min": 0 },
+                                "min_len": { "type": "Int", "min": 0 },
+                                "nin": { "type": "Array", "extra_items": { "type": "Array" } },
+                                "size": { "type": "Bool" },
+                                "array": { "type": "Bool" },
+                                "contains_ok": { "type": "Bool" },
+                                "query": { "type": "Bool" },
+                                "unique": { "type": "Bool" },
+                                "unique_ok": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Object type validator",
+                            "req": { "type": "Obj" },
+                            "opt": {
+                                "ban": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Str" },
+                                    { "type": "Array", "extra_items": { "type": "Str" } }
+                                    ]
+                                },
+                                "comment": { "type": "Str" },
+                                "default": { "type": "Obj" },
+                                "field_type": { "type": "Validator" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Obj" },
+                                    { "type": "Array", "extra_items": { "type": "Obj" } }
+                                    ]
+                                },
+                                "max_fields": { "type": "Int", "min": 0 },
+                                "min_fields": { "type": "Int", "min": 0 },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Obj" },
+                                    { "type": "Array", "extra_items": { "type": "Obj" } }
+                                    ]
+                                },
+                                "opt": {
+                                    "type": "Obj",
+                                    "unknown_ok": true,
+                                    "field_type": { "type": "Validator" }
+                                },
+                                "query": { "type": "Bool" },
+                                "size": { "type": "Bool" },
+                                "obj_ok": { "type": "Bool" },
+                                "req": {
+                                    "type": "Obj",
+                                    "unknown_ok": true,
+                                    "field_type": { "type": "Validator" }
+                                },
+                                "unknown_ok": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Hash type validator",
+                            "req": { "type": "Hash" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "default": { "type": "Hash" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Hash" },
+                                    { "type": "Array", "extra_items": { "type": "Hash" } }
+                                    ]
+                                },
+                                "link": { "type": "Validator" },
+                                "link_ok": { "type": "Bool" },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Hash" },
+                                    { "type": "Array", "extra_items": { "type": "Hash" } }
+                                    ]
+                                },
+                                "query": { "type": "Bool" },
+                                "schema": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Hash" },
+                                    { "type": "Array", "extra_items": { "type": "Hash" } }
+                                    ]
+                                },
+                                "schema_ok": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Identity type validator",
+                            "req": { "type": "Ident" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "default": { "type": "Ident" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Ident" },
+                                    { "type": "Array", "extra_items": { "type": "Ident" } }
+                                    ]
+                                },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Ident" },
+                                    { "type": "Array", "extra_items": { "type": "Ident" } }
+                                    ]
+                                },
+                                "query": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Lockbox type validator",
+                            "req": { "type": "Lock" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "max_len": { "type": "Int", "min": 0 },
+                                "size": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Timestamp type validator",
+                            "req": { "type": "Time" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "default": { "type": "Time" },
+                                "ex_max": { "type": "Bool" },
+                                "ex_min": { "type": "Bool" },
+                                "in": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Time" },
+                                    { "type": "Array", "extra_items": { "type": "Time" } }
+                                    ]
+                                },
+                                "max": { "type": "Time" },
+                                "min": { "type": "Time" },
+                                "nin": {
+                                    "type": "Multi",
+                                    "any_of": [
+                                    { "type": "Time" },
+                                    { "type": "Array", "extra_items": { "type": "Time" } }
+                                    ]
+                                },
+                                "ord": { "type": "Bool" },
+                                "query": { "type": "Bool" }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The Multi type validator",
+                            "req": { "type": "Multi" },
+                            "opt": {
+                                "comment": { "type": "Str" },
+                                "any_of": { "type": "Array", "extra_items": { "type": "Validator" } }
+                            }
+                        },
+                        {
+                            "type": "Obj",
+                            "comment": "The empty validator. Allows anything through"
+                        }
+                    ]
+                }
+            }
+        }
+    );
+
+    let core_schema_doc = Document::new(core_schema_val.clone()).unwrap();
+    println!("Encoded Doc length = {}", core_schema_doc.len());
+    println!("{}", core_schema_val);
+
+    //println!("{}", core_schema_val);
+    let mut schema = Schema::from_doc(core_schema_doc).unwrap();
+
+    println!("Schema hash = {}", schema.hash());
+
+    core_schema_val[""] = Value::from(schema.hash().clone());
+    let core_schema_doc_2 = Document::new(core_schema_val.clone()).unwrap();
+    let result = schema.encode_doc(core_schema_doc_2);
+    if let Err(e) = result {
+        println!("Core schema failed validation: {}", e);
+    }
+    else {
+        println!("Core schema successfully passed self-validation");
+    }
+}

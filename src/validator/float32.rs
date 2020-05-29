@@ -209,7 +209,6 @@ impl ValidF32 {
             Err(Error::FailValidate(fail_len, "F32 is not on the `in` list"))
         }
         else if self.in_vec.len() > 0 {
-            println!("Passed in_vec test with {}", value);
             Ok(())
         }
         else if value.is_nan() && !self.nan_ok

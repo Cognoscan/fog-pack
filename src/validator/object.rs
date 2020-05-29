@@ -67,7 +67,7 @@ impl ValidObj {
         match field {
             "ban" => {
                 self.obj_used = true;
-                match read_marker(&mut raw.clone())? {
+                match read_marker(raw)? {
                     MarkerType::String(len) => {
                         let s = read_raw_str(raw, len)?;
                         if self.schema_top && (s == "") {
@@ -111,9 +111,10 @@ impl ValidObj {
             }
             "in" => {
                 self.query_used = true;
-                match read_marker(&mut raw.clone())? {
-                    MarkerType::Object(_) => {
-                        let v = get_obj(raw)?;
+                // Read the objects, minus their marker bytes, into in_vec
+                match read_marker(raw)? {
+                    MarkerType::Object(len) => {
+                        let v = get_obj_raw(raw, len)?;
                         self.in_vec.reserve_exact(1);
                         self.in_vec.push(v);
                     },
@@ -154,9 +155,10 @@ impl ValidObj {
             },
             "nin" => {
                 self.query_used = true;
-                match read_marker(&mut raw.clone())? {
-                    MarkerType::Object(_) => {
-                        let v = get_obj(raw)?;
+                // Read the objects, minus their marker bytes, into nin_vec
+                match read_marker(raw)? {
+                    MarkerType::Object(len) => {
+                        let v = get_obj_raw(raw, len)?;
                         self.nin_vec.reserve_exact(1);
                         self.nin_vec.push(v);
                     },
@@ -240,6 +242,7 @@ impl ValidObj {
     pub fn finalize(&mut self) -> bool {
         let optional = &mut self.optional;
         let required = &mut self.required;
+        // Ditch `optional` fields that are in `required`, as anything required takes precedence
         optional.retain(|x| required.binary_search_by(|y| y.0.cmp(&x.0)).is_err());
         (self.min_fields <= self.max_fields) && !self.required.iter().any(|x| x.1 == 0)
     }
@@ -255,11 +258,11 @@ impl ValidObj {
                     ) -> crate::Result<()>
     {
         let fail_len = doc.len();
-        let obj_start = doc.clone();
         let mut num_fields = match read_marker(doc)? {
             MarkerType::Object(len) => len,
             _ => return Err(Error::FailValidate(fail_len, "Expected object")),
         };
+        let obj_start = doc.clone(); // Start *after* the marker has been read
 
         // Read out the schema field if this is a Document, and don't count it towards the field 
         // limit
@@ -319,6 +322,8 @@ impl ValidObj {
             }
         })?;
 
+        // We should have read the entire object by now. Check the raw bytes of the object (minus 
+        // the marker) and see if it is in nin_vec or in_vec
         let (obj_start, _) = obj_start.split_at(obj_start.len()-doc.len());
         if self.nin_vec.iter().any(|x| obj_start == &x[..]) {
             Err(Error::FailValidate(fail_len, "Object in object `nin` list is present"))
@@ -419,15 +424,21 @@ impl ValidObj {
     }
 }
 
+// Get an object's bytes, without the leading marker
 fn get_obj(raw: &mut &[u8]) -> crate::Result<Box<[u8]>> {
     let fail_len = raw.len();
-    let start = raw.clone();
     if let MarkerType::Object(len) = read_marker(raw)? {
-        verify_map(raw, len)?;
+        get_obj_raw(raw, len)
     }
     else {
         return Err(Error::FailValidate(fail_len, "Expected objects in `in`/`nin` fields"));
     }
+}
+
+// Get an object's bytes, after the leading marker has already been parsed
+fn get_obj_raw(raw: &mut &[u8], len: usize) -> crate::Result<Box<[u8]>> {
+    let start = raw.clone();
+    verify_map(raw, len)?;
     let (obj, _) = start.split_at(start.len()-raw.len());
     Ok(obj.to_vec().into_boxed_slice())
 }

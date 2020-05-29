@@ -45,14 +45,7 @@ impl ValidMulti {
     /// Final check on the validator. Returns true if at least one value can (probably) still pass the 
     /// validator.
     pub fn finalize(&mut self) -> bool {
-        if self.any_of.len() > 0 {
-            self.any_of.sort_unstable();
-            self.any_of.dedup();
-            true
-        }
-        else {
-            false
-        }
+        self.any_of.len() > 0
     }
 
     pub fn validate(&self,
@@ -64,10 +57,12 @@ impl ValidMulti {
         let fail_len = doc.len();
         if self.any_of.iter().any(|v_index| {
                 let mut temp_list = ValidatorChecklist::new();
-                if let Err(_) = types[*v_index].validate(doc, types, *v_index, &mut temp_list) {
+                let mut doc_local = &doc[..];
+                if let Err(_) = types[*v_index].validate(&mut doc_local, types, *v_index, &mut temp_list) {
                     false
                 }
                 else {
+                    *doc = doc_local;
                     list.merge(temp_list);
                     true
                 }
@@ -90,4 +85,62 @@ impl ValidMulti {
         self.any_of.iter()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use encode;
+    use Value;
+
+    fn read_it(raw: &mut &[u8], is_query: bool) -> (usize, Vec<Validator>) {
+        let mut types = Vec::new();
+        types.push(Validator::Invalid);
+        types.push(Validator::Valid);
+        let mut type_names = HashMap::new();
+        let schema_hash = Hash::new(b"test");
+        let mut reader = ValidReader::new(is_query, &mut types, &mut type_names, &schema_hash);
+        let validator = Validator::read_validator(&mut &raw[..], &mut reader).unwrap();
+        for (i, v) in types.iter().enumerate() {
+            println!("{}: {:?}", i, v);
+        }
+        match types[validator] {
+            Validator::Multi(_) => (),
+            _ => panic!("Parsing a multi validator didn't yield a multi validator!"),
+        }
+        (validator, types)
+    }
+
+    #[test]
+    fn multi_obj() {
+        let mut raw_schema = Vec::new();
+        let schema: Value = fogpack!({
+            "type": "Multi",
+            "comment": "Describes a recommended compression format for a doc/entry",
+            "any_of": [
+                { "type": "Obj", "req": { "setting": false } },
+                { 
+                    "type": "Obj",
+                    "req": {
+                        "format": { "type": "Int", "min": 0, "max": 31 },
+                        "setting": { "type": "Multi", "any_of": [
+                            { "type": "Bin" },
+                            true
+                        ] },
+                    },
+                    "opt": {
+                        "level": { "type": "Int", "min": 0, "max": 255 }
+                    }
+                }
+            ]
+        });
+        encode::write_value(&mut raw_schema, &schema);
+        println!("Schema = {}", &schema);
+        let (validator, types) = read_it(&mut &raw_schema[..], false);
+    }
+
+
+}
+
+
+
 

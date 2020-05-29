@@ -1,6 +1,6 @@
 # fog-pack
 
-[Documentation](https://docs.rs/fog-pack) | [Specs](https://docs.rs/fog-pack/0.1.0/fog-pack/spec/index.html)
+[Documentation](https://docs.rs/fog-pack) | [Specs](https://docs.rs/fog-pack/0.1.0/fog_pack/spec/validation/index.html)
 
 fog-pack builds on msgpack with a set of extensions useful for all structured 
 data. The ultimate goal is to provide a single coherent approach to encoding 
@@ -45,6 +45,13 @@ First, include fog-pack in your Cargo.toml:
 ```toml
 [dependencies]
 fog-pack = "0.1.0"
+```
+
+Before anything else, we must initialize the underlying crypto library:
+
+```
+# use fog_pack::*;
+crypto::init();
 ```
 
 Generally, a schema is the first thing you'll want to make. This specifies the 

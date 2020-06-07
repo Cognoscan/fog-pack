@@ -4,6 +4,7 @@ use std::io::ErrorKind::InvalidData;
 use {MAX_ENTRY_SIZE, Hash, Value, ValueRef};
 use crypto::{HashState, Vault, Key, Identity, CryptoError};
 use encode;
+use zstd_help;
 
 #[derive(Clone)]
 /// A fog-pack value that can be signed and compressed, with an associated document hash and field.
@@ -216,6 +217,25 @@ impl Entry {
         &self.entry
     }
 
+}
+
+/// Train a zstd dictionary from a sequence of entries.
+///
+/// Dictionaries can be limited to a maximum size. On failure, a zstd library error code is 
+/// returned.
+///
+/// The zstd documentation recommends around 100 times as many input bytes as the desired 
+/// dictionary size. It can be useful to check the resulting dictionary for overlearning - just 
+/// dump the dictionary to a file and look for human-readable strings. These can occur when the 
+/// dictionary is larger than necessary, and begins encoding the randomized portions of the 
+/// Entries. In the future, this function may become smarter and get better at eliminating 
+/// low-probability dictionary items.
+pub fn train_entry_dict(max_size: usize, entries: Vec<Entry>) -> Result<Vec<u8>, usize> {
+    let samples = entries
+        .iter()
+        .map(|entry| Vec::from(entry.raw_entry()))
+        .collect::<Vec<Vec<u8>>>();
+    zstd_help::train_dict(max_size, samples)
 }
 
 #[cfg(test)]

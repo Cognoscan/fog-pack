@@ -364,19 +364,20 @@ pub mod spec;
 use marker::{Marker, ExtType, MarkerType};
 use compress_type::CompressType;
 
-pub use self::error::{Error, Result};
-pub use self::crypto::{Hash, Identity, Lockbox, CryptoError};
-pub use self::index::Index;
+pub use error::{Error, Result};
+pub use crypto::{Hash, Identity, Lockbox, CryptoError};
+pub use index::Index;
 //pub use self::index_ref::IndexRef;
-pub use self::value::{Value, ValueRef};
-pub use self::integer::Integer;
-pub use self::timestamp::Timestamp;
-pub use self::document::Document;
-pub use self::entry::Entry;
-pub use self::no_schema::NoSchema;
-pub use self::schema::Schema;
-pub use self::query::Query;
-pub use document::extract_schema_hash;
+pub use value::{Value, ValueRef};
+pub use integer::Integer;
+pub use timestamp::Timestamp;
+pub use document::Document;
+pub use entry::Entry;
+pub use entry::train_entry_dict;
+pub use no_schema::NoSchema;
+pub use schema::Schema;
+pub use query::Query;
+pub use document::{extract_schema_hash, train_doc_dict};
 pub use query::encode_query;
 
 /// The maximum allowed size of a raw document, including signatures, is 1 MiB. An encoded, 

@@ -79,3 +79,23 @@ pub fn dict_decompress(dctx: &mut DCtx, dict: &DDict, max_size: usize, buf: &[u8
     Ok(())
 }
 
+pub fn train_dict(dict_size: usize, samples: Vec<Vec<u8>>) -> Result<Vec<u8>, usize> {
+    let sizes = samples.iter().map(|x| x.len()).collect::<Vec<usize>>();
+    let mut buffer = Vec::with_capacity(sizes.iter().sum());
+    for sample in samples.iter() {
+        buffer.extend_from_slice(sample);
+    }
+
+    let mut dict = vec![0u8; dict_size];
+    match zstd_safe::train_from_buffer(&mut dict[..], &buffer[..], &sizes[..]) {
+        Ok(size) => {
+            dict.resize(size, 0u8);
+            Ok(dict)
+        },
+        Err(e) => {
+            Err(e)
+        }
+    }
+}
+
+

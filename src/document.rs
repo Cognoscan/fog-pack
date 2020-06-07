@@ -7,6 +7,7 @@ use CompressType;
 use super::{MAX_DOC_SIZE, Hash, Value, ValueRef};
 use super::crypto::{HashState, Vault, Key, Identity, CryptoError};
 use decode;
+use zstd_help;
 
 /// A single, immutable fog-pack object that can be signed, hashed, and compressed.
 #[derive(Clone)]
@@ -299,6 +300,50 @@ pub(crate) fn parse_schema_hash(buf: &mut &[u8]) -> crate::Result<Option<Hash>> 
     decode::read_hash(buf)
         .map(|v| Some(v))
         .map_err(|_e| Error::BadEncode(buf.len(), "Empty string field doesn't have a Hash as its value"))
+}
+
+/// Train a zstd dictionary from a sequence of documents.
+///
+/// Dictionaries can be limited to a maximum size. On failure, a zstd library error code is 
+/// returned.
+///
+/// The zstd documentation recommends around 100 times as many input bytes as the desired 
+/// dictionary size. It can be useful to check the resulting dictionary for overlearning - just 
+/// dump the dictionary to a file and look for human-readable strings. These can occur when the 
+/// dictionary is larger than necessary, and begins encoding the randomized portions of the 
+/// Documents. In the future, this function may become smarter and get better at eliminating 
+/// low-probability dictionary items.
+pub fn train_doc_dict(max_size: usize, docs: Vec<Document>) -> Result<Vec<u8>, usize> {
+    let samples = docs
+        .iter()
+        .map(|doc| {
+            // We can call unwrap below because all Documents should already have vetted that:
+            // 1) The raw document contains an object
+            // 2) The object keys are strings
+            // 3) The empty string field has a hash as the value
+            let mut buf = doc.raw_doc();
+            let obj_len = decode::read_marker(&mut buf).unwrap();
+            // Marker is always an object, we're just checking to see if it's empty
+            if let MarkerType::Object(0) = obj_len {
+                Vec::from(buf)
+            }
+            else {
+                // Document might contain a schema already. Skip over it.
+                let mut buf2: &[u8] = buf;
+                let field = decode::read_str(&mut buf2).unwrap();
+                if field.len() > 0 {
+                    // Wasn't a schema, use the first parsed field along with everything else
+                    Vec::from(buf)
+                }
+                else {
+                    // Skip past the schema hash and read the remainder
+                    decode::read_hash(&mut buf2).unwrap();
+                    Vec::from(buf2)
+                }
+            }
+        })
+        .collect::<Vec<Vec<u8>>>();
+    zstd_help::train_dict(max_size, samples)
 }
 
 #[cfg(test)]

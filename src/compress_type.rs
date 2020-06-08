@@ -20,7 +20,7 @@ pub enum CompressType {
 
 impl CompressType {
     /// Convert CompressType to a single byte.
-    pub fn to_u8(self) -> u8 {
+    pub fn into_u8(self) -> u8 {
         match self {
             CompressType::Uncompressed       => 0,
             CompressType::CompressedNoSchema => 1,
@@ -40,13 +40,13 @@ impl CompressType {
         }
     }
 
-    pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.push(self.to_u8());
+    pub fn encode(self, buf: &mut Vec<u8>) {
+        buf.push(self.into_u8());
     }
 
     pub fn decode(buf: &mut &[u8]) -> io::Result<Self> {
         Self::from_u8(buf.read_u8()?)
-            .ok_or(io::Error::new(InvalidData, "Compression type not recognized"))
+            .ok_or_else(|| io::Error::new(InvalidData, "Compression type not recognized"))
     }
 
 }

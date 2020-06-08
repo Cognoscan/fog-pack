@@ -117,7 +117,7 @@ impl ValidStr {
             },
             Err(e) => {
                 if let regex::Error::CompiledTooBig(_) = e {
-                    return Err(Error::ParseLimit(fail_len, "Regex hit size limit"));
+                    Err(Error::ParseLimit(fail_len, "Regex hit size limit"))
                 }
                 else {
                     // Regex syntax failure is not an error; just means the validator 
@@ -297,7 +297,7 @@ impl ValidStr {
     /// Final check on the validator. Returns true if at least one value can still pass the 
     /// validator.
     pub fn finalize(&mut self) -> bool {
-        if self.in_vec.len() > 0 {
+        if !self.in_vec.is_empty() {
             let mut in_vec: Vec<String> = Vec::with_capacity(self.in_vec.len());
             let mut nin_index = 0;
             for val in self.in_vec.iter() {
@@ -308,10 +308,8 @@ impl ValidStr {
                     if nin == val { continue; }
                 }
                 let len_char = bytecount::num_chars(val.as_bytes());
-                if self.use_char {
-                    if (len_char > self.max_char) || (len_char < self.min_char) {
-                        continue;
-                    }
+                if self.use_char && ((len_char > self.max_char) || (len_char < self.min_char)) {
+                    continue;
                 }
                 if (val.len() >= self.min_len) && (val.len() <= self.max_len) 
                     && self.matches_work
@@ -323,7 +321,7 @@ impl ValidStr {
             in_vec.shrink_to_fit();
             self.in_vec = in_vec;
             self.nin_vec = Vec::with_capacity(0);
-            self.in_vec.len() > 0
+            !self.in_vec.is_empty()
         }
         else {
             let min_len = self.min_len;
@@ -371,12 +369,8 @@ impl ValidStr {
         if !self.matches_work {
             Err(Error::FailValidate(fail_len, "Validator has regexes that don't compile"))
         }
-        else if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
+        else if !self.in_vec.is_empty() && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
             Err(Error::FailValidate(fail_len, "String is not on the `in` list"))
-        }
-        else if self.in_vec.len() > 0 {
-            // We can short-circuit here because finalize already pre-checked all other conditions
-            Ok(())
         }
         else if self.use_char && (len_char < self.min_char) {
             Err(Error::FailValidate(fail_len, "String shorter than min char length"))

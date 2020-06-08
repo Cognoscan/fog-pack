@@ -208,7 +208,7 @@ impl ValidArray {
     /// Final check on the validator. Returns true if at least one value can (probably) still pass the 
     /// validator. We do not check the `in` and `nin` against all validation parts
     pub fn finalize(&mut self) -> bool {
-        if self.in_vec.len() > 0 {
+        if !self.in_vec.is_empty() {
             let mut in_vec: Vec<Box<[u8]>> = Vec::with_capacity(self.in_vec.len());
             let mut nin_index = 0;
             for val in self.in_vec.iter() {
@@ -223,7 +223,7 @@ impl ValidArray {
             in_vec.shrink_to_fit();
             self.in_vec = in_vec;
             self.nin_vec = Vec::with_capacity(0);
-            (self.in_vec.len() > 0) && (self.min_len <= self.max_len)
+            !self.in_vec.is_empty() && (self.min_len <= self.max_len)
         }
         else {
             self.nin_vec.shrink_to_fit();
@@ -241,11 +241,11 @@ impl ValidArray {
             MarkerType::Array(len) => len,
             _ => return Err(Error::FailValidate(fail_len, "Expected array")),
         };
-        if num_items == 0 && self.min_len == 0 && self.items.len() == 0 && self.contains.len() == 0 {
+        if num_items == 0 && self.min_len == 0 && self.items.is_empty() && self.contains.is_empty() {
             return Ok(());
         }
 
-        let array_start = doc.clone();
+        let array_start: &[u8] = doc;
 
         // Size checks
         if num_items < self.min_len {
@@ -267,7 +267,7 @@ impl ValidArray {
         // Run through the whole array
         for i in 0..num_items {
             // Validate as appropriate
-            let item_start = doc.clone();
+            let item_start: &[u8] = doc;
             if let Some(v_index) = self.items.get(i) {
                 if let Err(e) = types[*v_index].validate(doc, types, *v_index, list) {
                     return Err(e);
@@ -285,7 +285,8 @@ impl ValidArray {
 
             // Check for uniqueness
             if self.unique {
-                if !unique_set.insert(item) {
+                let unique = unique_set.insert(item);
+                if !unique {
                     return Err(Error::FailValidate(fail_len, "Array contains a repeated item"));
                 }
             }
@@ -294,7 +295,8 @@ impl ValidArray {
                 .zip(self.contains.iter())
                 .filter(|(checked,_)| !**checked)
                 .for_each(|(checked,contains_item)| {
-                    if let Ok(()) = types[*contains_item].validate(&mut item.clone(), types, *contains_item, list) {
+                    let mut item_ref: &[u8] = item;
+                    if let Ok(()) = types[*contains_item].validate(&mut item_ref, types, *contains_item, list) {
                         *checked = true;
                     }
                 });
@@ -307,7 +309,7 @@ impl ValidArray {
         else if self.nin_vec.binary_search_by(|probe| (**probe).cmp(array)).is_ok() {
             Err(Error::FailValidate(fail_len, "Array is on `nin` list"))
         }
-        else if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(array)).is_err() {
+        else if !self.in_vec.is_empty() && self.in_vec.binary_search_by(|probe| (**probe).cmp(array)).is_err() {
             Err(Error::FailValidate(fail_len, "Array is not on `in` list"))
         }
         else {
@@ -382,7 +384,7 @@ impl ValidArray {
 }
 
 pub fn get_raw_array(raw: &mut &[u8], len: usize) -> crate::Result<Box<[u8]>> {
-    let start = raw.clone();
+    let start: &[u8] = raw;
     for _ in 0..len {
         verify_value(raw)?;
     }

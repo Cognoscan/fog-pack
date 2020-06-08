@@ -41,7 +41,7 @@ impl NoSchema {
     /// way they are used in this library.
     pub fn encode_doc(&mut self, doc: Document) -> crate::Result<Vec<u8>> {
         let mut buf = Vec::new();
-        let len = doc.len();
+        let len = doc.size();
         let raw: &[u8] = doc.raw_doc();
         assert!(len <= MAX_DOC_SIZE,
             "Document was larger than maximum size! Document implementation should've made this impossible!");
@@ -84,7 +84,7 @@ impl NoSchema {
         let (doc, compressed) = self.decode_raw(MAX_DOC_SIZE, buf)?;
 
         // Check for a schema
-        if let Some(_) = parse_schema_hash(&mut &doc[..])? {
+        if parse_schema_hash(&mut &doc[..])?.is_some() {
             return Err(Error::SchemaMismatch);
         }
 
@@ -111,7 +111,7 @@ impl NoSchema {
         // Get signatures
         let mut signed_by = Vec::new();
         let mut index = &mut &doc[doc_len..];
-        while index.len() > 0 {
+        while !index.is_empty() {
             let signature = crypto::Signature::decode(&mut index)
                 .map_err(|_e| io::Error::new(InvalidData, "Invalid signature in raw document"))?;
             signed_by.push(signature.signed_by().clone());
@@ -169,7 +169,7 @@ impl NoSchema {
         // Get & verify signatures
         let mut signed_by = Vec::new();
         let mut index = &mut &doc[doc_len..];
-        while index.len() > 0 {
+        while !index.is_empty() {
             let signature = crypto::Signature::decode(&mut index)?;
             if !signature.verify(&doc_hash) {
                 return Err(Error::BadSignature);
@@ -214,11 +214,17 @@ impl NoSchema {
                 Ok((decode, Some(compressed)))
             },
             CompressType::Compressed | CompressType::DictCompressed => {
-                return Err(Error::SchemaMismatch);
+                Err(Error::SchemaMismatch)
             },
         }
     }
 
+}
+
+impl Default for NoSchema {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn _assert_traits() {

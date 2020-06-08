@@ -26,7 +26,7 @@ impl LockType {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         1 + match *self {
             LockType::Identity(ref v) => ((v.0).0.len() + (v.1).0.len()),
             LockType::Stream(ref v)    => v.0.len(),
@@ -121,13 +121,13 @@ impl Lockbox {
     }
 
     /// Get the length of the Lockbox when it is binary-encoded
-    pub fn len(&self) -> usize {
-        1 + self.type_id.len() + Nonce::len() + self.ciphertext.len()
+    pub fn size(&self) -> usize {
+        1 + self.type_id.size() + Nonce::len() + self.ciphertext.len()
     }
 
     /// Encode a Lockbox into a byte stream. Does not encode length data itself
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.reserve(self.len());
+        buf.reserve(self.size());
         buf.push(self.version);
         self.type_id.encode(buf);
         buf.extend_from_slice(&self.nonce.0);
@@ -142,8 +142,8 @@ impl Lockbox {
         let type_id = LockType::decode(buf)?;
         let mut nonce: Nonce = Default::default();
         buf.read_exact(&mut nonce.0)?;
-        if len < (1 + type_id.len() + nonce.0.len() + Tag::len()) { return Err(CryptoError::BadLength); }
-        let cipher_len = len - 1 - type_id.len() - nonce.0.len();
+        if len < (1 + type_id.size() + nonce.0.len() + Tag::len()) { return Err(CryptoError::BadLength); }
+        let cipher_len = len - 1 - type_id.size() - nonce.0.len();
         let mut ciphertext = Vec::with_capacity(cipher_len);
         let (a, b) = buf.split_at(cipher_len);
         ciphertext.extend_from_slice(a);

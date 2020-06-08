@@ -167,7 +167,7 @@ impl ValidF32 {
     /// Final check on the validator. Returns true if at least one value can still pass the 
     /// validator.
     pub fn finalize(&mut self) -> bool {
-        if self.in_vec.len() > 0 {
+        if !self.in_vec.is_empty() {
             let mut in_vec: Vec<f32> = Vec::with_capacity(self.in_vec.len());
             let mut nin_index = 0;
             for val in self.in_vec.iter() {
@@ -177,17 +177,14 @@ impl ValidF32 {
                 if let Some(nin) = self.nin_vec.get(nin_index) {
                     if nin.total_cmp(val) == Ordering::Equal { continue; }
                 }
-                if self.nan_ok {
-                    in_vec.push(*val);
-                }
-                else if !val.is_nan() && (*val >= self.min) && (*val <= self.max) {
+                if self.nan_ok || (!val.is_nan() && (*val >= self.min) && (*val <= self.max)) {
                     in_vec.push(*val);
                 }
             }
             in_vec.shrink_to_fit();
             self.in_vec = in_vec;
             self.nin_vec = Vec::with_capacity(0);
-            self.in_vec.len() > 0
+            !self.in_vec.is_empty()
         }
         else {
             let min = self.min;
@@ -205,14 +202,10 @@ impl ValidF32 {
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let fail_len = doc.len();
         let value = read_f32(doc)?;
-        if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| probe.total_cmp(&value)).is_err() {
+        if !self.in_vec.is_empty() && self.in_vec.binary_search_by(|probe| probe.total_cmp(&value)).is_err() {
             Err(Error::FailValidate(fail_len, "F32 is not on the `in` list"))
         }
-        else if self.in_vec.len() > 0 {
-            Ok(())
-        }
-        else if value.is_nan() && !self.nan_ok
-        {
+        else if value.is_nan() && !self.nan_ok {
             Err(Error::FailValidate(fail_len, "F32 is NaN and therefore out of range"))
         }
         else if !self.nan_ok && (value < self.min) {

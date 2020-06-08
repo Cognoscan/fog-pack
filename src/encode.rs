@@ -141,19 +141,19 @@ pub fn write_value(buf: &mut Vec<u8>, val: &Value) {
         },
 
         Value::Hash(ref val) => {
-            write_ext_marker(buf, val.len() as u32);
+            write_ext_marker(buf, val.size() as u32);
             buf.push(ExtType::Hash.into());
             val.encode(buf);
         }
 
         Value::Identity(ref val) => {
-            write_ext_marker(buf, val.len() as u32);
+            write_ext_marker(buf, val.size() as u32);
             buf.push(ExtType::Identity.into());
             val.encode(buf);
         },
 
         Value::Lockbox(ref val) => {
-            write_ext_marker(buf, val.len() as u32);
+            write_ext_marker(buf, val.size() as u32);
             buf.push(ExtType::Lockbox.into());
             val.encode(buf);
         },
@@ -187,7 +187,7 @@ pub fn write_value(buf: &mut Vec<u8>, val: &Value) {
     }
 }
 
-fn write_string(buf: &mut Vec<u8>, val: &String) {
+fn write_string(buf: &mut Vec<u8>, val: &str) {
     let len = val.len() as u32;
     if len <= 31 { buf.push(Marker::FixStr(len as u8).into());
     }

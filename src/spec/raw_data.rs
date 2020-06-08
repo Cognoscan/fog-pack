@@ -181,7 +181,7 @@ where:
 - XXXXXXXX is a 8-bit unsigned integer representing N
 - YYYYYYYY_YYYYYYYY is a 16-bit big-endian unsigned integer representing N
 - ZZZZZZZZ_ZZZZZZZZ_ZZZZZZZZ_ZZZZZZZZ is a 32-bit big-endian unsigned integer 
-	representing N
+    representing N
 ```
 
 ## Null
@@ -334,7 +334,7 @@ where:
 - YYYYYYYY is a 8-bit unsigned integer representing N
 - ZZZZZZZZ_ZZZZZZZZ is a 16-bit big-endian unsigned integer representing N
 - AAAAAAAA_AAAAAAAA_AAAAAAAA_AAAAAAAA is a 32-bit big-endian unsigned integer 
-	representing N
+    representing N
 ```
 
 ## Binary
@@ -363,7 +363,7 @@ where:
 - XXXXXXXX is a 8-bit unsigned integer representing N
 - YYYYYYYY_YYYYYYYY is a 16-bit big-endian unsigned integer representing N
 - ZZZZZZZZ_ZZZZZZZZ_ZZZZZZZZ_ZZZZZZZZ is a 32-bit big-endian unsigned integer 
-	representing N
+    representing N
 
 ```
 
@@ -548,9 +548,9 @@ was used for encryption, the symmetric key is derived by:
 
 1. Calculate Curve25519 public encryption key from Ed25519 public key.
 2. Calculate the shared secret between the Curve25519 key and an ephemeral 
-	Curve25519 key pair. If decrypting, the ephemeral public key can be combined 
-	with the key was used for encryption. If encrypting, the ephemeral private key 
-	can be combined with the public encryption key.
+    Curve25519 key pair. If decrypting, the ephemeral public key can be combined 
+    with the key was used for encryption. If encrypting, the ephemeral private key 
+    can be combined with the public encryption key.
 
 For a public key / Identity, the format consists of a version byte, a byte set 
 to 1, the public Identity signing key, a public ephemeral key randomly generated 
@@ -580,7 +580,7 @@ Currently the version byte must be set to 1.
 - Nonce is a 24-byte random nonce
 - Ciphertext is the internal data, encrypted with XChaCha20
 - Tag is the authentication tag produced using the XChaCha20-Poly1305 AEAD 
-	construction.
+    construction.
 
 ```
 

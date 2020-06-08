@@ -82,7 +82,7 @@ pub struct Checklist<T> {
 impl<T> Checklist<T> {
     pub(crate) fn new(checklist: ValidatorChecklist, data: T) -> Self {
         let mut list = HashMap::with_capacity(checklist.len());
-        for v in checklist.to_map().drain() {
+        for v in checklist.into_map().drain() {
             list.insert(v.0, ChecklistItem::new(v.1));
         }
         Self {

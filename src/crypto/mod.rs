@@ -45,6 +45,7 @@ pub enum LockboxContent {
     Data(Vec<u8>),
 }
 
+#[derive(Clone, Copy, Debug)]
 enum LockboxType {
     Key,
     StreamKey,
@@ -60,7 +61,7 @@ impl LockboxType {
             _ => None
         }
     }
-    fn to_u8(self) -> u8 {
+    fn into_u8(self) -> u8 {
         match self {
             LockboxType::Key       => 1,
             LockboxType::StreamKey => 2,
@@ -70,6 +71,7 @@ impl LockboxType {
 }
 
 /// The level of security to be provided by a password hashing function.
+#[derive(Clone, Copy, Debug)]
 pub enum PasswordLevel {
     /// For online, reasonably fast password unlock. Requires 64 MiB of RAM.
     Interactive,
@@ -151,8 +153,7 @@ impl Vault {
         }
         let tag = {
             let (pre_data, mut key_data) = data.split_at_mut(start_of_keys);
-            let res = sodium::aead_encrypt(&mut key_data, &pre_data, &nonce, &self.root_key);
-            res
+            sodium::aead_encrypt(&mut key_data, &pre_data, &nonce, &self.root_key)
         };
         data.extend_from_slice(&tag.0);
         data
@@ -207,7 +208,7 @@ impl Vault {
         let mut success = true;
         {
             let mut rd = &*key_list;
-            while rd.len() > 0 && success {
+            while !rd.is_empty() && success {
                 let record_type = rd.read_u8()?;
                 success = match record_type {
                     1u8 => {
@@ -259,24 +260,21 @@ impl Vault {
         k_ref
     }
 
-    /// Moves both the Key and Identity to the permanent store.
+    /// Moves the given key to the permanent store. Returns true if key exists and is in the 
+    /// permanent store.
     pub fn key_to_perm(&mut self, k: &Key) -> bool {
         // Move key and hold onto FullKey if needed to reconstruct identity
-        let key = match self.temp_keys.remove(&k) {
+        match self.temp_keys.remove(&k) {
             Some(key) => {
                 self.perm_keys.insert(k.clone(),key);
-                self.perm_keys.get(&k)
+                true
             },
-            None => self.perm_keys.get(&k),
-        };
-        // Halt now if we don't actually have the key
-        match key {
-            Some(_) => true,
-            None => false,
+            None => self.perm_keys.contains_key(&k)
         }
     }
 
-    /// Moves the given Stream to the permanent store.
+    /// Moves the given Stream to the permanent store. Returns true if Stream exists and is in the 
+    /// permanent store.
     pub fn stream_to_perm(&mut self, stream: &StreamKey) -> bool {
         match self.temp_streams.remove(&stream) {
             Some(full_stream) => {self.perm_streams.insert(stream.clone(),full_stream); true},
@@ -320,17 +318,17 @@ impl Vault {
     fn data_from_lockbox_content(&self, data: LockboxContent) -> Result<Vec<u8>, CryptoError> {
         let m = match data {
             LockboxContent::Key(k) => {
-                let mut m = vec![LockboxType::Key.to_u8()];
+                let mut m = vec![LockboxType::Key.into_u8()];
                 self.get_key(&k)?.encode(&mut m);
                 m
             },
             LockboxContent::StreamKey(sk) => {
-                let mut m = vec![LockboxType::StreamKey.to_u8()];
+                let mut m = vec![LockboxType::StreamKey.into_u8()];
                 self.get_stream(&sk)?.encode(&mut m);
                 m
             },
             LockboxContent::Data(mut d) => {
-                d.insert(0, LockboxType::Data.to_u8());
+                d.insert(0, LockboxType::Data.into_u8());
                 d
             },
         };
@@ -398,11 +396,11 @@ impl Vault {
     }
 
     fn get_key(&self, k: &Key) -> Result<&FullKey, CryptoError> {
-        self.perm_keys.get(k).or(self.temp_keys.get(k)).ok_or(CryptoError::NotInStorage)
+        self.perm_keys.get(k).or_else(|| self.temp_keys.get(k)).ok_or(CryptoError::NotInStorage)
     }
 
     fn get_stream(&self, s: &StreamKey) -> Result<&FullStreamKey, CryptoError> {
-        self.perm_streams.get(s).or(self.temp_streams.get(s)).ok_or(CryptoError::NotInStorage)
+        self.perm_streams.get(s).or_else(|| self.temp_streams.get(s)).ok_or(CryptoError::NotInStorage)
     }
 
 }

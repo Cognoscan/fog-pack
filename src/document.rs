@@ -181,8 +181,8 @@ impl Document {
         self.signed_by.iter()
     }
 
-    /// Get the length of the raw document, prior to encoding.
-    pub fn len(&self) -> usize {
+    /// Get the size of the raw document in bytes, prior to encoding.
+    pub fn size(&self) -> usize {
         self.doc.len()
     }
 
@@ -294,11 +294,11 @@ pub(crate) fn parse_schema_hash(buf: &mut &[u8]) -> crate::Result<Option<Hash>> 
 
     // Get the first field - should be the empty string if there is a schema used.
     let field = decode::read_str(buf)?;
-    if field.len() > 0 {
+    if !field.is_empty() {
         return Ok(None);
     }
     decode::read_hash(buf)
-        .map(|v| Some(v))
+        .map(Some)
         .map_err(|_e| Error::BadEncode(buf.len(), "Empty string field doesn't have a Hash as its value"))
 }
 
@@ -331,7 +331,7 @@ pub fn train_doc_dict(max_size: usize, docs: Vec<Document>) -> Result<Vec<u8>, u
                 // Document might contain a schema already. Skip over it.
                 let mut buf2: &[u8] = buf;
                 let field = decode::read_str(&mut buf2).unwrap();
-                if field.len() > 0 {
+                if !field.is_empty() {
                     // Wasn't a schema, use the first parsed field along with everything else
                     Vec::from(buf)
                 }

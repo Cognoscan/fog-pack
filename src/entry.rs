@@ -162,8 +162,8 @@ impl Entry {
         self.signed_by.iter()
     }
 
-    /// Get the length of the entry (minus document hash & field name) prior to encoding
-    pub fn len(&self) -> usize {
+    /// Get the size of the entry in bytes (minus document hash & field name) prior to encoding
+    pub fn size(&self) -> usize {
         self.entry.len()
     }
 

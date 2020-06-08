@@ -51,13 +51,13 @@ compression:
 - `description`: A brief string describing the purpose of the schema.
 - `version`: An integer for tracking schema versions.
 - `entries`: An object containing validators for each allowed Entry that may be 
-	attached to a Document following the schema.
+    attached to a Document following the schema.
 - `types`: An object containing aliased validators that may be referred to 
 - anywhere within the schema
 - `doc_compress`: Optionally specifies recommended compression settings for 
-	Documents using the schema.
+    Documents using the schema.
 - `entries_compress`: Optionally specifies recommended compression settings for 
-	entries attached to documents using the schema.
+    entries attached to documents using the schema.
 
 ## Compression Settings
 
@@ -80,7 +80,7 @@ The second recommends a specific compression level:
 {
     "setting": true
     "format": 0,
-		"level": 3
+    "level": 3
 }
 ```
 
@@ -89,7 +89,7 @@ Finally, the third allows for a zstd dictionary to be attached:
 ```json
 {
     "format": 0,
-		"level": 3,
+    "level": 3,
     "setting": "[ATTACH BINARY DICTIONARY HERE]"
 }
 ```

@@ -229,7 +229,7 @@ impl Schema {
     /// impossible with the public Document interface.
     pub fn encode_doc(&mut self, doc: Document) -> crate::Result<Vec<u8>> {
         let mut buf = Vec::new();
-        let len = doc.len();
+        let len = doc.size();
         let mut raw: &[u8] = doc.raw_doc();
         assert!(len <= MAX_DOC_SIZE,
             "Document was larger than maximum size! Document implementation should've made this impossible!");
@@ -344,7 +344,7 @@ impl Schema {
         // Get signatures
         let mut signed_by = Vec::new();
         let mut index = &mut &doc[doc_len..];
-        while index.len() > 0 {
+        while !index.is_empty() {
             let signature = crypto::Signature::decode(&mut index)?;
             signed_by.push(signature.signed_by().clone());
         }
@@ -417,7 +417,7 @@ impl Schema {
 
         // Get & verify signatures
         let mut signed_by = Vec::new();
-        while doc_ptr.len() > 0 {
+        while !doc_ptr.is_empty() {
             let signature = crypto::Signature::decode(&mut doc_ptr)?;
             if !signature.verify(&doc_hash) {
                 return Err(Error::BadSignature);
@@ -450,7 +450,7 @@ impl Schema {
     /// [`Checklist`]: ./checklist/struct.Checklist.html
     pub fn encode_entry(&mut self, entry: Entry) -> crate::Result<Checklist<Vec<u8>>> {
         let mut buf = Vec::new();
-        let len = entry.len();
+        let len = entry.size();
         let raw: &[u8] = entry.raw_entry();
         assert!(len <= MAX_ENTRY_SIZE,
             "Entry was larger than maximum size! Entry implementation should've made this impossible!");
@@ -538,7 +538,7 @@ impl Schema {
                 entry.extend_from_slice(buf_ptr);
             },
             CompressType::CompressedNoSchema => {
-                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &mut buf_ptr, &mut entry)?;
+                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &buf_ptr, &mut entry)?;
             },
             CompressType::DictCompressed => {
                 let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
@@ -551,12 +551,12 @@ impl Schema {
         // Parse the entry itself & load in the optional hash
         let entry_len = verify_value(&mut &entry[..])?;
         let hash_provided = hash.is_some();
-        let hash = hash.unwrap_or(Hash::new_empty());
+        let hash = hash.unwrap_or_else(|| {Hash::new_empty()});
 
         // Get signatures
         let mut signed_by = Vec::new();
         let mut index = &mut &entry[entry_len..];
-        while index.len() > 0 {
+        while !index.is_empty() {
             let signature = crypto::Signature::decode(&mut index)?;
             signed_by.push(signature.signed_by().clone());
         }
@@ -611,7 +611,7 @@ impl Schema {
                 entry.extend_from_slice(buf_ptr);
             },
             CompressType::CompressedNoSchema => {
-                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &mut buf_ptr, &mut entry)?;
+                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &buf_ptr, &mut entry)?;
             },
             CompressType::DictCompressed => {
                 let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
@@ -648,7 +648,7 @@ impl Schema {
 
         // Get & verify signatures
         let mut signed_by = Vec::new();
-        while entry_ptr.len() > 0 {
+        while !entry_ptr.is_empty() {
             let signature = crypto::Signature::decode(&mut entry_ptr)?;
             if !signature.verify(&entry_hash) {
                 return Err(Error::BadSignature);
@@ -691,11 +691,11 @@ impl Schema {
                 if v.schema_required() {
                     if let Some(hash) = doc.schema_hash() {
                         if !v.schema_in_set(&hash) {
-                            return Err(Error::FailValidate(doc.len(), "Document uses unrecognized schema"));
+                            return Err(Error::FailValidate(doc.size(), "Document uses unrecognized schema"));
                         }
                     }
                     else {
-                        return Err(Error::FailValidate(doc.len(), "Document doesn't have schema, but needs one"));
+                        return Err(Error::FailValidate(doc.size(), "Document doesn't have schema, but needs one"));
                     }
                 }
                 if let Some(link) = v.link() {
@@ -704,12 +704,12 @@ impl Schema {
                         v.validate(&mut doc.raw_doc(), &self.types, &mut checklist, true)?;
                     }
                     else {
-                        return Err(Error::FailValidate(doc.len(), "Can't validate a document against a non-object validator"));
+                        return Err(Error::FailValidate(doc.size(), "Can't validate a document against a non-object validator"));
                     }
                 }
             }
             else {
-                return Err(Error::FailValidate(doc.len(), "Can't validate against non-hash validator"));
+                return Err(Error::FailValidate(doc.size(), "Can't validate against non-hash validator"));
             }
         };
         item.mark_done();
@@ -772,7 +772,7 @@ impl Schema {
 
         // Get & verify signatures
         let mut signed_by = Vec::new();
-        while content_ptr.len() > 0 {
+        while !content_ptr.is_empty() {
             let signature = crypto::Signature::decode(&mut content_ptr)?;
             if !signature.verify(&content_hash) {
                 return Err(Error::BadSignature);

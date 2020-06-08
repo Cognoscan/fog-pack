@@ -27,25 +27,25 @@ pub enum Value {
 impl Value {
 
     pub fn as_ref(&self) -> ValueRef {
-        match self {
-            &Value::Null => ValueRef::Null,
-            &Value::Boolean(v) => ValueRef::Boolean(v),
-            &Value::Integer(v) => ValueRef::Integer(v),
-            &Value::String(ref v) => ValueRef::String(v.as_ref()),
-            &Value::F32(v) => ValueRef::F32(v),
-            &Value::F64(v) => ValueRef::F64(v),
-            &Value::Binary(ref v) => ValueRef::Binary(v.as_slice()),
-            &Value::Array(ref v) => {
+        match *self {
+            Value::Null => ValueRef::Null,
+            Value::Boolean(v) => ValueRef::Boolean(v),
+            Value::Integer(v) => ValueRef::Integer(v),
+            Value::String(ref v) => ValueRef::String(v.as_ref()),
+            Value::F32(v) => ValueRef::F32(v),
+            Value::F64(v) => ValueRef::F64(v),
+            Value::Binary(ref v) => ValueRef::Binary(v.as_slice()),
+            Value::Array(ref v) => {
                 ValueRef::Array(v.iter().map(|i| i.as_ref()).collect())
             },
-            &Value::Object(ref v) => {
+            Value::Object(ref v) => {
                 ValueRef::Object(v.iter().map(
                     |(f, ref i)| (f.as_ref(), i.as_ref())).collect())
             },
-            &Value::Hash(ref v) => ValueRef::Hash(v.clone()),
-            &Value::Identity(ref v) => ValueRef::Identity(v.clone()),
-            &Value::Lockbox(ref v) => ValueRef::Lockbox(v.clone()),
-            &Value::Timestamp(v) => ValueRef::Timestamp(v),
+            Value::Hash(ref v) => ValueRef::Hash(v.clone()),
+            Value::Identity(ref v) => ValueRef::Identity(v.clone()),
+            Value::Lockbox(ref v) => ValueRef::Lockbox(v.clone()),
+            Value::Timestamp(v) => ValueRef::Timestamp(v),
         }
     }
 
@@ -246,8 +246,8 @@ impl Value {
         }
     }
 
-    pub fn to_string(self) -> Option<String> {
-        if let Value::String(val) = self {
+    pub fn as_string(&self) -> Option<&String> {
+        if let Value::String(ref val) = *self {
             Some(val)
         } else {
             None
@@ -278,7 +278,7 @@ impl Value {
             }
             Value::Binary(ref _val) => write!(f, "\"<Bin>\""),
             Value::Array(ref vec) => {
-                write!(f, "[\n")?;
+                writeln!(f, "[")?;
                 match vec.iter().take(1).next() {
                     Some(ref v) => {
                         Value::indent(f, cur_indent+1)?;
@@ -289,16 +289,16 @@ impl Value {
                     }
                 }
                 for val in vec.iter().skip(1) {
-                    write!(f, ",\n")?;
+                    writeln!(f, ",")?;
                     Value::indent(f, cur_indent+1)?;
                     val.pretty_print(cur_indent+1, f)?;
                 }
-                write!(f, "\n")?;
+                writeln!(f)?;
                 Value::indent(f, cur_indent)?;
                 write!(f, "]")
             }
             Value::Object(ref obj) => {
-                write!(f, "{{\n")?;
+                writeln!(f, "{{")?;
 
                 match obj.iter().take(1).next() {
                     Some((ref k, ref v)) => {
@@ -313,13 +313,13 @@ impl Value {
                 }
 
                 for (ref k, ref v) in obj.iter().skip(1) {
-                    write!(f, ",\n")?;
+                    writeln!(f, ",")?;
                     Value::indent(f, cur_indent+1)?;
                     format_string(k, f)?;
                     write!(f, ": ")?;
                     v.pretty_print(cur_indent+1, f)?;
                 }
-                write!(f, "\n")?;
+                writeln!(f)?;
                 Value::indent(f, cur_indent)?;
                 write!(f, "}}")
             }
@@ -509,8 +509,8 @@ impl From<Timestamp> for Value {
     }
 }
 
-fn format_string(val: &String, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-    if val.starts_with("<") {
+fn format_string(val: &str, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    if val.starts_with('<') {
         write!(f, "\"<{}\"", val)
     }
     else {
@@ -519,7 +519,7 @@ fn format_string(val: &String, f: &mut fmt::Formatter) -> Result<(), fmt::Error>
 }
 
 fn format_str(val: &str, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-    if val.starts_with("<") {
+    if val.starts_with('<') {
         write!(f, "\"<{}\"", val)
     }
     else {
@@ -554,26 +554,26 @@ pub enum ValueRef<'a> {
 impl<'a> ValueRef<'a> {
 
     pub fn to_owned(&self) -> Value {
-        match self {
-            &ValueRef::Null => Value::Null,
-            &ValueRef::Boolean(v) => Value::Boolean(v),
-            &ValueRef::Integer(v) => Value::Integer(v),
-            &ValueRef::String(v) => Value::String(v.to_string()),
-            &ValueRef::F32(v) => Value::F32(v),
-            &ValueRef::F64(v) => Value::F64(v),
-            &ValueRef::Binary(v) => Value::Binary(v.to_vec()),
-            &ValueRef::Array(ref v) => {
+        match *self {
+            ValueRef::Null => Value::Null,
+            ValueRef::Boolean(v) => Value::Boolean(v),
+            ValueRef::Integer(v) => Value::Integer(v),
+            ValueRef::String(v) => Value::String(v.to_string()),
+            ValueRef::F32(v) => Value::F32(v),
+            ValueRef::F64(v) => Value::F64(v),
+            ValueRef::Binary(v) => Value::Binary(v.to_vec()),
+            ValueRef::Array(ref v) => {
                 Value::Array(v.iter().map(|i| i.to_owned()).collect())
             }
-            &ValueRef::Object(ref v) => {
+            ValueRef::Object(ref v) => {
                 let obj = 
-                    v.iter().map(|(ref f,i)| (f.to_string(), i.to_owned())).collect();
+                    v.iter().map(|(f,i)| ((*f).to_string(), i.to_owned())).collect();
                 Value::Object(obj)
             }
-            &ValueRef::Hash(ref v) => Value::Hash(v.clone()),
-            &ValueRef::Identity(ref v) => Value::Identity(v.clone()),
-            &ValueRef::Lockbox(ref v) => Value::Lockbox(v.clone()),
-            &ValueRef::Timestamp(v) => Value::Timestamp(v),
+            ValueRef::Hash(ref v) => Value::Hash(v.clone()),
+            ValueRef::Identity(ref v) => Value::Identity(v.clone()),
+            ValueRef::Lockbox(ref v) => Value::Lockbox(v.clone()),
+            ValueRef::Timestamp(v) => Value::Timestamp(v),
         }
     }
 
@@ -784,7 +784,7 @@ impl<'a> ValueRef<'a> {
             }
             ValueRef::Binary(ref _val) => write!(f, "\"<Bin>\""),
             ValueRef::Array(ref vec) => {
-                write!(f, "[\n")?;
+                writeln!(f, "[")?;
                 match vec.iter().take(1).next() {
                     Some(ref v) => {
                         ValueRef::indent(f, cur_indent+1)?;
@@ -795,16 +795,16 @@ impl<'a> ValueRef<'a> {
                     }
                 }
                 for val in vec.iter().skip(1) {
-                    write!(f, ",\n")?;
+                    writeln!(f, ",")?;
                     ValueRef::indent(f, cur_indent+1)?;
                     val.pretty_print(cur_indent+1, f)?;
                 }
-                write!(f, "\n")?;
+                writeln!(f)?;
                 ValueRef::indent(f, cur_indent)?;
                 write!(f, "]")
             }
             ValueRef::Object(ref obj) => {
-                write!(f, "{{\n")?;
+                writeln!(f, "{{")?;
 
                 match obj.iter().take(1).next() {
                     Some((ref k, ref v)) => {
@@ -819,13 +819,13 @@ impl<'a> ValueRef<'a> {
                 }
 
                 for (ref k, ref v) in obj.iter().skip(1) {
-                    write!(f, ",\n")?;
+                    writeln!(f, ",")?;
                     ValueRef::indent(f, cur_indent+1)?;
                     format_str(k, f)?;
                     write!(f, ": ")?;
                     v.pretty_print(cur_indent+1, f)?;
                 }
-                write!(f, "\n")?;
+                writeln!(f)?;
                 ValueRef::indent(f, cur_indent)?;
                 write!(f, "}}")
             }

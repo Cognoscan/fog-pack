@@ -12,6 +12,7 @@ pub struct ValidBin {
     nin_vec: Vec<Box<[u8]>>,
     min_len: usize,
     max_len: usize,
+    always_fail: bool,
     min: Option<Box<[u8]>>,
     max: Option<Box<[u8]>>,
     bits_set: Vec<u8>,
@@ -35,6 +36,7 @@ impl ValidBin {
             nin_vec: Vec::with_capacity(0),
             min_len: usize::min_value(),
             max_len: usize::max_value(),
+            always_fail: false,
             min: None,
             max: None,
             bits_set: Vec::with_capacity(0),
@@ -126,16 +128,13 @@ impl ValidBin {
                 self.ord_used = true;
                 let mut max = read_vec(raw)?;
                 let res = if self.ex_max {
-                    if max.iter_mut().fold(true, |acc, x| {
+                    let below_0 = max.iter_mut().fold(true, |acc, x| {
                         let (y, carry) = x.overflowing_sub(acc as u8);
                         *x = y;
                         carry
-                    }) {
-                        Ok(false) // Overflowed to less than 0. Exclusive max with 0 will always fail validation
-                    }
-                    else {
-                        Ok(true)
-                    }
+                    });
+                    self.always_fail |= below_0;
+                    Ok(!below_0)
                 }
                 else {
                     Ok(true)
@@ -161,11 +160,12 @@ impl ValidBin {
                 self.ord_used = true;
                 let mut min = read_vec(raw)?;
                 if self.ex_min {
-                    if min.iter_mut().fold(true, |acc, x| {
+                    let carry = min.iter_mut().fold(true, |acc, x| {
                         let (y, carry) = x.overflowing_add(acc as u8);
                         *x = y;
                         carry
-                    }) {
+                    });
+                    if carry {
                         min.push(1u8);
                     }
                 }
@@ -228,7 +228,7 @@ impl ValidBin {
     /// Final check on the validator. Returns true if at least one value can still pass the 
     /// validator.
     pub fn finalize(&mut self) -> bool {
-        if self.in_vec.len() > 0 {
+        if !self.in_vec.is_empty() {
             let mut in_vec: Vec<Box<[u8]>> = Vec::with_capacity(self.in_vec.len());
             let mut nin_index = 0;
             for val in self.in_vec.iter() {
@@ -252,7 +252,7 @@ impl ValidBin {
             in_vec.shrink_to_fit();
             self.in_vec = in_vec;
             self.nin_vec = Vec::with_capacity(0);
-            self.in_vec.len() > 0
+            !self.in_vec.is_empty()
         }
         else {
             let min_len = self.min_len;
@@ -278,19 +278,7 @@ impl ValidBin {
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let fail_len = doc.len();
         let value = read_bin(doc)?;
-        if (self.in_vec.len() > 0) && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
-            Err(Error::FailValidate(fail_len, "Binary is not on the `in` list"))
-        }
-        else if self.in_vec.len() > 0 {
-            Ok(())
-        }
-        else if value.len() < self.min_len {
-            Err(Error::FailValidate(fail_len, "Binary length is shorter than min allowed"))
-        }
-        else if value.len() > self.max_len {
-            Err(Error::FailValidate(fail_len, "Binary length is longer than max allowed"))
-        }
-        else if self.max.as_ref().map_or(false, |v| {
+        let above_max = self.max.as_ref().map_or(false, |v| {
             let max_len = v.len();
             if max_len > value.len() {
                 false
@@ -305,11 +293,8 @@ impl ValidBin {
                         carry1 | carry2
                     })
             }
-        })
-        {
-            Err(Error::FailValidate(fail_len, "Binary is greater than max value"))
-        }
-        else if self.min.as_ref().map_or(false, |v| {
+        });
+        let below_min = self.min.as_ref().map_or(false, |v| {
             let min_len = v.len();
             if min_len > value.len() {
                 // Value literally can't contain the minimum allowed
@@ -325,8 +310,24 @@ impl ValidBin {
                         carry1 | carry2
                     })
             }
-        })
-        {
+        });
+
+        if self.always_fail {
+            Err(Error::FailValidate(fail_len, "Binary validator always fails (min is 0 and ex_min is true)"))
+        }
+        else if !self.in_vec.is_empty() && self.in_vec.binary_search_by(|probe| (**probe).cmp(value)).is_err() {
+            Err(Error::FailValidate(fail_len, "Binary is not on the `in` list"))
+        }
+        else if value.len() < self.min_len {
+            Err(Error::FailValidate(fail_len, "Binary length is shorter than min allowed"))
+        }
+        else if value.len() > self.max_len {
+            Err(Error::FailValidate(fail_len, "Binary length is longer than max allowed"))
+        }
+        else if above_max {
+            Err(Error::FailValidate(fail_len, "Binary is greater than max value"))
+        }
+        else if below_min {
             Err(Error::FailValidate(fail_len, "Binary is less than min value"))
         }
         else if self.bits_set.iter()

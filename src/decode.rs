@@ -240,7 +240,7 @@ pub fn read_str<'a>(buf: &mut &'a [u8]) -> crate::Result<&'a str> {
 }
 
 /// Attempt to copy a string from a fogpack data structure. Fails if string wasn't present/valid.
-pub fn read_string<'a>(buf: &mut &[u8]) -> crate::Result<String> {
+pub fn read_string(buf: &mut &[u8]) -> crate::Result<String> {
     Ok(read_str(buf)?.to_string())
 }
 
@@ -281,7 +281,7 @@ pub fn read_bin<'a>(buf: &mut &'a [u8]) -> crate::Result<&'a [u8]> {
 }
 
 /// Attempt to read binary data to a Vec.
-pub fn read_vec<'a>(buf: &mut &[u8]) -> crate::Result<Vec<u8>> {
+pub fn read_vec(buf: &mut &[u8]) -> crate::Result<Vec<u8>> {
     Ok(read_bin(buf)?.to_vec())
 }
 
@@ -559,7 +559,7 @@ pub fn read_to_map(buf: &mut &[u8], len: usize) -> crate::Result<BTreeMap<String
     let mut map: BTreeMap<String,Value> = BTreeMap::new();
     object_iterate(buf, len, |field, buf| {
         let val = read_value(buf)?;
-        map.insert(field.clone().to_string(), val);
+        map.insert(field.to_string(), val);
         Ok(())
     })?;
     Ok(map)
@@ -571,7 +571,7 @@ pub fn read_to_map_ref<'a>(buf: &mut &'a [u8], len: usize) -> crate::Result<BTre
     let mut map: BTreeMap<&'a str,ValueRef<'a>> = BTreeMap::new();
     object_iterate(buf, len, |field, buf| {
         let val = read_value_ref(buf)?;
-        map.insert(field.clone(), val);
+        map.insert(field, val);
         Ok(())
     })?;
     Ok(map)
@@ -596,7 +596,7 @@ pub fn read_raw_time(buf: &mut &[u8], len: usize) -> crate::Result<Timestamp> {
         },
         8 => {
             let raw_time = buf.read_u64::<BigEndian>()?;
-            let sec = (raw_time & 0x3FFFF_FFFFu64) as i64;
+            let sec = (raw_time & 0x0003_FFFF_FFFFu64) as i64;
             let nano = (raw_time >> 34) as u32;
             Ok(Timestamp::from_raw(sec,nano).ok_or(Error::BadEncode(fail_len, "Timestamp nanoseconds is too big"))?)
         },
@@ -613,7 +613,7 @@ pub fn read_raw_time(buf: &mut &[u8], len: usize) -> crate::Result<Timestamp> {
 pub fn read_raw_hash(buf: &mut &[u8], len: usize) -> crate::Result<Hash> {
     let fail_len = buf.len();
     let hash = Hash::decode(buf)?;
-    if hash.len() != len {
+    if hash.size() != len {
         Err(Error::BadEncode(fail_len, "Hash type has invalid size"))
     }
     else {
@@ -625,7 +625,7 @@ pub fn read_raw_hash(buf: &mut &[u8], len: usize) -> crate::Result<Hash> {
 pub fn read_raw_id(buf: &mut &[u8], len: usize) -> crate::Result<Identity> {
     let fail_len = buf.len();
     let id = Identity::decode(buf)?;
-    if id.len() != len {
+    if id.size() != len {
         Err(Error::BadEncode(fail_len, "Identity type has invalid size"))
     }
     else {
@@ -852,7 +852,7 @@ fn print_error_internal(buf: &mut &[u8], offset: usize, err: &str, cur_indent: u
             }
         },
         MarkerType::Binary(len) => {
-            if let Ok(_) = read_raw_bin(buf, len) {
+            if read_raw_bin(buf, len).is_ok() {
                 print!("<Bin>");
             }
             else {
@@ -899,7 +899,7 @@ fn print_error_internal(buf: &mut &[u8], offset: usize, err: &str, cur_indent: u
             }
         },
         MarkerType::Identity(len) => {
-            if let Ok(_) = read_raw_id(buf, len) {
+            if read_raw_id(buf, len).is_ok() {
                 print!("<Identity>");
             }
             else {
@@ -908,7 +908,7 @@ fn print_error_internal(buf: &mut &[u8], offset: usize, err: &str, cur_indent: u
             }
         },
         MarkerType::Lockbox(len) => {
-            if let Ok(_) = read_raw_lockbox(buf, len) {
+            if read_raw_lockbox(buf, len).is_ok() {
                 print!("<Lockbox>");
             }
             else {

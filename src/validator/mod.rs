@@ -71,7 +71,7 @@ impl ValidatorChecklist {
     pub fn add(&mut self, hash: Hash, index: usize) {
         self.list
             .entry(hash)
-            .or_insert(Vec::with_capacity(1))
+            .or_insert_with(|| Vec::with_capacity(1))
             .push(index)
     }
 
@@ -84,7 +84,7 @@ impl ValidatorChecklist {
         }
     }
 
-    pub fn to_map(self) -> HashMap<Hash, Vec<usize>> {
+    pub fn into_map(self) -> HashMap<Hash, Vec<usize>> {
         self.list
     }
 
@@ -136,7 +136,7 @@ fn sorted_union<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T>
     let mut new = Vec::with_capacity(in1.len() + in2.len());
     let mut i1 = 0;
     let mut i2 = 0;
-    if (in2.len() > 0)  && (in1.len() > 0) {
+    if !in1.is_empty() && !in2.is_empty() {
         i1 = in1.binary_search_by(|probe| compare(probe, &in2[0])).unwrap_or_else(|x| x);
         new.extend_from_slice(&in1[0..i1]);
     }
@@ -175,7 +175,7 @@ fn sorted_intersection<T,F>(in1: &[T], in2: &[T], compare: F) -> Vec<T>
     let mut new = Vec::with_capacity(in1.len().min(in2.len()));
     let mut i1 = 0;
     let mut i2 = 0;
-    if (in2.len() > 0)  && (in1.len() > 0) {
+    if !in1.is_empty() && !in2.is_empty() {
         i1 = in1.binary_search_by(|probe| compare(probe, &in2[0])).unwrap_or_else(|x| x);
     }
     while let (Some(item1), Some(item2)) = (in1.get(i1), in2.get(i2)) {

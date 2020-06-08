@@ -13,8 +13,8 @@ const DEFAULT_HASH_VERSION: u8 = 1;
 const MIN_HASH_VERSION: u8 = 1;
 const MAX_HASH_VERSION: u8 = 1;
 
-const ALPHABET: &'static [u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const DIGIT_MAP: &'static [i8] = &[
+const ALPHABET: &[u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const DIGIT_MAP: &[i8] = &[
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
@@ -57,18 +57,17 @@ impl PartialEq for Hash {
 // BTree
 impl cmp::Ord for Hash {
     fn cmp(&self, other: &Hash) -> Ordering {
-        if self.version > other.version {
-            return Ordering::Greater;
+        match self.version.cmp(&other.version) {
+            Ordering::Greater => { return Ordering::Greater; },
+            Ordering::Less => { return Ordering::Less; }
+            _ => {},
         }
-        else if self.version < other.version {
-            return Ordering::Less;
-        }
+
         for i in 0..HASH_BYTES {
-            if self.digest[i] > other.digest[i] {
-                return Ordering::Greater;
-            }
-            else if self.digest[i] < other.digest[i] {
-                return Ordering::Less;
+            match self.digest[i].cmp(&other.digest[i]) {
+                Ordering::Greater => { return Ordering::Greater; },
+                Ordering::Less => { return Ordering::Less; }
+                _ => {},
             }
         }
         Ordering::Equal
@@ -123,8 +122,6 @@ impl hash::Hash for Hash {
 impl Hash {
 
     pub fn new(data: &[u8]) -> Hash {
-        debug_assert!(DEFAULT_HASH_VERSION <= MAX_HASH_VERSION);
-        debug_assert!(DEFAULT_HASH_VERSION >= MIN_HASH_VERSION);
         let mut hash = Hash {
             version: DEFAULT_HASH_VERSION,
             digest: [0;HASH_BYTES]
@@ -154,7 +151,7 @@ impl Hash {
         &self.digest
     }
 
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         if self.version == 0 {
             1
         }
@@ -164,7 +161,7 @@ impl Hash {
     }
 
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.reserve(self.len());
+        buf.reserve(self.size());
         buf.push(self.version);
         if self.version != 0 {
             buf.extend_from_slice(&self.digest);
@@ -189,7 +186,7 @@ impl Hash {
         // We never have leading zeros because the version byte is 1 (or higher)
         // Run through base58 encoding loop, from the IETF Base58 Encoding Scheme 
         // (draft-msporny-base58-01)
-        let mut input = Vec::with_capacity(self.len());
+        let mut input = Vec::with_capacity(self.size());
         self.encode(&mut input);
 
         let size = (input.len() * 89500 + 65535) >> 16; // ceil(size * log2(256)/log2(58)), scaled by 2^16.
@@ -197,8 +194,8 @@ impl Hash {
         let mut high = size-1;
 
         // Repeated long division by 58, emitting the remainder of each division
-        for i in 0..input.len() {
-            let mut carry = input[i] as u32;
+        for byte in input {
+            let mut carry = byte as u32;
             let mut j = size-1;
             while j > high || carry != 0 {
                 carry |= 256 * buffer[j] as u32;
@@ -220,7 +217,7 @@ impl Hash {
     }
 
     pub fn decode_base58(s: &str) -> Result<Hash, CryptoError> {
-        if s.len() < 1 { return Err(CryptoError::BadFormat); }
+        if s.is_empty() { return Err(CryptoError::BadFormat); }
         // If we only have one character and it's '1', then it's the empty hash.
         if (s.len() == 1) && (s.as_bytes()[0] == b'1') {
             return Ok(Hash::new_empty());
@@ -262,8 +259,6 @@ impl Hash {
 
 impl HashState {
     pub fn new() -> HashState {
-        debug_assert!(DEFAULT_HASH_VERSION <= MAX_HASH_VERSION);
-        debug_assert!(DEFAULT_HASH_VERSION >= MIN_HASH_VERSION);
         HashState {
             version: DEFAULT_HASH_VERSION,
             state: Blake2BState::new()
@@ -291,6 +286,12 @@ impl HashState {
         let mut hash = Hash { version: self.version, digest: [0;HASH_BYTES] };
         self.state.finalize(&mut hash.digest);
         hash
+    }
+}
+
+impl Default for HashState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

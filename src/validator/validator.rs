@@ -153,14 +153,14 @@ impl Validator {
                 }
                 else if possible_count != 0 {
                     let mut index: usize = 0;
-                    for i in 0..possible_check.len() {
-                        if possible_check[i] > 0 {
+                    for (i, possible) in possible_check.iter().enumerate() {
+                        if *possible > 0 {
                             index = i;
                             break;
                         }
                     }
                     if type_seen {
-                        possible[index].finalize();
+                        //possible[index].finalize();
                         //if possible_check[index] == 1 || !valid {
                         possible[index].clone()
                     }
@@ -175,8 +175,9 @@ impl Validator {
         };
 
         if let Validator::Type(name) = validator {
-            let index = reader.type_names.entry(name.clone()).or_insert(reader.types.len());
-            if *index == reader.types.len() {
+            let types_len = reader.types.len();
+            let index = reader.type_names.entry(name.clone()).or_insert_with(|| types_len);
+            if *index == types_len {
                 reader.types.push(match name.as_str() {
                     "Null"  => Validator::Null,
                     "Bool"  => Validator::Boolean(ValidBool::new(is_query)),

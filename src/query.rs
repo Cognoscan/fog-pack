@@ -116,11 +116,11 @@ impl Query {
                 if v.schema_required() {
                     if let Some(hash) = doc.schema_hash() {
                         if !v.schema_in_set(&hash) {
-                            return Err(Error::FailValidate(doc.len(), "Document uses unrecognized schema"));
+                            return Err(Error::FailValidate(doc.size(), "Document uses unrecognized schema"));
                         }
                     }
                     else {
-                        return Err(Error::FailValidate(doc.len(), "Document doesn't have schema, but needs one"));
+                        return Err(Error::FailValidate(doc.size(), "Document doesn't have schema, but needs one"));
                     }
                 }
                 if let Some(link) = v.link() {
@@ -129,12 +129,12 @@ impl Query {
                         v.validate(&mut doc.raw_doc(), &self.types, &mut checklist, true)?;
                     }
                     else {
-                        return Err(Error::FailValidate(doc.len(), "Can't validate a document against a non-object validator"));
+                        return Err(Error::FailValidate(doc.size(), "Can't validate a document against a non-object validator"));
                     }
                 }
             }
             else {
-                return Err(Error::FailValidate(doc.len(), "Can't validate against non-hash validator"));
+                return Err(Error::FailValidate(doc.size(), "Can't validate against non-hash validator"));
             }
         };
         item.mark_done();

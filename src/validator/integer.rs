@@ -183,7 +183,7 @@ impl ValidInt {
     /// Final check on the validator. Returns true if at least one value can still pass the 
     /// validator.
     pub fn finalize(&mut self) -> bool {
-        if self.in_vec.len() > 0 {
+        if !self.in_vec.is_empty() {
             let mut in_vec: Vec<Integer> = Vec::with_capacity(self.in_vec.len());
             let mut nin_index = 0;
             for val in self.in_vec.iter() {
@@ -203,7 +203,7 @@ impl ValidInt {
             in_vec.shrink_to_fit();
             self.in_vec = in_vec;
             self.nin_vec = Vec::with_capacity(0);
-            self.in_vec.len() > 0
+            !self.in_vec.is_empty()
         }
         else {
             let min = self.min;
@@ -225,11 +225,8 @@ impl ValidInt {
         let fail_len = doc.len();
         let value = read_integer(doc)?;
         let value_raw = value.as_bits();
-        if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
+        if !self.in_vec.is_empty() && self.in_vec.binary_search(&value).is_err() {
             Err(Error::FailValidate(fail_len, "Integer is not on the `in` list"))
-        }
-        else if self.in_vec.len() > 0 {
-            Ok(())
         }
         else if value < self.min {
             Err(Error::FailValidate(fail_len, "Integer is less than minimum allowed"))

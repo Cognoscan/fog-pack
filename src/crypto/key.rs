@@ -40,12 +40,12 @@ impl Identity {
         self.version
     }
 
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         1 + self.id.0.len()
     }
 
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.reserve(self.len());
+        buf.reserve(self.size());
         buf.push(self.version);
         buf.extend_from_slice(&self.id.0);
     }
@@ -117,13 +117,13 @@ impl Signature {
         verify_detached(&self.id.id, hash.digest(), &self.sig)
     }
 
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         2 + self.id.id.0.len() + self.sig.0.len()
     }
 
     /// Write the signature data out to a byte stream.
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.reserve(self.len());
+        buf.reserve(self.size());
         buf.push(self.id.version);
         buf.push(self.hash_version);
         buf.extend_from_slice(&self.id.id.0);
@@ -140,7 +140,7 @@ impl Signature {
         buf.read_exact(&mut id.0).map_err(CryptoError::Io)?;
         buf.read_exact(&mut sig.0).map_err(CryptoError::Io)?;
         Ok(Signature {
-            id: Identity { version: id_version, id: id },
+            id: Identity { version: id_version, id },
             hash_version,
             sig
         })

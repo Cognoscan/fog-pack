@@ -56,7 +56,7 @@ impl ValidLock {
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<()> {
         let fail_len = doc.len();
         let value = read_lockbox(doc)?;
-        if value.len() > self.max_len {
+        if value.size() > self.max_len {
             Err(Error::FailValidate(fail_len, "Lockbox longer than max length allowed"))
         }
         else {

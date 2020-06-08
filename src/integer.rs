@@ -117,13 +117,11 @@ impl ops::Add<i64> for Integer {
                 if other >= 0 {
                     Integer::from(lhs + (other as u64))
                 }
+                else if lhs >= (1u64 << 63) {
+                    Integer::from(lhs.wrapping_add(other as u64))
+                }
                 else {
-                    if lhs >= (1u64 << 63) {
-                        Integer::from(lhs.wrapping_add(other as u64))
-                    }
-                    else {
-                        Integer::from((lhs as i64) + other)
-                    }
+                    Integer::from((lhs as i64) + other)
                 }
             },
             IntPriv::NegInt(lhs) => Integer::from(lhs + other),
@@ -140,13 +138,11 @@ impl ops::Sub<i64> for Integer {
                 if other < 0 {
                     Integer::from(lhs.wrapping_sub(other as u64))
                 }
+                else if lhs >= (1u64 << 63) {
+                    Integer::from(lhs - (other as u64))
+                }
                 else {
-                    if lhs >= (1u64 << 63) {
-                        Integer::from(lhs - (other as u64))
-                    }
-                    else {
-                        Integer::from((lhs as i64) - other)
-                    }
+                    Integer::from((lhs as i64) - other)
                 }
             },
             IntPriv::NegInt(lhs) => Integer::from(lhs - other),

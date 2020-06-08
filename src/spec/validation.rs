@@ -192,11 +192,11 @@ An integer validator allowing any positive value between 0 and
 
 ```json
 {
-	"type": "Int",
-	"min": 0,
-	"max": 256,
-	"ex_max": true,
-	"bits_clr": 64
+    "type": "Int",
+    "min": 0,
+    "max": 256,
+    "ex_max": true,
+    "bits_clr": 64
 }
 ```
 
@@ -212,26 +212,26 @@ number of Unicode scalar values. They have the following optional fields:
 - `in`: A string or array of strings the value must be among.
 - `nin`: A string or array of strings the value must not be among.
 - `matches`: A string or array of strings, each of which contains a regex the 
-	described field must match. General Perl-style regular expressions are 
-	supported, but without look around and backreferences. Unicode character 
-	classes are supported.
+    described field must match. General Perl-style regular expressions are 
+    supported, but without look around and backreferences. Unicode character 
+    classes are supported.
 - `max_len`: The maximum number of bytes allowed for the value. Must be at least 
-	0.
+    0.
 - `min_len`: The minimum number of bytes allowed for the value. Must be at least
-	0.
+    0.
 - `max_char`: The maximum number of unicode scalar values allowed for the value. 
-	Must be at least 0.
+    Must be at least 0.
 - `min_char`: The minimum number of unicode scalar values allowed for the value.
-	Must be at least 0.
+    Must be at least 0.
 - `force_nfc`: Boolean. Runs the string to be validated, `in`, `nin`, and 
-	`matches` through Unicode normalization to NFC before performing validation.
+    `matches` through Unicode normalization to NFC before performing validation.
 - `force_nfkc`: Boolean. Runs the string to be validated, `in`, `nin`, and 
-	`matches` through Unicode normalization to NFKC before performing validation.
-	This overrides `force_nfc` if it is also set to true.
+    `matches` through Unicode normalization to NFKC before performing validation.
+    This overrides `force_nfc` if it is also set to true.
 - `query`: Boolean. Allows queries to use `in` and `nin`.
 - `regex`: Boolean. Allows queries to use `matches`.
 - `size`: Boolean. Allows queries to use `min_len`, `max_len`, `min_char`, and 
-	`max_char`.
+    `max_char`.
 
 Validation fails if the value is not a string or does not meet all of the 
 optional requirements.
@@ -305,15 +305,15 @@ optional fields:
 - `default`
 - `comment`
 - `ex_min`: A boolean that, if true, doesn't allow equality for the minimum 
-	value. If `min` isn't present, but this is set, the minimum allowed value is 
-	anything except for NaN and negative infinity.
+    value. If `min` isn't present, but this is set, the minimum allowed value is 
+    anything except for NaN and negative infinity.
 - `ex_min`: A boolean that, if true, doesn't allow equality for the minimum 
-	value. If `max` isn't present, but this is set, the maxixmum allowed value is 
-	anything except for NaN and positive infinity.
+    value. If `max` isn't present, but this is set, the maxixmum allowed value is 
+    anything except for NaN and positive infinity.
 - `min`: The minimum allowed value, with NaN not permitted. NaN is not permitted 
-	if this is present.
+    if this is present.
 - `max`: The maximum allowed value, with NaN not permitted. NaN is not permitted 
-	if this is set.
+    if this is set.
 - `in`: A floating-point value or array of values the value must be among.
 - `nin`: A floating-point value or array of values the value must not be among.
 - `ord`: Boolean. Allows queries to use `min`, `max`, `ex_min`, and `ex_max`.
@@ -344,20 +344,20 @@ purposes of ordinal comparisons. They have the following optional fields:
 - `default`
 - `comment`
 - `bits_clr`: A byte vector used as a bit field. Any bits set in it must be 
-	cleared in an allowed value.
+    cleared in an allowed value.
 - `bits_set`: A byte vector used as a bit field. Any bits set in it must be set 
-	in an allowed value.
+    in an allowed value.
 - `ex_max`: A boolean that, if true, doesn't allow equality for the maximum 
-	value set by `max`.
+    value set by `max`.
 - `ex_min`: A boolean that, if true, doesn't allow equality for the minimum 
 - value set by `min`. If `min` isn't present, the minimum allowed value is a 1 
-	for the first byte.
+    for the first byte.
 - `min`: The minimum allowed value, as a little-endian unsigned value. 
 - `max`: The maximum allowed value, as a little-endian unsigned value. 
 - `min_len`: The minimum number of bytes allowed for the value. Must be at least 
-	0.
+    0.
 - `max_len`: The maximum number of bytes allowed for the value. Must be at least 
-	0.
+    0.
 - `in`: A byte vector or array of byte vectors the value must be among.
 - `nin`: A byte vector or array of byte vectors the value must not be among.
 - `bit`: Boolean. Allows queries to use `bit_clr` and `bit_set`.
@@ -392,21 +392,21 @@ fields:
 - `comment`
 - `default`
 - `contains`: An array of validators. For each validator in the array, the array 
-	must contain a value that passes that validator. A single item in the array 
-	may pass multiple validators within the `contains` array.
+    must contain a value that passes that validator. A single item in the array 
+    may pass multiple validators within the `contains` array.
 - `items`: An array of validators. Each validator in the `items` array 
-	corresponds to a value in the array at the same position. All values in the 
-	array must pass their corresponding validator in the `items` array to pass 
-	validation.
+    corresponds to a value in the array at the same position. All values in the 
+    array must pass their corresponding validator in the `items` array to pass 
+    validation.
 - `extra_items`: A validator that any array items not covered by the optional 
-	`items` array must adhere to. If `items` isn't present, all array items are 
-	validated against `extra_items`.
+    `items` array must adhere to. If `items` isn't present, all array items are 
+    validated against `extra_items`.
 - `in`: An array of arrays that the value must be among.
 - `nin`: An array of arrays that the value must not be among.
 - `max_len`: The maximum number of items allowed in the array. Must be at least 
-	0.
+    0.
 - `min_len`: The minimum number of items allowed in the array. Must be at least 
-	0.
+    0.
 - `unique`: Boolean. Requires that every value in the array be unique if true.
 - `query`: Boolean. Allows queries to use `in`, and `nin`.
 - `size`: Boolean. Allows queries to use `min_len` and `max_len`.
@@ -421,15 +421,15 @@ When checking validity of queries, validators are matched against the ones they
 would be used against. So:
 
 - Each `items` validator is checked against the schema's corresponding one, or 
-	against the schema's `extra_items` if the schema has that field. If there is 
-	no `extra_items` field in the schema and no corresponding `items` validator, 
-	the validator is allowed in the query.
+    against the schema's `extra_items` if the schema has that field. If there is 
+    no `extra_items` field in the schema and no corresponding `items` validator, 
+    the validator is allowed in the query.
 - The `extra_items` validator is checked against the schema's `extra_items` 
-	validator, as well as any unmatched `items` validators in the schema's array 
-	validator.
+    validator, as well as any unmatched `items` validators in the schema's array 
+    validator.
 - Validators in the query's `contains` are checked against all validators in 
-	the schema's `items` array, as well as against the validator in the schema's 
-	`extra_items` field.
+    the schema's `items` array, as well as against the validator in the schema's 
+    `extra_items` field.
 
 #### Examples
 
@@ -463,24 +463,24 @@ optional fields:
 - `in`: An object or array of objects that the value must be among.
 - `nin`: An object or array of objects that the value must not be among.
 - `max_fields`: The maximum number of allowed field-value pairs in the object. 
-	Must be at least 0.
+    Must be at least 0.
 - `min_fields`: The minimum number of allowed field-value pairs in the object. 
-	Must be at least 0.
+    Must be at least 0.
 - `req`: An object where each field is an optional field for the described 
-	object, and each associated value is the validator for that field's value in 
-	the described object.
+    object, and each associated value is the validator for that field's value in 
+    the described object.
 - `opt`: An object where each field is a required field for the described 
-	object, and each associated value is the validator for that field's value in 
-	the described object.
+    object, and each associated value is the validator for that field's value in 
+    the described object.
 - `ban`: A string or array of strings that none of the fields are allowed to 
-	be among.
+    be among.
 - `field_type`: A validator that any field values not covered by `req` or `opt` 
-	must adhere to.
+    must adhere to.
 - `unknown_ok`: Allows field-value pairs not covered by `req` and `opt`. This 
-	must be set for `field_type` to be useful.
+    must be set for `field_type` to be useful.
 - `query`: Boolean. Allows queries to use `in` and `nin`.
 - `obj_ok`: Boolean. Allows queries to use `req`, `opt`, `ban`, `field_type`, 
-	and `unknown_ok`.
+    and `unknown_ok`.
 
 Unlike other validators, Object does not default to "anything goes" if none of 
 the optional fields are specified. "Anything goes" can be enabled by setting 
@@ -492,35 +492,35 @@ The validation procedure for Object types is a bit more complex, and proceeds as
 follows:
 
 1. If the number of fields in the object is outside the optional ranges set by 
-	`max_fields` and `min_fields`, validation fails.
+    `max_fields` and `min_fields`, validation fails.
 2. For each field-value pair:
-	1. Check the field.
-	2. If it is in the `ban` array, validation fails.
-	3. If it is in the `req` object, verify against the corresponding validator.
-	4. If it is not in `req` but is in `opt`, verify against the corresponding 
-		validator.
-	5. If it is not in `req` or `opt`, and `unknown_ok` is set to true, check it 
-		against the optional `field_type` validator. If `field_type` is not present, 
-		it passes regardless.
-	6. If it isn't in `req` or `opt` and `unknown_ok` is not set to true, 
-		validation fails.
+    1. Check the field.
+    2. If it is in the `ban` array, validation fails.
+    3. If it is in the `req` object, verify against the corresponding validator.
+    4. If it is not in `req` but is in `opt`, verify against the corresponding 
+        validator.
+    5. If it is not in `req` or `opt`, and `unknown_ok` is set to true, check it 
+        against the optional `field_type` validator. If `field_type` is not present, 
+        it passes regardless.
+    6. If it isn't in `req` or `opt` and `unknown_ok` is not set to true, 
+        validation fails.
 3. Check the object against the objects in the optional `nin` list. If it is in 
-	the list, validation fails.
+    the list, validation fails.
 4. If the `in` list exists, check the object agaisnt the objects in that list. 
-	If it isn't in the list, validation fails.
+    If it isn't in the list, validation fails.
 
 When checking validity of queries, validators are matched against the ones they 
 would be used against. So:
 
 - Fields in the query's `req` object are matched first against the schema's 
-	`req`, then against the schema's `opt` if nothing is in `req`, and finally 
-	against `field_type` if nothing is in either. If it finds nothing to match 
-	against, the query is invalid if `unknown_ok` is not set to true.
+    `req`, then against the schema's `opt` if nothing is in `req`, and finally 
+    against `field_type` if nothing is in either. If it finds nothing to match 
+    against, the query is invalid if `unknown_ok` is not set to true.
 - Fields in the query's `opt` object go through the same procedure as the ones 
-	in the query's `req` object.
+    in the query's `req` object.
 - If the query has `field_type`, that validator is matched against the schema's 
-	`field_type` validator, along with any validators in `req` and `opt` that 
-	weren't covered by the query's `req` and `opt` objects.
+    `field_type` validator, along with any validators in `req` and `opt` that 
+    weren't covered by the query's `req` and `opt` objects.
 
 #### Examples
 
@@ -530,12 +530,12 @@ bytes. This would look like:
 
 ```json
 {
-	"type": "Obj",
-	"req": {
-		"title": { "type": "Str", "max_len": 255 },
-	},
-	"unknown_ok": true,
-	"field_type": { "type": "Str" }
+    "type": "Obj",
+    "req": {
+        "title": { "type": "Str", "max_len": 255 },
+    },
+    "unknown_ok": true,
+    "field_type": { "type": "Str" }
 }
 ```
 
@@ -549,11 +549,11 @@ support the following optional fields:
 - `in`: A hash or array of hashes the value must be among.
 - `nin`: A hash or array of hashes the value must not be among.
 - `link`: A validator that the document matching the hash must adhere to. This 
-	field is only used when the validator is for an entry; it is ignored for 
-	documents.
+    field is only used when the validator is for an entry; it is ignored for 
+    documents.
 - `schema`: A hash or array of hashes that match various schemas. The document 
-	matching a validated hash must use one of these schemas. This field is only 
-	used when the validator is for an entry; it is ignored for documents.
+    matching a validated hash must use one of these schemas. This field is only 
+    used when the validator is for an entry; it is ignored for documents.
 - `query`: Boolean. Allows queries to use `in` and `nin`.
 - `link_ok`: Boolean. Allows queries to use `link`.
 - `schema_ok`: Boolean. Allows queries to use `schema`.
@@ -627,7 +627,7 @@ encrypted value of some kind. They have the following optional fields:
 
 - `comment`
 - `max_len`: The maximum number of bytes allowed in a complete lockbox (not 
-	counting the `ext_type` wrapper).
+    counting the `ext_type` wrapper).
 - `size`: Boolean. Allows queries to use `max_len`.
 
 Validation fails if the value is not a lockbox or has a length greater than 
@@ -659,11 +659,11 @@ have the following optional fields:
 - `min`: The minimum allowed timestamp.
 - `max`: The maximum allowed timestamp.
 - `ex_min`: Boolean that, if true, doesn't allow for equality with the minimum 
-	value. If no `min` field is present, the minimum possible time is not
-	allowed.
+    value. If no `min` field is present, the minimum possible time is not
+    allowed.
 - `ex_max`: Boolean that, if true, doesn't allow for equality with the maximum 
-	value. If no `max` field is present, the maximum possible time is not
-	allowed.
+    value. If no `max` field is present, the maximum possible time is not
+    allowed.
 - `in`: A timestamp or array of timestamps that the value must be among.
 - `nin`: A timetamp or array of timestamps that the value must not be among.
 - `ord`: Boolean. Allows queries to use `min`, `max`, `ex_min`, and `ex_max`.
@@ -705,11 +705,11 @@ in length. This would require a Multi validator:
 
 ```json
 {
-	"type": "Multi",
-	"any_of": [
-		{ "type": "Bool" },
-		{ "type": "Str", "max_len": 16 }
-	]
+    "type": "Multi",
+    "any_of": [
+        { "type": "Bool" },
+        { "type": "Str", "max_len": 16 }
+    ]
 }
 ```
 */

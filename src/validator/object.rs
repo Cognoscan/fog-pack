@@ -262,13 +262,13 @@ impl ValidObj {
             MarkerType::Object(len) => len,
             _ => return Err(Error::FailValidate(fail_len, "Expected object")),
         };
-        let obj_start = doc.clone(); // Start *after* the marker has been read
+        let obj_start: &[u8] = doc; // Start *after* the marker has been read
 
         // Read out the schema field if this is a Document, and don't count it towards the field 
         // limit
         if top_schema {
             let mut schema = &doc[..];
-            if read_str(&mut schema)?.len() == 0 {
+            if read_str(&mut schema)?.is_empty() {
                 if read_hash(&mut schema).is_err() {
                     return Err(Error::FailValidate(fail_len, "Document schema field doesn't contain a Hash"));
                 }
@@ -282,7 +282,7 @@ impl ValidObj {
         if num_fields < self.min_fields {
             return Err(Error::FailValidate(fail_len, "Object has fewer fields than allowed"));
         }
-        if num_fields == 0 && self.required.len() == 0 { return Ok(()); }
+        if num_fields == 0 && self.required.is_empty() { return Ok(()); }
         if num_fields > self.max_fields {
             return Err(Error::FailValidate(fail_len, "Object has more fields than allowed"));
         }
@@ -312,13 +312,11 @@ impl ValidObj {
                     Ok(())
                 }
             }
+            else if self.required.binary_search_by(|probe| (probe.0).as_str().cmp(field)).is_ok() {
+                Err(Error::FailValidate(fail_len, "Missing required fields before this"))
+            }
             else {
-                if self.required.binary_search_by(|probe| (probe.0).as_str().cmp(field)).is_ok() {
-                    Err(Error::FailValidate(fail_len, "Missing required fields before this"))
-                }
-                else {
-                    Err(Error::FailValidate(fail_len, "Unknown, invalid field in object"))
-                }
+                Err(Error::FailValidate(fail_len, "Unknown, invalid field in object"))
             }
         })?;
 
@@ -328,7 +326,7 @@ impl ValidObj {
         if self.nin_vec.iter().any(|x| obj_start == &x[..]) {
             Err(Error::FailValidate(fail_len, "Object in object `nin` list is present"))
         }
-        else if (self.in_vec.len() > 0) && !self.in_vec.iter().any(|x| obj_start == &x[..]) {
+        else if !self.in_vec.is_empty() && !self.in_vec.iter().any(|x| obj_start == &x[..]) {
             Err(Error::FailValidate(fail_len, "Object not in object `in` list is present"))
         }
         else if req_index < self.required.len() {
@@ -388,27 +386,24 @@ impl ValidObj {
                             if !query_check(s, o, s_types, o_types) { return false; }
                         }
                         // Check remaining self.req fields
-                        if !req_list.iter().enumerate().all(|(index, checked)| {
+                        let req_pass = req_list.iter().enumerate().all(|(index, checked)| {
                             if !checked {
                                 query_check(self.required[index].1, o, s_types, o_types)
                             }
                             else {
                                 true
                             }
-                        })
-                        {
-                            return false;
-                        }
+                        });
                         // Check remaining self.opt fields
-                        if !opt_list.iter().enumerate().all(|(index, checked)| {
+                        let opt_pass = opt_list.iter().enumerate().all(|(index, checked)| {
                             if !checked {
                                 query_check(self.optional[index].1, o, s_types, o_types)
                             }
                             else {
                                 true
                             }
-                        })
-                        {
+                        });
+                        if !req_pass || !opt_pass {
                             return false;
                         }
                     }
@@ -431,13 +426,13 @@ fn get_obj(raw: &mut &[u8]) -> crate::Result<Box<[u8]>> {
         get_obj_raw(raw, len)
     }
     else {
-        return Err(Error::FailValidate(fail_len, "Expected objects in `in`/`nin` fields"));
+        Err(Error::FailValidate(fail_len, "Expected objects in `in`/`nin` fields"))
     }
 }
 
 // Get an object's bytes, after the leading marker has already been parsed
 fn get_obj_raw(raw: &mut &[u8], len: usize) -> crate::Result<Box<[u8]>> {
-    let start = raw.clone();
+    let start: &[u8] = raw;
     verify_map(raw, len)?;
     let (obj, _) = start.split_at(start.len()-raw.len());
     Ok(obj.to_vec().into_boxed_slice())

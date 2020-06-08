@@ -45,7 +45,7 @@ impl ValidMulti {
     /// Final check on the validator. Returns true if at least one value can (probably) still pass the 
     /// validator.
     pub fn finalize(&mut self) -> bool {
-        self.any_of.len() > 0
+        !self.any_of.is_empty()
     }
 
     pub fn validate(&self,
@@ -55,10 +55,10 @@ impl ValidMulti {
                     ) -> crate::Result<()>
     {
         let fail_len = doc.len();
-        if self.any_of.iter().any(|v_index| {
+        let any_of_pass = self.any_of.iter().any(|v_index| {
                 let mut temp_list = ValidatorChecklist::new();
                 let mut doc_local = &doc[..];
-                if let Err(_) = types[*v_index].validate(&mut doc_local, types, *v_index, &mut temp_list) {
+                if types[*v_index].validate(&mut doc_local, types, *v_index, &mut temp_list).is_err() {
                     false
                 }
                 else {
@@ -66,8 +66,8 @@ impl ValidMulti {
                     list.merge(temp_list);
                     true
                 }
-        })
-        {
+        });
+        if any_of_pass {
             Ok(())
         }
         else {

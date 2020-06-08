@@ -184,7 +184,7 @@ impl ValidHash {
     /// validator. We do not check to see if Hashes in `schema` field are for valid schema, or if 
     /// they intersect with the `link` field's validator.
     pub fn finalize(&mut self) -> bool {
-        if self.in_vec.len() > 0 {
+        if !self.in_vec.is_empty() {
             let mut in_vec: Vec<Hash> = Vec::with_capacity(self.in_vec.len());
             for val in self.in_vec.iter() {
                 if !self.nin_vec.contains(&val) && !in_vec.contains(&val) {
@@ -194,7 +194,7 @@ impl ValidHash {
             in_vec.shrink_to_fit();
             self.in_vec = in_vec;
             self.nin_vec = Vec::with_capacity(0);
-            self.in_vec.len() > 0
+            !self.in_vec.is_empty()
         }
         else {
             self.nin_vec.shrink_to_fit();
@@ -207,7 +207,7 @@ impl ValidHash {
     }
 
     pub fn schema_required(&self) -> bool {
-        self.schema.len() > 0
+        !self.schema.is_empty()
     }
 
     pub fn link(&self) -> Option<usize> {
@@ -220,16 +220,13 @@ impl ValidHash {
     pub fn validate(&self, doc: &mut &[u8]) -> crate::Result<Option<Hash>> {
         let fail_len = doc.len();
         let value = read_hash(doc)?;
-        if (self.in_vec.len() > 0) && self.in_vec.binary_search(&value).is_err() {
+        if !self.in_vec.is_empty() && self.in_vec.binary_search(&value).is_err() {
             Err(Error::FailValidate(fail_len, "Hash is not on the `in` list"))
         }
         else if self.nin_vec.binary_search(&value).is_ok() {
             Err(Error::FailValidate(fail_len, "Hash is on the `nin` list"))
         }
-        else if let Some(_) = self.link {
-            Ok(Some(value))
-        }
-        else if self.schema.len() > 0 {
+        else if self.link.is_some() || !self.schema.is_empty() {
             Ok(Some(value))
         }
         else {

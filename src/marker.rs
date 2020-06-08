@@ -87,8 +87,8 @@ impl Marker {
 
     /// Converts a marker object into a single-byte representation.
     /// Assumes the content of the marker is already masked approprately
-    pub fn to_u8(&self) -> u8 {
-        match *self {
+    pub fn into_u8(self) -> u8 {
+        match self {
             Marker::PosFixInt(val) => val,
             Marker::FixMap(len)    => 0x80 | len,
             Marker::FixArray(len)  => 0x90 | len,
@@ -138,7 +138,7 @@ impl From<u8> for Marker {
 
 impl From<Marker> for u8 {
     fn from(val: Marker) -> u8 {
-        val.to_u8()
+        val.into_u8()
     }
 }
 
@@ -156,7 +156,7 @@ pub enum ExtType {
 
 impl ExtType {
     /// Return the assigned extension type.
-    pub fn to_i8(self) -> i8 {
+    pub fn into_i8(self) -> i8 {
         match self {
             ExtType::Timestamp => -1,
             ExtType::Hash      => 1,
@@ -179,13 +179,13 @@ impl ExtType {
 
 impl From<ExtType> for i8 {
     fn from(val: ExtType) -> i8 {
-        val.to_i8()
+        val.into_i8()
     }
 }
 
 impl From<ExtType> for u8 {
     fn from(val: ExtType) -> u8 {
-        val.to_i8() as u8
+        val.into_i8() as u8
     }
 }
 

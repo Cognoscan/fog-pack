@@ -276,7 +276,7 @@ impl Blake2BState {
     }
 
     pub fn get_hash(&self, hash: &mut [u8; HASH_BYTES]) {
-        let mut temp_state = self.0.clone();
+        let mut temp_state = self.0;
         unsafe {
             libsodium_sys::crypto_generichash_blake2b_final(
                 &mut temp_state,
@@ -351,7 +351,7 @@ pub fn aead_encrypt(message: &mut [u8], ad: &[u8], n: &Nonce, k: &SecretKey) -> 
 
 // Does in-place decryption of crypt and returns true if verification succeeds
 pub fn aead_decrypt(crypt: &mut [u8], ad: &[u8], tag: &[u8],n: &Nonce, k: &SecretKey) -> bool {
-    if unsafe {
+    0 <= unsafe {
         libsodium_sys::crypto_aead_xchacha20poly1305_ietf_decrypt_detached(
             crypt.as_mut_ptr(),
             ptr::null_mut(),
@@ -363,10 +363,6 @@ pub fn aead_decrypt(crypt: &mut [u8], ad: &[u8], tag: &[u8],n: &Nonce, k: &Secre
             n.0.as_ptr(),
             k.0.as_ptr()
         )
-    } >= 0 {
-        true
-    } else {
-        false
     }
 }
 
@@ -458,16 +454,13 @@ pub fn sign_detached(k: &SecretSignKey, m: &[u8]) -> Sign {
 }
 
 pub fn verify_detached(k: &PublicSignKey, m: &[u8], sig: &Sign) -> bool {
-    if unsafe {
+    // Verify was successful if non-negative
+    0 <= unsafe {
         libsodium_sys::crypto_sign_ed25519_verify_detached(
             sig.0.as_ptr(),
             m.as_ptr(),
             m.len() as c_ulonglong,
             k.0.as_ptr())
-    } >= 0 {
-        true
-    } else {
-        false
     }
 }
 

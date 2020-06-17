@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn base58() {
         use rand::prelude::*;
-        let mut rng = rand::thread_rng();;
+        let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
             let mut v: Vec<u8> = Vec::with_capacity(32);

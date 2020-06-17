@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(get_key(&lockbox), None);
         // Lockbox is version byte, type byte, StreamId, Nonce, encrypted data, 
         // and encryption tag 
-        assert_eq!(lockbox.len(), 2 + stream.get_id().0.len() + Nonce::len() + 
+        assert_eq!(lockbox.size(), 2 + stream.get_id().0.len() + Nonce::len() + 
                    plain.len() + Tag::len());
         let lockbox = enc_dec(lockbox, plain.clone());
         let data = decrypt_lockbox(&stream, lockbox.clone()).unwrap();

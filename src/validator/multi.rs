@@ -135,7 +135,7 @@ mod tests {
         });
         encode::write_value(&mut raw_schema, &schema);
         println!("Schema = {}", &schema);
-        let (validator, types) = read_it(&mut &raw_schema[..], false);
+        //let (validator, types) = read_it(&mut &raw_schema[..], false);
     }
 
 

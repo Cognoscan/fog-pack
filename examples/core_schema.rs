@@ -467,7 +467,7 @@ fn main() {
     );
 
     let core_schema_doc = Document::new(core_schema_val.clone()).unwrap();
-    println!("Encoded Doc length = {}", core_schema_doc.len());
+    println!("Encoded Doc size = {}", core_schema_doc.size());
     println!("{}", core_schema_val);
 
     //println!("{}", core_schema_val);

@@ -4,6 +4,7 @@ use std::io::ErrorKind::InvalidData;
 use Error;
 use MarkerType;
 use CompressType;
+use crypto;
 use super::{MAX_DOC_SIZE, Hash, Value, ValueRef};
 use super::crypto::{HashState, Vault, Key, Identity, CryptoError};
 use decode;
@@ -15,9 +16,10 @@ pub struct Document {
     hash_state: Option<HashState>,
     doc_hash: Option<Hash>,
     hash: Hash,
-    doc_len: usize,
+    doc_len: usize, // length of raw doc (including header), not including signatures
     doc: Vec<u8>,
     compressed: Option<Vec<u8>>,
+    compress_cache: bool,
     override_compression: bool,
     compression: Option<i32>,
     signed_by: Vec<Identity>,
@@ -38,32 +40,65 @@ impl Document {
 
     /// Not to be used outside the crate. Allows for creation of a Document from its internal 
     /// parts. Should only be used by Schema/NoSchema for completing the decoding process.
-    pub(crate) fn from_parts(
-        hash_state: Option<HashState>,
-        doc_hash: Option<Hash>,
-        hash: Hash,
-        doc_len: usize,
+    pub(crate) fn from_decoded(
         doc: Vec<u8>,
+        doc_len: usize,
         compressed: Option<Vec<u8>>,
-        override_compression: bool,
-        compression: Option<i32>,
-        signed_by: Vec<Identity>,
         schema_hash: Option<Hash>,
-        ) -> Document {
+        hash: Option<Hash>,
+        do_checks: bool
+    ) -> crate::Result<Document>
+    {
+        // Optionally compute the hashes
+        // -----------------------------
+        let (hash_state, doc_hash, hash) = if let Some(hash) = hash {
+            (None, None, hash)
+        }
+        else {
+            let mut hash_state = crypto::HashState::new();
+            hash_state.update(&doc[4..doc_len]);
+            let doc_hash = hash_state.get_hash();
+            let hash = if doc.len() > doc_len {
+                hash_state.update(&doc[doc_len..]);
+                hash_state.get_hash()
+            }
+            else {
+                doc_hash.clone()
+            };
+            (Some(hash_state), Some(doc_hash), hash)
+        };
 
-        Document {
+        // Signature Processing
+        // --------------------
+        let mut signed_by = Vec::new();
+        let mut index = &mut &doc[doc_len..];
+        while !index.is_empty() {
+            let signature = crypto::Signature::decode(&mut index)?;
+            if do_checks {
+                // Unwrap the doc_hash because it darn well better be populated if we're doing 
+                // checks.
+                let verify = signature.verify(doc_hash.as_ref().unwrap());
+                if !verify {
+                    return Err(Error::BadSignature);
+                }
+            }
+            signed_by.push(signature.signed_by().clone());
+        }
+
+        Ok(Document {
             hash_state,
             doc_hash,
             hash,
             doc_len,
             doc,
             compressed,
-            override_compression,
-            compression,
+            compress_cache: true,
+            override_compression: false,
+            compression: None,
             signed_by,
             schema_hash,
             validated: true
-        }
+        })
     }
 
     /// Create a new document from a given Value. Fails if value isn't an Object, if the value 
@@ -87,13 +122,22 @@ impl Document {
             return Err(()); // Value isn't an object
         };
         let mut doc = Vec::new();
+        CompressType::Uncompressed.encode(&mut doc);
+        // Future location of the document length
+        doc.push(0u8);
+        doc.push(0u8);
+        doc.push(0u8);
         super::encode::write_value(&mut doc, &v);
         let doc_len = doc.len();
-        if doc_len > MAX_DOC_SIZE {
+        if doc_len >= MAX_DOC_SIZE {
             return Err(());
         }
+        let data_len = doc_len - 4;
+        doc[1] = ((data_len & 0x00FF_0000) >> 16) as u8;
+        doc[2] = ((data_len & 0x0000_FF00) >>  8) as u8;
+        doc[3] = ( data_len & 0x0000_00FF)        as u8;
         let mut hash_state = HashState::new();
-        hash_state.update(&doc[..]); 
+        hash_state.update(&doc[4..]); 
         let hash = hash_state.get_hash();
         let doc_hash = Some(hash.clone());
         Ok(Document {
@@ -103,6 +147,7 @@ impl Document {
             doc_len,
             doc,
             compressed: None,
+            compress_cache: false,
             override_compression: false,
             compression: None,
             signed_by: Vec::new(),
@@ -120,7 +165,7 @@ impl Document {
         // any existing signatures.
         if self.hash_state.is_none() || self.doc_hash.is_none() {
             let mut hash_state = HashState::new();
-            hash_state.update(&self.doc[..self.doc_len]);
+            hash_state.update(&self.doc[4..self.doc_len]);
             let doc_hash = hash_state.get_hash();
             if self.doc.len() > self.doc_len {
                 hash_state.update(&self.doc[self.doc_len..]);
@@ -134,7 +179,7 @@ impl Document {
         let len = self.doc.len();
         signature.encode(&mut self.doc);
         let new_len = self.doc.len();
-        if new_len > MAX_DOC_SIZE {
+        if new_len >= MAX_DOC_SIZE {
             return Err(CryptoError::Io(io::Error::new(InvalidData, "Document is too large with signature")));
         }
         if new_len > len {
@@ -154,6 +199,7 @@ impl Document {
         self.override_compression = true;
         self.compression = compression;
         self.compressed = None;
+        self.compress_cache = false;
     }
 
     /// Remove any overrides on the compression settings set by [`set_compression`], and clears any 
@@ -163,6 +209,7 @@ impl Document {
     pub fn reset_compression(&mut self) {
         self.override_compression = false;
         self.compressed = None;
+        self.compress_cache = false;
     }
 
     /// Clear out any cached compression data. If the Document was decoded and had been compressed, 
@@ -174,6 +221,7 @@ impl Document {
     /// [`reset_compression`]: #method.reset_compression
     pub fn clear_compress_cache(&mut self) {
         self.compressed = None;
+        self.compress_cache = false;
     }
 
     /// Get an iterator over all known signers of the document.
@@ -181,9 +229,16 @@ impl Document {
         self.signed_by.iter()
     }
 
-    /// Get the size of the raw document in bytes, prior to encoding.
+    /// Get the size of the raw document in bytes, prior to encoding. Compression may make the 
+    /// final document smaller
     pub fn size(&self) -> usize {
         self.doc.len()
+    }
+
+    /// Get the size of the raw document in bytes, not including the signatures. This does include 
+    /// the header bytes.
+    pub(crate) fn doc_len(&self) -> usize {
+        self.doc_len
     }
 
     /// Get the Hash of the document as it currently is. Note that adding additional signatures 
@@ -224,11 +279,23 @@ impl Document {
     /// lifetime as the Document; it can be converted to a `Value` if it needs to outlast the 
     /// Document.
     pub fn value(&self) -> ValueRef {
-        super::decode::read_value_ref(&mut &self.doc[..]).unwrap()
+        super::decode::read_value_ref(&mut &self.doc[4..]).unwrap()
     }
 
     pub(crate) fn raw_doc(&self) -> &[u8] {
         &self.doc
+    }
+
+    pub(crate) fn into_vec(self) -> Vec<u8> {
+        self.doc
+    }
+
+    pub(crate) fn compress_cache(&self) -> bool {
+        self.compress_cache
+    }
+
+    pub(crate) fn into_compressed_vec(self) -> Vec<u8> {
+        self.compressed.unwrap_or(self.doc)
     }
 
 }
@@ -273,6 +340,7 @@ impl Document {
 pub fn extract_schema_hash(buf: &[u8]) -> crate::Result<Option<Hash>> {
     let mut buf: &[u8] = buf;
     let compressed = CompressType::decode(&mut buf)?;
+    buf = &buf[3..]; // Skip past the 3 bytes indicating the document size
     match compressed {
         CompressType::CompressedNoSchema => Ok(None),
         CompressType::Uncompressed | CompressType::Compressed | CompressType::DictCompressed 
@@ -321,7 +389,7 @@ pub fn train_doc_dict(max_size: usize, docs: Vec<Document>) -> Result<Vec<u8>, u
             // 1) The raw document contains an object
             // 2) The object keys are strings
             // 3) The empty string field has a hash as the value
-            let mut buf = doc.raw_doc();
+            let mut buf: &[u8] = &doc.raw_doc()[4..doc.doc_len()];
             let obj_len = decode::read_marker(&mut buf).unwrap();
             // Marker is always an object, we're just checking to see if it's empty
             if let MarkerType::Object(0) = obj_len {
@@ -395,14 +463,22 @@ mod tests {
     #[test]
     fn large_data() {
         let mut large_bin = Vec::new();
-        large_bin.resize(MAX_DOC_SIZE, 0u8);
+        // Maximum size is binary data itself, plus:
+        // 1 byte for compression marker
+        // 3 bytes for size of document data
+        // 1 byte for object marker
+        // 2 bytes for the string "b"
+        // 5 bytes for the binary marker with size
+        // ----
+        // 12 bytes overall of overhead
+        large_bin.resize(MAX_DOC_SIZE-12, 0u8);
         let test: Value = fogpack!({
             "b": large_bin.clone(),
         });
         let test = Document::new(test);
         assert!(test.is_err(), "Should've been too large to encode as a document");
 
-        large_bin.resize(MAX_DOC_SIZE-8, 0u8);
+        large_bin.resize(MAX_DOC_SIZE-13, 0u8);
         let test: Value = fogpack!({
             "b": large_bin,
         });

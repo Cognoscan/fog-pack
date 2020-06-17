@@ -126,7 +126,7 @@ impl Query {
                 if let Some(link) = v.link() {
                     let mut checklist = ValidatorChecklist::new();
                     if let Validator::Object(ref v) = self.types[link] {
-                        v.validate(&mut doc.raw_doc(), &self.types, &mut checklist, true)?;
+                        v.validate(&mut &doc.raw_doc()[4..doc.doc_len()], &self.types, &mut checklist, true)?;
                     }
                     else {
                         return Err(Error::FailValidate(doc.size(), "Can't validate a document against a non-object validator"));
@@ -224,7 +224,7 @@ mod tests {
         let schema = simple_schema();
         let doc = simple_doc(schema.hash());
         let rel_entry = rel_entry(doc.hash());
-        let misc_entry = misc_entry(doc.hash());
+        //let misc_entry = misc_entry(doc.hash());
 
         let query: Value = fogpack!({
             "type": "Obj",

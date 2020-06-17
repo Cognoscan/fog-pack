@@ -1,3 +1,4 @@
+use byteorder::{ReadBytesExt, BigEndian};
 use std::collections::HashMap;
 
 use Error;
@@ -95,7 +96,7 @@ pub struct Schema {
 impl Schema {
 
     pub fn from_doc(doc: Document) -> crate::Result<Self> {
-        Ok(Self::from_raw(&mut doc.raw_doc(), Some(doc.hash().clone()))?)
+        Ok(Self::from_raw(&mut &doc.raw_doc()[4..doc.doc_len()], Some(doc.hash().clone()))?)
     }
 
     fn from_raw(raw: &mut &[u8], hash: Option<Hash>) -> crate::Result<Self> {
@@ -228,10 +229,8 @@ impl Schema {
     /// panics if the document somehow became larger than the maximum allowed size, which should be 
     /// impossible with the public Document interface.
     pub fn encode_doc(&mut self, doc: Document) -> crate::Result<Vec<u8>> {
-        let mut buf = Vec::new();
         let len = doc.size();
-        let mut raw: &[u8] = doc.raw_doc();
-        assert!(len <= MAX_DOC_SIZE,
+        assert!(len < MAX_DOC_SIZE,
             "Document was larger than maximum size! Document implementation should've made this impossible!");
 
         // Verify we're the right schema hash
@@ -246,55 +245,88 @@ impl Schema {
         if self.object_valid {
             if !doc.validated() {
                 let mut checklist = ValidatorChecklist::new();
-                self.object.validate(&mut doc.raw_doc(), &self.types, &mut checklist, true)?;
+                let mut raw: &[u8] = &doc.raw_doc()[4..];
+                self.object.validate(&mut raw, &self.types, &mut checklist, true)?;
             }
         }
         else {
-            return Err(Error::FailValidate(doc.raw_doc().len(), "This schema cannot pass anything"));
+            return Err(Error::FailValidate(doc.raw_doc().len()-4, "This schema cannot pass anything"));
         }
 
-        if doc.override_compression() {
+        if doc.compress_cache() {
+            Ok(doc.into_compressed_vec())
+        }
+        else if doc.override_compression() {
             if let Some(level) = doc.compression() {
+                let mut buf = Vec::new();
+                // Header with length
                 CompressType::Compressed.encode(&mut buf);
+                buf.push(0u8);
+                buf.push(0u8);
+                buf.push(0u8);
+                let mut raw: &[u8] = &doc.raw_doc()[4..doc.doc_len()];
+                // Extend header with schema hash
                 let _ = parse_schema_hash(&mut raw)
                     .expect("Document has invalid vec!")
                     .expect("Document has invalid vec!");
                 let header_len = doc.raw_doc().len() - raw.len();
-                buf.extend_from_slice(&doc.raw_doc()[..header_len]);
-                // Compress everything else
+                buf.extend_from_slice(&doc.raw_doc()[4..header_len]);
+                // Compress the data
+                let raw: &[u8] = &doc.raw_doc()[header_len..doc.doc_len()];
                 zstd_help::compress(&mut self.compressor, level, raw, &mut buf);
+                // If the compressed version isn't smaller, ditch it and use the uncompressed 
+                // version
+                if buf.len() >= doc.doc_len() {
+                    Ok(doc.into_vec())
+                }
+                else {
+                    // Complete the compressed version by filling in the compressed size and appending 
+                    // the signatures
+                    let compress_len = buf.len()-4;
+                    buf[1] = ((compress_len & 0x00FF_0000) >> 16) as u8;
+                    buf[2] = ((compress_len & 0x0000_FF00) >>  8) as u8;
+                    buf[3] = ( compress_len & 0x0000_00FF)        as u8;
+                    buf.extend_from_slice(&doc.raw_doc()[doc.doc_len()..]);
+                    Ok(buf)
+                }
             }
             else {
-                CompressType::Uncompressed.encode(&mut buf);
-                buf.extend_from_slice(raw);
+                Ok(doc.into_vec())
             }
         }
         else {
             match self.doc_compress {
                 Compression::NoCompress => {
-                    CompressType::Uncompressed.encode(&mut buf);
+                    Ok(doc.into_vec())
                 }
-                Compression::Compress(_) => {
-                    CompressType::Compressed.encode(&mut buf);
+                Compression::Compress(_) | Compression::DictCompress(_) => {
+                    let mut buf = Vec::new();
+                    self.doc_compress.encode(&mut buf);
+                    buf.push(0u8);
+                    buf.push(0u8);
+                    buf.push(0u8);
+                    let mut raw: &[u8] = &doc.raw_doc()[4..doc.doc_len()];
                     let _ = parse_schema_hash(&mut raw)
                         .expect("Document has invalid vec!")
                         .expect("Document has invalid vec!");
                     let header_len = doc.raw_doc().len() - raw.len();
-                    buf.extend_from_slice(&doc.raw_doc()[..header_len]);
-                }
-                Compression::DictCompress(_) => {
-                    CompressType::DictCompressed.encode(&mut buf);
-                    let _ = parse_schema_hash(&mut raw)
-                        .expect("Document has invalid vec!")
-                        .expect("Document has invalid vec!");
-                    let header_len = doc.raw_doc().len() - raw.len();
-                    buf.extend_from_slice(&doc.raw_doc()[..header_len]);
+                    buf.extend_from_slice(&doc.raw_doc()[4..header_len]);
+                    let raw: &[u8] = &doc.raw_doc()[header_len..doc.doc_len()];
+                    self.doc_compress.compress(&mut self.compressor, raw, &mut buf);
+                    if buf.len() >= doc.doc_len() {
+                        Ok(doc.into_vec())
+                    }
+                    else {
+                        let compress_len = buf.len()-4;
+                        buf[1] = ((compress_len & 0x00FF_0000) >> 16) as u8;
+                        buf[2] = ((compress_len & 0x0000_FF00) >>  8) as u8;
+                        buf[3] = ( compress_len & 0x0000_00FF)        as u8;
+                        buf.extend_from_slice(&doc.raw_doc()[doc.doc_len()..]);
+                        Ok(buf)
+                    }
                 }
             }
-            self.doc_compress.compress(&mut self.compressor, raw, &mut buf);
         }
-
-        Ok(buf)
     }
 
     /// Read a document from a byte slices, trusting the origin of the slice and doing as few 
@@ -309,61 +341,7 @@ impl Schema {
     /// The *only* time this should be used is if the byte slice is coming from a well-trusted 
     /// location, like an internal database.
     pub fn trusted_decode_doc(&mut self, buf: &mut &[u8], hash: Option<Hash>) -> crate::Result<Document> {
-        let mut buf_ptr: &[u8] = buf;
-        let compress_type = CompressType::decode(&mut buf_ptr)?;
-        if let CompressType::CompressedNoSchema = compress_type {
-            return Err(Error::SchemaMismatch);
-        }
-        let mut doc = Vec::new();
-        let mut buf_post_hash: &[u8] = buf_ptr;
-        parse_schema_hash(&mut buf_post_hash)?; // Just pull off the schema hash & object header
-        doc.extend_from_slice(&buf_ptr[..(buf_ptr.len()-buf_post_hash.len())]);
-        self.doc_compress.decompress(&mut self.decompressor, MAX_DOC_SIZE, compress_type, &mut buf_post_hash, &mut doc)?;
-        
-        // Find the document length
-        let doc_len = verify_value(&mut &doc[..])?;
-
-        // Optionally compute the hashes
-        let (hash_state, doc_hash, hash) = if let Some(hash) = hash {
-            (None, None, hash)
-        }
-        else {
-            let mut hash_state = crypto::HashState::new();
-            hash_state.update(&doc[..doc_len]);
-            let doc_hash = hash_state.get_hash();
-            let hash = if doc.len() > doc_len {
-                hash_state.update(&doc[doc_len..]);
-                hash_state.get_hash()
-            }
-            else {
-                doc_hash.clone()
-            };
-            (Some(hash_state), Some(doc_hash), hash)
-        };
-
-        // Get signatures
-        let mut signed_by = Vec::new();
-        let mut index = &mut &doc[doc_len..];
-        while !index.is_empty() {
-            let signature = crypto::Signature::decode(&mut index)?;
-            signed_by.push(signature.signed_by().clone());
-        }
-
-        let override_compression = false;
-        let compression = None;
-        let compressed = None;
-        Ok(Document::from_parts(
-            hash_state,
-            doc_hash,
-            hash,
-            doc_len,
-            doc,
-            compressed,
-            override_compression,
-            compression,
-            signed_by,
-            None
-        ))
+        self.internal_decode_doc(buf, hash, false)
     }
 
     /// Read a document from a byte slice, performing the full set of validation checks when 
@@ -378,68 +356,104 @@ impl Schema {
     /// - The compression is invalid or expands to larger than the maximum allowed size
     /// - Any of the attached signatures are invalid
     pub fn decode_doc(&mut self, buf: &mut &[u8]) -> crate::Result<Document> {
-        let mut buf_ptr: &[u8] = buf;
-        let mut doc = Vec::new();
+        self.internal_decode_doc(buf, None, true)
+    }
 
-        // Decompress the document
-        let compress_type = CompressType::decode(&mut buf_ptr)?;
+    /// Internal function for decoding. If do_checks is True, hash MUST be None or it will panic. 
+    fn internal_decode_doc(&mut self, buf: &mut &[u8], hash: Option<Hash>, do_checks: bool)
+        -> crate::Result<Document>
+    {
+        let raw_ref: &[u8] = buf;
+        if buf.len() >= MAX_DOC_SIZE {
+            return Err(Error::BadSize);
+        }
+
+        // Read header & check it
+        // ----------------------
+        // Check for non-schema header byte
+        let compress_type = CompressType::decode(buf)?;
         if let CompressType::CompressedNoSchema = compress_type {
             return Err(Error::SchemaMismatch);
         }
-        let mut buf_post_hash: &[u8] = buf_ptr;
-        parse_schema_hash(&mut buf_post_hash)?; // Just pull off the schema hash & object header
-        doc.extend_from_slice(&buf_ptr[..(buf_ptr.len()-buf_post_hash.len())]);
-        self.doc_compress.decompress(&mut self.decompressor, MAX_DOC_SIZE, compress_type, &mut buf_post_hash, &mut doc)?;
-        
-        // Verify the document passes validation
-        let mut doc_ptr: &[u8] = &doc[..];
-        if self.object_valid {
-            let mut checklist = ValidatorChecklist::new();
-            self.object.validate(&mut doc_ptr, &self.types, &mut checklist, true)?;
+        // Get the data payload length & length of attached signatures
+        let data_size = buf.read_u24::<BigEndian>()? as usize;
+        if data_size > buf.len() {
+            return Err(Error::BadHeader);
         }
-        else {
-            return Err(Error::FailValidate(doc.len(), "This schema cannot pass any documents"));
-        }
+        let sign_size = buf.len() - data_size;
+        // There should *always* be a schema used. Parse it and fail if it's not there or doesn't 
+        // match this Schema.
+        let schema_hash = parse_schema_hash(buf)? // Just pull off the schema hash & object header
+            .ok_or(Error::SchemaMismatch)?;
+        if &schema_hash != self.hash() { return Err(Error::SchemaMismatch); }
 
-        let doc_len = doc.len() - doc_ptr.len();
-
-        // Compute the document hashes
-        let mut hash_state = crypto::HashState::new();
-        hash_state.update(&doc[..doc_len]);
-        let doc_hash = hash_state.get_hash();
-        let hash = if doc.len() > doc_len {
-            hash_state.update(&doc[doc_len..]);
-            hash_state.get_hash()
-        }
-        else {
-            doc_hash.clone()
+        // Construct decoded data
+        // ----------------------
+        let (doc, compressed, doc_len) = match compress_type {
+            CompressType::Uncompressed => {
+                (Vec::from(raw_ref), None, data_size+4)
+            },
+            CompressType::CompressedNoSchema => {
+                return Err(Error::SchemaMismatch);
+            },
+            CompressType::Compressed | CompressType::DictCompressed => {
+                let mut doc = Vec::new();
+                // Push header to decoded data
+                doc.extend_from_slice(&raw_ref[..(raw_ref.len()-buf.len())]);
+                // Decompress payload
+                self.doc_compress.decompress(
+                    &mut self.decompressor,
+                    MAX_DOC_SIZE,
+                    sign_size,
+                    compress_type,
+                    &buf[..(buf.len()-sign_size)],
+                    &mut doc
+                )?;
+                // Calculate the data size (no 4-byte header) and document length (with 4-byte header)
+                let data_size = doc.len() - 4;
+                // Overwrite the stale data size in the header (was copied as part of the original header)
+                doc[1] = ((data_size & 0x00FF_0000) >> 16) as u8;
+                doc[2] = ((data_size & 0x0000_FF00) >>  8) as u8;
+                doc[3] = ( data_size & 0x0000_00FF)        as u8;
+                // Append the signatures
+                doc.extend_from_slice(&buf[(buf.len()-sign_size)..]);
+                // Check for a bad size one last time before completing the decoding
+                if doc.len() >= MAX_DOC_SIZE {
+                    return Err(Error::BadSize);
+                }
+                (doc, Some(Vec::from(raw_ref)), data_size + 4)
+            }
         };
 
-        // Get & verify signatures
-        let mut signed_by = Vec::new();
-        while !doc_ptr.is_empty() {
-            let signature = crypto::Signature::decode(&mut doc_ptr)?;
-            if !signature.verify(&doc_hash) {
-                return Err(Error::BadSignature);
+        
+        // Verify the document passes validation
+        // -------------------------------------
+        if do_checks {
+            if self.object_valid {
+                let mut doc_ptr: &[u8] = &doc[4..doc_len];
+                let mut checklist = ValidatorChecklist::new();
+                self.object.validate(&mut doc_ptr, &self.types, &mut checklist, true)?;
+                if !doc_ptr.is_empty() {
+                    // Fail with BadHeader since this means the header's 3-byte size tag 
+                    // mis-represented the size of the fog-pack object. Or, alternately, that the 
+                    // compressed data payload had more than just the rest of a fog-pack object in it.
+                    return Err(Error::BadHeader);
+                }
             }
-            signed_by.push(signature.signed_by().clone());
+            else {
+                return Err(Error::FailValidate(doc.len(), "This schema cannot pass any documents"));
+            }
         }
 
-        let override_compression = false;
-        let compression = None;
-        let compressed = None;
-        Ok(Document::from_parts(
-            Some(hash_state),
-            Some(doc_hash),
-            hash,
-            doc_len,
+        // Pass the everything on to create the actual Document
+        Document::from_decoded(
             doc,
+            doc_len,
             compressed,
-            override_compression,
-            compression,
-            signed_by,
-            None
-        ))
+            Some(schema_hash),
+            hash,
+            do_checks
+        )
     }
 
     /// Encodes an [`Entry`]'s contents and returns a [`Checklist`] containing the encoded 
@@ -538,13 +552,13 @@ impl Schema {
                 entry.extend_from_slice(buf_ptr);
             },
             CompressType::CompressedNoSchema => {
-                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &buf_ptr, &mut entry)?;
+                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, 0, &buf_ptr, &mut entry)?;
             },
             CompressType::DictCompressed => {
                 let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
                     .map_err(|_| Error::FailDecompress)?;
                 let compress = &self.entries_compress[compress].1;
-                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
+                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, 0, compress_type, &buf_ptr, &mut entry)?;
             }
         }
 
@@ -611,13 +625,13 @@ impl Schema {
                 entry.extend_from_slice(buf_ptr);
             },
             CompressType::CompressedNoSchema => {
-                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, &buf_ptr, &mut entry)?;
+                zstd_help::decompress(&mut self.decompressor, MAX_ENTRY_SIZE, 0, &buf_ptr, &mut entry)?;
             },
             CompressType::DictCompressed => {
                 let compress = self.entries_compress.binary_search_by(|x| x.0.as_str().cmp(&field))
                     .map_err(|_| Error::FailDecompress)?;
                 let compress = &self.entries_compress[compress].1;
-                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, compress_type, &mut buf_ptr, &mut entry)?;
+                compress.decompress(&mut self.decompressor, MAX_ENTRY_SIZE, 0, compress_type, &buf_ptr, &mut entry)?;
             }
         }
 
@@ -938,33 +952,42 @@ impl Compression {
         &self,
         decompressor: &mut zstd_safe::DCtx,
         max_size: usize,
+        extra_size: usize,
         compress_type: CompressType,
-        buf: &mut &[u8],
+        buf: &[u8],
         decode: &mut Vec<u8>
     )
         -> crate::Result<()>
     {
         match compress_type {
             CompressType::Uncompressed => {
-                if (buf.len() + decode.len()) > max_size {
+                if (buf.len() + decode.len() + extra_size) >= max_size {
                     return Err(Error::BadSize);
                 }
                 decode.extend_from_slice(buf);
                 Ok(())
             },
             CompressType::Compressed | CompressType::CompressedNoSchema => {
-                zstd_help::decompress(decompressor, max_size, buf, decode)
+                zstd_help::decompress(decompressor, max_size, extra_size, buf, decode)
             },
             CompressType::DictCompressed => {
                 // Decompress the data
                 // Find the expected size, and fail if it's larger than the maximum allowed size.
                 if let Compression::DictCompress((_,dict)) = &self {
-                    zstd_help::dict_decompress(decompressor, dict, max_size, buf, decode)
+                    zstd_help::dict_decompress(decompressor, dict, max_size, extra_size, buf, decode)
                 }
                 else {
                     Err(Error::FailDecompress)
                 }
             }
+        }
+    }
+
+    fn encode(&self, buf: &mut Vec<u8>) {
+        match self {
+            Compression::NoCompress => CompressType::Uncompressed.encode(buf),
+            Compression::Compress(_) => CompressType::Compressed.encode(buf),
+            Compression::DictCompress(_) => CompressType::DictCompressed.encode(buf),
         }
     }
 }

@@ -478,7 +478,7 @@ impl Schema {
                 self.types[v].validate(&mut entry.entry_val(), &self.types, 0, &mut checklist)?;
             }
             else {
-                return Err(Error::FailValidate(len-4, "Entry field is not in schema"));
+                return Err(Error::FailValidate(len-3, "Entry field is not in schema"));
             }
             checklist
         }
@@ -666,8 +666,8 @@ impl Schema {
                     return Err(Error::FailDecompress);
                 }
 
-                // Calculate the data size (no 4-byte header) and entry length (with 4-byte header)
-                let data_size = entry.len() - 4;
+                // Calculate the data size (no 3-byte header) and entry length (with 3-byte header)
+                let data_size = entry.len() - 3;
                 // Write the data size to the header
                 entry[1] = ((data_size & 0xFF00) >> 8) as u8;
                 entry[2] = ( data_size & 0x00FF)       as u8;
@@ -684,7 +684,7 @@ impl Schema {
         // ----------------------------------
         let mut checklist = ValidatorChecklist::new();
         if do_checks {
-            let mut entry_ptr: &[u8] = &entry[4..entry_len];
+            let mut entry_ptr: &[u8] = &entry[3..entry_len];
             self.types[validator].validate(&mut entry_ptr, &self.types, 0, &mut checklist)?;
             if !entry_ptr.is_empty() {
                 // Fail with BadHeader since this means the header's 2-byte size tag 
@@ -1069,8 +1069,13 @@ mod tests {
         let schema = simple_schema();
         let mut schema = Schema::from_doc(schema).unwrap();
         let mut no_schema = NoSchema::new();
-        let test = simple_doc(schema.hash());
+        let mut test = simple_doc(schema.hash());
 
+        let enc = schema.encode_doc(test.clone()).unwrap();
+        let dec = schema.decode_doc(&mut &enc[..]).unwrap();
+        assert!(test == dec, "Document didn't stay same through enc/dec");
+
+        test.set_compression(None);
         let enc = schema.encode_doc(test.clone()).unwrap();
         let dec = schema.decode_doc(&mut &enc[..]).unwrap();
         assert!(test == dec, "Document didn't stay same through enc/dec");
@@ -1084,21 +1089,29 @@ mod tests {
         assert!(schema.decode_doc(&mut &enc[..]).is_err());
     }
 
-    /*
     #[test]
     fn entry_encode_decode() {
-        let mut test = test_entry();
+        let schema = simple_schema();
+        let mut schema = Schema::from_doc(schema).unwrap();
+        let test_doc = simple_doc(schema.hash());
+        let mut test = simple_entry(test_doc.hash());
+
         test.set_compression(None);
-        let mut schema_none = NoSchema::new();
-        let enc = schema_none.encode_entry(&test);
-        let mut dec = schema_none.trusted_decode_entry(&mut &enc[..], Hash::new_empty(), String::from(""), None)
-            .expect("Decoding should have worked");
-        dec.set_compression(None);
-        let enc2 = schema_none.encode_entry(&dec);
-        assert!(test == dec, "Encode->Decode should yield same entry");
-        assert!(enc == enc2, "Encode->Decode->encode didn't yield identical results");
+        let enc = schema.encode_entry(test.clone()).unwrap().complete().unwrap();
+        println!("{:X?}", enc);
+        println!("{}", enc.len());
+        let dec = schema.decode_entry(&mut &enc[..], test.doc_hash().clone(), test.field().to_string())
+            .unwrap().complete().unwrap();
+        assert!(test == dec, "Entry didn't stay same through compressed enc/dec");
+
+        test.reset_compression();
+        let enc = schema.encode_entry(test.clone()).unwrap().complete().unwrap();
+        let dec = schema.decode_entry(&mut &enc[..], test.doc_hash().clone(), test.field().to_string())
+            .unwrap().complete().unwrap();
+        assert!(test == dec, "Entry didn't stay same through uncompressed enc/dec");
     }
 
+    /*
     #[test]
     fn entry_compress_decompress() {
         let test = test_entry();

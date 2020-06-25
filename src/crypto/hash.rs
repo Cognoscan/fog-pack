@@ -223,7 +223,7 @@ impl Hash {
             return Ok(Hash::new_empty());
         }
         // Prepare to perform mapping & multiplication to decode
-        let mut buffer = [0u8; (HASH_BYTES+1)];
+        let mut buffer = [0u8; HASH_BYTES+1];
         for byte in s.bytes() {
             // Decode the character to 0-57, with -1 for invalid characters
             let carry  = *DIGIT_MAP

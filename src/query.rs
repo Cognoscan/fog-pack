@@ -88,7 +88,7 @@ impl Query {
     /// [`Entry`]: ./struct.Entry.html
     /// [`Checklist`]: ./checklist/struct.Checklist.html
     pub fn validate_entry(&self, entry: &Entry) -> crate::Result<Checklist<()>> {
-        let mut entry_ptr: &[u8] = entry.raw_entry();
+        let mut entry_ptr: &[u8] = entry.entry_val();
         if entry.doc_hash() != self.doc_hash() {
             return Err(Error::FailValidate(entry_ptr.len(),"Entry doesn't have same document hash as the query"));
         }
@@ -126,7 +126,7 @@ impl Query {
                 if let Some(link) = v.link() {
                     let mut checklist = ValidatorChecklist::new();
                     if let Validator::Object(ref v) = self.types[link] {
-                        v.validate(&mut &doc.raw_doc()[4..doc.doc_len()], &self.types, &mut checklist, true)?;
+                        v.validate(&mut doc.doc_val(), &self.types, &mut checklist, true)?;
                     }
                     else {
                         return Err(Error::FailValidate(doc.size(), "Can't validate a document against a non-object validator"));

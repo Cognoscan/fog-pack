@@ -286,6 +286,10 @@ impl Document {
         &self.doc
     }
 
+    pub(crate) fn doc_val(&self) -> &[u8] {
+        &self.doc[4..self.doc_len]
+    }
+
     pub(crate) fn into_vec(self) -> Vec<u8> {
         self.doc
     }

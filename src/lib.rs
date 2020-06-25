@@ -380,11 +380,11 @@ pub use query::Query;
 pub use document::{extract_schema_hash, train_doc_dict};
 pub use query::encode_query;
 
-/// The maximum allowed size of a raw document, including signatures, is 1 MiB. No encoded document 
-/// will ever be equal to or larger than this size.
+/// The exclusive maximum allowed size of a raw document, including signatures, is 1 MiB. No 
+/// encoded document will ever be equal to or larger than this size.
 pub const MAX_DOC_SIZE: usize = 1usize << 20; // 1 MiB
-/// The maximum allowed size of a raw entry, including signatures, is 64 kiB. No encoded entry will 
-/// ever be equal to or larger than this size. This does not include the size of the parent hash or 
-/// the field for the entry.
+/// The exclusive maximum allowed size of a raw entry, including signatures, is 64 kiB. No encoded 
+/// entry will ever be equal to or larger than this size. This does not include the size of the 
+/// parent hash or the field for the entry.
 pub const MAX_ENTRY_SIZE: usize = 1usize << 16; // 64 kiB
 

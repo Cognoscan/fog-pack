@@ -12,7 +12,7 @@ document. The fields they may use for each validator are determined by what
 fields are allowed by the matching validator in a document's schema. For 
 example, say a schema looks like:
 
-```json
+```text
 {
     "req": {
         "name": { "type": "Str" },
@@ -36,7 +36,7 @@ Furthermore, they can only non-trivially check the "time" field in each entry's
 object. So a query checking for any "post" entries dated between January 1 and 2 
 could look like:
 
-```json
+```text
 {
     "type": "Obj",
     "req": {
@@ -52,7 +52,7 @@ could look like:
 
 But checking for a specific string for text would not be allowed by the schema:
 
-```json
+```text
 {
     "type": "Obj",
     "req": {

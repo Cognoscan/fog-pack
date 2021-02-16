@@ -5,7 +5,7 @@ pub enum Marker {
     FixMap(u8),
     FixArray(u8),
     FixStr(u8),
-    Nil,
+    Null,
     Reserved,
     False,
     True,
@@ -25,16 +25,13 @@ pub enum Marker {
     Int16,
     Int32,
     Int64,
-    FixExt1,
-    FixExt2,
-    FixExt4,
-    FixExt8,
-    FixExt16,
     Str8,
     Str16,
     Str32,
+    Array8,
     Array16,
     Array32,
+    Map8,
     Map16,
     Map32,
     NegFixInt(i8),
@@ -44,12 +41,11 @@ impl Marker {
     /// Construct a marker from a single byte.
     pub fn from_u8(n: u8) -> Marker {
         match n {
-            0x00 ..= 0x7f => Marker::PosFixInt(n),
-            0x80 ..= 0x8f => Marker::FixMap(n & 0x0F),
-            0x90 ..= 0x9f => Marker::FixArray(n & 0x0F),
-            0xa0 ..= 0xbf => Marker::FixStr(n & 0x1F),
-            0xc0 => Marker::Nil,
-            // Marked in MessagePack spec as never used.
+            0x00..=0x7f => Marker::PosFixInt(n),
+            0x80..=0x8f => Marker::FixMap(n & 0x0F),
+            0x90..=0x9f => Marker::FixArray(n & 0x0F),
+            0xa0..=0xbf => Marker::FixStr(n & 0x1F),
+            0xc0 => Marker::Null,
             0xc1 => Marker::Reserved,
             0xc2 => Marker::False,
             0xc3 => Marker::True,
@@ -69,19 +65,19 @@ impl Marker {
             0xd1 => Marker::Int16,
             0xd2 => Marker::Int32,
             0xd3 => Marker::Int64,
-            0xd4 => Marker::FixExt1,
-            0xd5 => Marker::FixExt2,
-            0xd6 => Marker::FixExt4,
-            0xd7 => Marker::FixExt8,
-            0xd8 => Marker::FixExt16,
-            0xd9 => Marker::Str8,
-            0xda => Marker::Str16,
-            0xdb => Marker::Str32,
-            0xdc => Marker::Array16,
-            0xdd => Marker::Array32,
-            0xde => Marker::Map16,
-            0xdf => Marker::Map32,
-            0xe0 ..= 0xff => Marker::NegFixInt(n as i8),
+            0xd4 => Marker::Str8,
+            0xd5 => Marker::Str16,
+            0xd6 => Marker::Str32,
+            0xd7 => Marker::Array8,
+            0xd8 => Marker::Array16,
+            0xd9 => Marker::Array32,
+            0xda => Marker::Map8,
+            0xdb => Marker::Map16,
+            0xdc => Marker::Map32,
+            0xdd => Marker::Reserved,
+            0xde => Marker::Reserved,
+            0xdf => Marker::Reserved,
+            0xe0..=0xff => Marker::NegFixInt(n as i8),
         }
     }
 
@@ -90,42 +86,53 @@ impl Marker {
     pub fn into_u8(self) -> u8 {
         match self {
             Marker::PosFixInt(val) => val,
-            Marker::FixMap(len)    => 0x80 | len,
-            Marker::FixArray(len)  => 0x90 | len,
-            Marker::FixStr(len)    => 0xa0 | len,
-            Marker::Nil            => 0xc0,
-            Marker::Reserved       => 0xc1,
-            Marker::False          => 0xc2,
-            Marker::True           => 0xc3,
-            Marker::Bin8           => 0xc4,
-            Marker::Bin16          => 0xc5,
-            Marker::Bin32          => 0xc6,
-            Marker::Ext8           => 0xc7,
-            Marker::Ext16          => 0xc8,
-            Marker::Ext32          => 0xc9,
-            Marker::F32            => 0xca,
-            Marker::F64            => 0xcb,
-            Marker::UInt8          => 0xcc,
-            Marker::UInt16         => 0xcd,
-            Marker::UInt32         => 0xce,
-            Marker::UInt64         => 0xcf,
-            Marker::Int8           => 0xd0,
-            Marker::Int16          => 0xd1,
-            Marker::Int32          => 0xd2,
-            Marker::Int64          => 0xd3,
-            Marker::FixExt1        => 0xd4,
-            Marker::FixExt2        => 0xd5,
-            Marker::FixExt4        => 0xd6,
-            Marker::FixExt8        => 0xd7,
-            Marker::FixExt16       => 0xd8,
-            Marker::Str8           => 0xd9,
-            Marker::Str16          => 0xda,
-            Marker::Str32          => 0xdb,
-            Marker::Array16        => 0xdc,
-            Marker::Array32        => 0xdd,
-            Marker::Map16          => 0xde,
-            Marker::Map32          => 0xdf,
+            Marker::FixMap(len) => 0x80 | len,
+            Marker::FixArray(len) => 0x90 | len,
+            Marker::FixStr(len) => 0xa0 | len,
+            Marker::Null => 0xc0,
+            Marker::Reserved => 0xc1,
+            Marker::False => 0xc2,
+            Marker::True => 0xc3,
+            Marker::Bin8 => 0xc4,
+            Marker::Bin16 => 0xc5,
+            Marker::Bin32 => 0xc6,
+            Marker::Ext8 => 0xc7,
+            Marker::Ext16 => 0xc8,
+            Marker::Ext32 => 0xc9,
+            Marker::F32 => 0xca,
+            Marker::F64 => 0xcb,
+            Marker::UInt8 => 0xcc,
+            Marker::UInt16 => 0xcd,
+            Marker::UInt32 => 0xce,
+            Marker::UInt64 => 0xcf,
+            Marker::Int8 => 0xd0,
+            Marker::Int16 => 0xd1,
+            Marker::Int32 => 0xd2,
+            Marker::Int64 => 0xd3,
+            Marker::Str8 => 0xd4,
+            Marker::Str16 => 0xd5,
+            Marker::Str32 => 0xd6,
+            Marker::Array8 => 0xd7,
+            Marker::Array16 => 0xd8,
+            Marker::Array32 => 0xd9,
+            Marker::Map8 => 0xda,
+            Marker::Map16 => 0xdb,
+            Marker::Map32 => 0xdc,
             Marker::NegFixInt(val) => val as u8,
+        }
+    }
+
+    pub fn encode_ext_marker(buf: &mut Vec<u8>, len: usize) {
+        assert!(len < u32::MAX as usize);
+        if len < u8::MAX as usize {
+            buf.push(Marker::Ext8.into());
+            buf.push(len as u8);
+        } else if len < u16::MAX as usize {
+            buf.push(Marker::Ext16.into());
+            buf.extend_from_slice(&(len as u16).to_le_bytes());
+        } else {
+            buf.push(Marker::Ext32.into());
+            buf.extend_from_slice(&(len as u32).to_le_bytes());
         }
     }
 }
@@ -142,83 +149,56 @@ impl From<Marker> for u8 {
     }
 }
 
-/// Defines the known Ext Types that this library relies on.
-///
-/// `Timestamp` is defined in the msgpack standard. The remainder are types used by this library 
-/// for encoding cryptographic data.
-#[derive(Debug,PartialEq,Eq)]
+/// Defines the Ext Types that this library relies on.
+#[derive(Debug, PartialEq, Eq)]
 pub enum ExtType {
     Timestamp,
     Hash,
     Identity,
-    Lockbox,
+    LockId,
+    StreamId,
+    DataLockbox,
+    IdentityLockbox,
+    StreamLockbox,
+    LockLockbox,
 }
 
 impl ExtType {
     /// Return the assigned extension type.
-    pub fn into_i8(self) -> i8 {
+    pub fn into_u8(self) -> u8 {
         match self {
-            ExtType::Timestamp => -1,
-            ExtType::Hash      => 1,
-            ExtType::Identity  => 2,
-            ExtType::Lockbox   => 3,
+            ExtType::Timestamp => 0,
+            ExtType::Hash => 1,
+            ExtType::Identity => 2,
+            ExtType::LockId => 3,
+            ExtType::StreamId => 4,
+            ExtType::DataLockbox => 5,
+            ExtType::IdentityLockbox => 6,
+            ExtType::StreamLockbox => 7,
+            ExtType::LockLockbox => 8,
         }
     }
 
     /// Convert from assigned extension type to i8. Returns `None` if type isn't recognized.
-    pub fn from_i8(v: i8) -> Option<ExtType> {
+    pub fn from_u8(v: u8) -> Option<ExtType> {
         match v {
-            -1 => Some(ExtType::Timestamp),
-            1  => Some(ExtType::Hash),
-            2  => Some(ExtType::Identity),
-            3  => Some(ExtType::Lockbox),
-            _  => None,
-        }
-    }
-}
-
-impl From<ExtType> for i8 {
-    fn from(val: ExtType) -> i8 {
-        val.into_i8()
-    }
-}
-
-impl From<ExtType> for u8 {
-    fn from(val: ExtType) -> u8 {
-        val.into_i8() as u8
-    }
-}
-
-/// Defines the possible decodings for markers + ExtType + length bytes.
-#[derive(Debug)]
-pub enum MarkerType {
-    Null,
-    Boolean(bool),
-    NegInt((usize, i8)),
-    PosInt((usize, u8)),
-    String(usize),
-    F32,
-    F64,
-    Binary(usize),
-    Array(usize),
-    Object(usize),
-    Hash(usize),
-    Identity(usize),
-    Lockbox(usize),
-    Timestamp(usize),
-}
-
-impl MarkerType {
-    pub fn from_ext_i8(len: usize, v: i8) -> Option<MarkerType> {
-        match v {
-            -1 => Some(MarkerType::Timestamp(len)),
-            1  => Some(MarkerType::Hash(len)),
-            2  => Some(MarkerType::Identity(len)),
-            3  => Some(MarkerType::Lockbox(len)),
+            0 => Some(ExtType::Timestamp),
+            1 => Some(ExtType::Hash),
+            2 => Some(ExtType::Identity),
+            3 => Some(ExtType::LockId),
+            4 => Some(ExtType::StreamId),
+            5 => Some(ExtType::DataLockbox),
+            6 => Some(ExtType::IdentityLockbox),
+            7 => Some(ExtType::StreamLockbox),
+            8 => Some(ExtType::LockLockbox),
             _ => None,
         }
     }
 }
 
-
+impl From<ExtType> for u8 {
+    fn from(val: ExtType) -> u8 {
+        val.into_u8()
+    }
+}
 

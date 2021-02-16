@@ -1,6 +1,6 @@
+use std::fmt::{self, Debug, UpperHex, LowerHex, Display};
 use std::cmp;
 use std::cmp::Ordering;
-use std::fmt::{self, Debug, Display, LowerHex, UpperHex};
 use std::ops;
 
 use num_traits::NumCast;
@@ -24,16 +24,12 @@ pub struct Integer {
 impl Integer {
     /// Minimum possible integer that can be represented. Equivalent to `i64::min_value()`.
     pub fn min_value() -> Integer {
-        Integer {
-            n: IntPriv::NegInt(i64::min_value()),
-        }
+        Integer { n: IntPriv::NegInt(i64::min_value()) }
     }
 
     /// Maximum possible integer that can be represented. Equivalent to `u64::max_value()`.
     pub fn max_value() -> Integer {
-        Integer {
-            n: IntPriv::PosInt(u64::max_value()),
-        }
+        Integer { n: IntPriv::PosInt(u64::max_value()) }
     }
 
     /// Returns `true` if the integer can be represented as `i64`.
@@ -120,12 +116,14 @@ impl ops::Add<i64> for Integer {
             IntPriv::PosInt(lhs) => {
                 if other >= 0 {
                     Integer::from(lhs + (other as u64))
-                } else if lhs >= (1u64 << 63) {
+                }
+                else if lhs >= (1u64 << 63) {
                     Integer::from(lhs.wrapping_add(other as u64))
-                } else {
+                }
+                else {
                     Integer::from((lhs as i64) + other)
                 }
-            }
+            },
             IntPriv::NegInt(lhs) => Integer::from(lhs + other),
         }
     }
@@ -139,12 +137,14 @@ impl ops::Sub<i64> for Integer {
             IntPriv::PosInt(lhs) => {
                 if other < 0 {
                     Integer::from(lhs.wrapping_sub(other as u64))
-                } else if lhs >= (1u64 << 63) {
+                }
+                else if lhs >= (1u64 << 63) {
                     Integer::from(lhs - (other as u64))
-                } else {
+                }
+                else {
                     Integer::from((lhs as i64) - other)
                 }
-            }
+            },
             IntPriv::NegInt(lhs) => Integer::from(lhs - other),
         }
     }
@@ -179,54 +179,40 @@ impl LowerHex for Integer {
 
 impl From<u8> for Integer {
     fn from(n: u8) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
-        }
+        Integer { n: IntPriv::PosInt(n as u64) }
     }
 }
 
 impl From<u16> for Integer {
     fn from(n: u16) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
-        }
+        Integer { n: IntPriv::PosInt(n as u64) }
     }
 }
 
 impl From<u32> for Integer {
     fn from(n: u32) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
-        }
+        Integer { n: IntPriv::PosInt(n as u64) }
     }
 }
 
 impl From<u64> for Integer {
     fn from(n: u64) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
-        }
+        Integer { n: IntPriv::PosInt(n as u64) }
     }
 }
 
 impl From<usize> for Integer {
     fn from(n: usize) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
-        }
+        Integer { n: IntPriv::PosInt(n as u64) }
     }
 }
 
 impl From<i8> for Integer {
     fn from(n: i8) -> Self {
         if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
+            Integer { n: IntPriv::NegInt(n as i64) }
         } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
+            Integer { n: IntPriv::PosInt(n as u64) }
         }
     }
 }
@@ -234,13 +220,9 @@ impl From<i8> for Integer {
 impl From<i16> for Integer {
     fn from(n: i16) -> Self {
         if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
+            Integer { n: IntPriv::NegInt(n as i64) }
         } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
+            Integer { n: IntPriv::PosInt(n as u64) }
         }
     }
 }
@@ -248,13 +230,9 @@ impl From<i16> for Integer {
 impl From<i32> for Integer {
     fn from(n: i32) -> Self {
         if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
+            Integer { n: IntPriv::NegInt(n as i64) }
         } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
+            Integer { n: IntPriv::PosInt(n as u64) }
         }
     }
 }
@@ -262,13 +240,9 @@ impl From<i32> for Integer {
 impl From<i64> for Integer {
     fn from(n: i64) -> Self {
         if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
+            Integer { n: IntPriv::NegInt(n as i64) }
         } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
+            Integer { n: IntPriv::PosInt(n as u64) }
         }
     }
 }
@@ -276,16 +250,13 @@ impl From<i64> for Integer {
 impl From<isize> for Integer {
     fn from(n: isize) -> Self {
         if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
+            Integer { n: IntPriv::NegInt(n as i64) }
         } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
+            Integer { n: IntPriv::PosInt(n as u64) }
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -297,21 +268,21 @@ mod tests {
         let y = i64::max_value();
         assert_eq!(x + y, Integer::from(-1));
         let y = 1i64;
-        assert_eq!(x + y, Integer::from(i64::min_value() + 1));
+        assert_eq!(x + y, Integer::from(i64::min_value()+1));
         let x = Integer::from(1u64 << 63);
-        assert_eq!(x + y, Integer::from((1u64 << 63) + 1));
-        let x = Integer::from((1u64 << 63) - 1);
+        assert_eq!(x + y, Integer::from((1u64 << 63)+1));
+        let x = Integer::from((1u64 << 63)-1);
         assert_eq!(x + y, Integer::from(1u64 << 63));
 
         let x = Integer::max_value();
         let y = i64::min_value();
         assert_eq!(x + y, Integer::from(u64::max_value() >> 1));
         let y = -1i64;
-        assert_eq!(x + y, Integer::from(u64::max_value() - 1));
+        assert_eq!(x + y, Integer::from(u64::max_value()-1));
         let x = Integer::from(1u64 << 63);
-        assert_eq!(x + y, Integer::from((1u64 << 63) - 1));
-        let x = Integer::from((1u64 << 63) - 1);
-        assert_eq!(x + y, Integer::from((1u64 << 63) - 2));
+        assert_eq!(x + y, Integer::from((1u64 << 63)-1));
+        let x = Integer::from((1u64 << 63)-1);
+        assert_eq!(x + y, Integer::from((1u64 << 63)-2));
     }
 
     #[test]
@@ -320,20 +291,22 @@ mod tests {
         let y = i64::min_value();
         assert_eq!(x - y, Integer::from(0));
         let y = -1i64;
-        assert_eq!(x - y, Integer::from(i64::min_value() + 1));
+        assert_eq!(x - y, Integer::from(i64::min_value()+1));
         let x = Integer::from(1u64 << 63);
-        assert_eq!(x - y, Integer::from((1u64 << 63) + 1));
-        let x = Integer::from((1u64 << 63) - 1);
+        assert_eq!(x - y, Integer::from((1u64 << 63)+1));
+        let x = Integer::from((1u64 << 63)-1);
         assert_eq!(x - y, Integer::from(1u64 << 63));
+
 
         let x = Integer::max_value();
         let y = i64::max_value();
         assert_eq!(x - y, Integer::from(1u64 << 63));
         let y = 1i64;
-        assert_eq!(x - y, Integer::from(u64::max_value() - 1));
+        assert_eq!(x - y, Integer::from(u64::max_value()-1));
         let x = Integer::from(1u64 << 63);
-        assert_eq!(x - y, Integer::from((1u64 << 63) - 1));
-        let x = Integer::from((1u64 << 63) - 1);
-        assert_eq!(x - y, Integer::from((1u64 << 63) - 2));
+        assert_eq!(x - y, Integer::from((1u64 << 63)-1));
+        let x = Integer::from((1u64 << 63)-1);
+        assert_eq!(x - y, Integer::from((1u64 << 63)-2));
     }
 }
+

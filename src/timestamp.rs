@@ -13,6 +13,12 @@ use fog_crypto::serde::{
     CryptoEnum
 };
 
+use serde::{
+    de::{Deserialize, Deserializer, EnumAccess, Error, Unexpected, VariantAccess},
+    ser::{Serialize, Serializer, SerializeStructVariant},
+};
+use serde_bytes::{ByteBuf, Bytes};
+
 const MAX_NANOSEC: u32 = 1_999_999_999;
 
 /// Structure for holding a raw fog-pack timestamp.
@@ -248,12 +254,6 @@ impl TryFrom<&[u8]> for Timestamp {
         })
     }
 }
-
-use serde::{
-    de::{Deserialize, Deserializer, EnumAccess, Error, Unexpected, VariantAccess},
-    ser::{Serialize, Serializer, SerializeStructVariant},
-};
-use serde_bytes::{ByteBuf, Bytes};
 
 impl Serialize for Timestamp {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

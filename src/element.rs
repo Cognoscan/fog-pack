@@ -1,4 +1,6 @@
-use crate::{integer, Error, Integer, Timestamp};
+use std::convert::TryFrom;
+
+use crate::{Integer, Timestamp, error::{Error, Result}, get_int_internal, integer};
 use crate::marker::*;
 use fog_crypto::{
     hash::Hash,
@@ -7,8 +9,16 @@ use fog_crypto::{
     lockbox::{DataLockboxRef, IdentityLockboxRef, LockLockboxRef, StreamLockboxRef},
     stream::StreamId,
 };
+use serde::de::Unexpected;
 
 use byteorder::{LittleEndian, ReadBytesExt};
+
+pub enum Thing {
+    Unit,
+    Newtype(String),
+    Tuple(String, String),
+    Struct { key: String },
+}
 
 #[derive(Clone, Debug)]
 pub enum Element<'a> {
@@ -30,6 +40,59 @@ pub enum Element<'a> {
     IdentityLockbox(&'a IdentityLockboxRef),
     StreamLockbox(&'a StreamLockboxRef),
     LockLockbox(&'a LockLockboxRef),
+}
+
+impl<'a> Element<'a> {
+    pub fn name(&self) -> &'static str {
+        use self::Element::*;
+        match self {
+            Null               => "Null",
+            Bool(_)            => "Bool",
+            Int(_)             => "Int",
+            Str(_)             => "Str",
+            F32(_)             => "F32",
+            F64(_)             => "F64",
+            Bin(_)             => "Bin",
+            Array(_)           => "Array",
+            Map(_)             => "Map",
+            Timestamp(_)       => "Time",
+            Hash(_)            => "Hash",
+            Identity(_)        => "Identity",
+            LockId(_)          => "LockId",
+            StreamId(_)        => "StreamId",
+            DataLockbox(_)     => "DataLockbox",
+            IdentityLockbox(_) => "IdentityLockbox",
+            StreamLockbox(_)   => "StreamLockbox",
+            LockLockbox(_)     => "LockLockbox",
+        }
+    }
+
+    pub fn unexpected(&self) -> Unexpected {
+        use self::Element::*;
+        match self {
+            Null               => Unexpected::Unit,
+            Bool(v)            => Unexpected::Bool(*v),
+            Int(v)             => match get_int_internal(v) {
+                integer::IntPriv::PosInt(v) => Unexpected::Unsigned(v),
+                integer::IntPriv::NegInt(v) => Unexpected::Signed(v),
+            },
+            Str(v)             => Unexpected::Str(v),
+            F32(v)             => Unexpected::Float(*v as f64),
+            F64(v)             => Unexpected::Float(*v),
+            Bin(v)             => Unexpected::Bytes(v),
+            Array(_)           => Unexpected::Seq,
+            Map(_)             => Unexpected::Map,
+            Timestamp(_)       => Unexpected::Other("timestamp"),
+            Hash(_)            => Unexpected::Other("Hash"),
+            Identity(_)        => Unexpected::Other("Identity"),
+            LockId(_)          => Unexpected::Other("LockId"),
+            StreamId(_)        => Unexpected::Other("StreamId"),
+            DataLockbox(_)     => Unexpected::Other("DataLockbox"),
+            IdentityLockbox(_) => Unexpected::Other("IdentityLockbox"),
+            StreamLockbox(_)   => Unexpected::Other("StreamLockbox"),
+            LockLockbox(_)     => Unexpected::Other("LockLockbox"),
+        }
+    }
 }
 
 /// Serialize an element onto a byte vector. Doesn't check if Array & Map structures make
@@ -213,10 +276,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn peek_marker(&self) -> Option<Marker> {
+        self.data
+            .first()
+            .and_then(|n| Some(Marker::from_u8(*n)))
+    }
+
     // Given a retrieved marker, try to turn it into the next element, which may move through the
     // indexed data. If we can't, error. This function *does not* set the the errored flag. That's
     // up to the caller.
-    fn parse_element(&mut self, marker: Marker) -> crate::Result<Element<'a>> {
+    fn parse_element(&mut self, marker: Marker) -> Result<Element<'a>> {
         use self::Marker::*;
         let elem = match marker {
             Reserved => return Err(Error::BadEncode(String::from("Reserved marker found"))),
@@ -686,7 +755,7 @@ impl<'a> Parser<'a> {
         Ok(elem)
     }
 
-    fn parse_ext(&mut self, len: usize) -> crate::Result<Element<'a>> {
+    fn parse_ext(&mut self, len: usize) -> Result<Element<'a>> {
         use std::convert::TryFrom;
 
         let ext_type = self.data.read_u8().map_err(|_| Error::LengthTooShort {
@@ -726,7 +795,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> std::iter::Iterator for Parser<'a> {
-    type Item = crate::Result<Element<'a>>;
+    type Item = Result<Element<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.errored {

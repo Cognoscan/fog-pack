@@ -6,7 +6,7 @@ use std::ops;
 use num_traits::NumCast;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum IntPriv {
+pub(crate) enum IntPriv {
     /// Always non-less than zero.
     PosInt(u64),
     /// Always less than zero.
@@ -91,8 +91,14 @@ impl Integer {
     }
 }
 
-pub fn get_int_internal(val: &Integer) -> IntPriv {
+pub(crate) fn get_int_internal(val: &Integer) -> IntPriv {
     val.n
+}
+
+impl std::default::Default for Integer {
+    fn default() -> Self {
+        Self { n: IntPriv::PosInt(0) }
+    }
 }
 
 impl cmp::Ord for Integer {
@@ -284,6 +290,47 @@ impl From<isize> for Integer {
                 n: IntPriv::PosInt(n as u64),
             }
         }
+    }
+}
+
+use serde::{
+    de::{Deserialize, Deserializer},
+    ser::{Serialize, Serializer},
+};
+
+impl Serialize for Integer {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.n {
+            IntPriv::PosInt(v) => serializer.serialize_u64(v),
+            IntPriv::NegInt(v) => serializer.serialize_i64(v),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Integer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct IntVisitor;
+        impl<'de> serde::de::Visitor<'de> for IntVisitor {
+            type Value = Integer;
+
+            fn expecting(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+                write!(fmt, "an integer")
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                Ok(Integer::from(v))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                Ok(Integer::from(v))
+            }
+
+        }
+
+        deserializer.deserialize_any(IntVisitor)
     }
 }
 

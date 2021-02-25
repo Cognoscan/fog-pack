@@ -1,0 +1,332 @@
+{
+  "name": "fog-pack Core Schema",
+  "version": 1,
+  "doc": {
+    "Map": {
+      "opt": {
+        "name": { "Str": {} },
+        "doc_compress": { "Ref": "Compress" },
+        "description": { "Str": {} },
+        "version": { "Int": {} },
+        "doc": { "Ref": "Validator" },
+        "entries": {
+          "Map": {
+            "field_type": { "Ref": "Validator" }
+          }
+        },
+        "entries_compress": { "Ref": "Compress" },
+        "types": {
+          "Map": {
+            "field_type": { "Ref": "Validator" }
+          }
+        }
+      }
+    }
+  },
+  "types": {
+    "Compress": {
+      "Enum": {
+        "None": null,
+        "General": {
+          "Map": {
+            "algorithm": { "Int": { "min": 0, "max": 31 } },
+            "level": { "Int": { "min": 0, "max": 255 } }
+          }
+        },
+        "Dict": {
+          "Map": {
+            "algorithm": { "Int": { "min": 0, "max": 31 } },
+            "dict": { "Bin": {} }
+          }
+        }
+      }
+    },
+    "Validator": {
+      "Enum": {
+        "Null": null,
+        "Bool": {
+          "Map": {
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Bool": {} },
+              "in": { "Array": { "item_type": { "Bool": {} } } },
+              "nin": { "Array": { "item_type": { "Bool": {} } } },
+              "query": { "Bool": {} }
+            }
+          }
+        },
+        "Int": {
+          "Map": {
+            "comment": "The Integer type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "bits_clr": { "Int": { "min": 0 } },
+              "bits_set": { "Int": { "min": 0 } },
+              "default": { "Int": {} },
+              "max": { "Int": {} },
+              "min": { "Int": {} },
+              "ex_max": { "Bool": {} },
+              "ex_min": { "Bool": {} },
+              "in": { "Array": { "item_type": { "Int": {} } } },
+              "nin": { "Array": { "item_type": { "Int": {} } } },
+              "query": { "Bool": {} },
+              "bit": { "Bool": {} },
+              "ord": { "Bool": {} }
+            }
+          }
+        },
+        "Str": {
+          "Map": {
+            "comment": "The String type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Str": {} },
+              "in": { "Array": { "item_type": { "Str": {} } } },
+              "nin": { "Array": { "item_type": { "Str": {} } } },
+              "matches": { "Array": { "item_type": { "Str": {} } } },
+              "max_len": { "Int": { "min": 0 } },
+              "min_len": { "Int": { "min": 0 } },
+              "max_char": { "Int": { "min": 0 } },
+              "min_char": { "Int": { "min": 0 } },
+              "normalize": {
+                "Enum": {
+                  "None": null,
+                  "NFC": null,
+                  "NFKC": null
+                }
+              },
+              "query": { "Bool": {} },
+              "regex": { "Bool": {} },
+              "size": { "Bool": {} }
+            }
+          }
+        },
+        "F32": {
+          "Map": {
+            "comment": "The F32 type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "F32": {} },
+              "max": { "F32": { } },
+              "min": { "F32": { } },
+              "ex_max": { "Bool": {} },
+              "ex_min": { "Bool": {} },
+              "in": { "Array": { "item_type": { "F32": {} } } },
+              "nin": { "Array": { "item_type": { "F32": {} } } },
+              "query": { "Bool": {} },
+              "ord": { "Bool": {} }
+            }
+          }
+        },
+        "F64": {
+          "Map": {
+            "comment": "The F64 type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "F64": {} },
+              "max": { "F64": { "min": "<F64(-inf)>", "max": "<F64(inf)>" } },
+              "min": { "F64": { "min": "<F64(-inf)>", "max": "<F64(inf)>" } },
+              "ex_max": { "Bool": {} },
+              "ex_min": { "Bool": {} },
+              "in": { "Array": { "item_type": { "F64": {} } } },
+              "nin": { "Array": { "item_type": { "F64": {} } } },
+              "query": { "Bool": {} },
+              "ord": { "Bool": {} }
+            }
+          }
+        },
+        "Bin": {
+          "Map": {
+            "comment": "The Binary type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "F64": {} },
+              "bits_clr": { "type": "Bin" },
+              "bits_set": { "type": "Bin" },
+              "ex_max": { "Bool": {} },
+              "ex_min": { "Bool": {} },
+              "max": { "Bin": {} },
+              "min": { "Bin": {} },
+              "max_len": { "Int": { "min": 0 } },
+              "min_len": { "Int": { "min": 0 } },
+              "in": { "Array": { "item_type": { "Bin": {} } } },
+              "nin": { "Array": { "item_type": { "Bin": {} } } },
+              "query": { "Bool": {} },
+              "bit": { "Bool": {} },
+              "ord": { "Bool": {} },
+              "size": { "Bool": {} }
+            }
+          }
+        },
+        "Array": {
+          "Map": {
+            "comment": "The Array type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Array": {} },
+              "contains": { "Array": { "item_type": { "Ref": "Validator" } } },
+              "item_type": { "Ref": "Validator" },
+              "items": { "Array": { "item_type": { "Ref": "Validator" } } },
+              "max_len": { "Int": { "min": 0 } },
+              "min_len": { "Int": { "min": 0 } },
+              "in": { "Array": { "item_type": { "Array": {} } } },
+              "nin": { "Array": { "item_type": { "Array": {} } } },
+              "unique": { "Bool": {} },
+              "query": { "Bool": {} },
+              "array": { "Bool": {} },
+              "contains_ok": { "Bool": {} },
+              "unique_ok": { "Bool": {} },
+              "size": { "Bool": {} }
+            }
+          }
+        },
+        "Map": {
+          "Map": {
+            "comment": "The Map type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Map": { "field_type": "Any" } },
+              "max_fields": { "Int": { "min": 0 } },
+              "min_fields": { "Int": { "min": 0 } },
+              "field_type": { "Ref": "Validator" },
+              "req": { "Map": { "field_type": { "Ref": "Validator" } } },
+              "opt": { "Map": { "field_type": { "Ref": "Validator" } } },
+              "ban": { "Array": { "item_type": { "Str": {} } } },
+              "in": {
+                "Array": { "item_type": { "Map": { "field_type": "Any" } } }
+              },
+              "nin": {
+                "Array": { "item_type": { "Map": { "field_type": "Any" } } }
+              },
+              "query": { "Bool": {} },
+              "size": { "Bool": {} },
+              "map_ok": { "Bool": {} }
+            }
+          }
+        },
+        "Time": {
+          "Map": {
+            "comment": "The Timestamp type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Time": {} },
+              "max": { "Time": {} },
+              "min": { "Time": {} },
+              "ex_max": { "Bool": {} },
+              "ex_min": { "Bool": {} },
+              "in": { "Array": { "item_type": { "Time": {} } } },
+              "nin": { "Array": { "item_type": { "Time": {} } } },
+              "query": { "Bool": {} },
+              "ord": { "Bool": {} }
+            }
+          }
+        },
+        "Hash": {
+          "Map": {
+            "comment": "The Hash type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Hash": {} },
+              "link": { "Ref": "Validator" },
+              "schema": { "Array": { "item_type": { "Hash": {} } } },
+              "in": { "Array": { "item_type": { "Hash": {} } } },
+              "nin": { "Array": { "item_type": { "Hash": {} } } },
+              "query": { "Bool": {} },
+              "link_ok": { "Bool": {} },
+              "schema_ok": { "Bool": {} }
+            }
+          }
+        },
+        "Identity": {
+          "Map": {
+            "comment": "The Identity type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Identity": {} },
+              "in": { "Array": { "item_type": { "Identity": {} } } },
+              "nin": { "Array": { "item_type": { "Identity": {} } } },
+              "query": { "Bool": {} }
+            }
+          }
+        },
+        "StreamId": {
+          "Map": {
+            "comment": "The StreamId type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Identity": {} },
+              "in": { "Array": { "item_type": { "StreamId": {} } } },
+              "nin": { "Array": { "item_type": { "StreamId": {} } } },
+              "query": { "Bool": {} }
+            }
+          }
+        },
+        "LockId": {
+          "Map": {
+            "comment": "The LockId type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "default": { "Identity": {} },
+              "in": { "Array": { "item_type": { "LockId": {} } } },
+              "nin": { "Array": { "item_type": { "LockId": {} } } },
+              "query": { "Bool": {} }
+            }
+          }
+        },
+        "DataLockbox": {
+          "Map": {
+            "comment": "The DataLockbox type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "max_len": { "Int": { "min": 0 } },
+              "size": { "Bool": {} }
+            }
+          }
+        },
+        "IdentityLockbox": {
+          "Map": {
+            "comment": "The IdentityLockbox type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "max_len": { "Int": { "min": 0 } },
+              "size": { "Bool": {} }
+            }
+          }
+        },
+        "StreamLockbox": {
+          "Map": {
+            "comment": "The StreamLockbox type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "max_len": { "Int": { "min": 0 } },
+              "size": { "Bool": {} }
+            }
+          }
+        },
+        "LockLockbox": {
+          "Map": {
+            "comment": "The LockLockbox type validator",
+            "opt": {
+              "comment": { "Str": {} },
+              "max_len": { "Int": { "min": 0 } },
+              "size": { "Bool": {} }
+            }
+          }
+        },
+        "Any": null,
+        "Ref": { "Str": {} },
+        "Enum": {
+          "Map": {
+            "field_type": { "Multi": ["Null", { "Ref": "Validator" }] }
+          }
+        },
+        "Multi": {
+          "Array": {
+            "comment": "An array of validators. Matching any will validate.",
+            "item_type": { "Ref": "Validator" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,12 @@
 mod marker;
 pub mod element;
 
+mod depth_tracking;
+mod schema;
+pub mod validator;
+pub mod value;
+mod compress;
+
 pub mod timestamp;
 pub use timestamp::*;
 
@@ -8,10 +14,29 @@ pub mod integer;
 pub use integer::*;
 
 mod error;
-pub use error::{Error, Result};
+
+pub use fog_crypto::{
+    hash::Hash,
+    identity::Identity,
+    stream::StreamId,
+    lock::LockId,
+    lockbox::{
+        DataLockbox,
+        DataLockboxRef,
+        IdentityLockbox,
+        IdentityLockboxRef,
+        StreamLockbox,
+        StreamLockboxRef,
+        LockLockbox,
+        LockLockboxRef,
+    }
+};
 
 mod ser;
+mod de;
 
+/// The maximum nesting depth allowed for any fog-pack value. No encoded document will ever nest 
+/// Map/Array markers deeper than this.
 pub const MAX_DEPTH: usize = 100;
 /// The exclusive maximum allowed size of a raw document, including signatures, is 1 MiB. No 
 /// encoded document will ever be equal to or larger than this size.

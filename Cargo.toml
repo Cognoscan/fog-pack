@@ -23,7 +23,7 @@ ieee754 = "0.2.6"
 zstd-safe = "2.0"
 bytecount = "0.6.0"
 unicode-normalization = "0.1.12"
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 
 [dev-dependencies]

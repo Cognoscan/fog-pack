@@ -1,18 +1,18 @@
 use crate::{
-    MAX_DEPTH,
     element::Element,
-    error::{Error, Result}
+    error::{Error, Result},
+    MAX_DEPTH,
 };
 
 pub struct DepthTracker {
-    tracking: Vec<u32>
+    tracking: Vec<u32>,
 }
 
 impl DepthTracker {
     /// Create a new depth tracker
     pub fn new() -> Self {
         Self {
-            tracking: Vec::new()
+            tracking: Vec::new(),
         }
     }
 
@@ -43,15 +43,17 @@ impl DepthTracker {
     pub fn purge_zeros(&mut self) {
         loop {
             match self.tracking.last() {
-                Some(v) if *v == 0 => { self.tracking.pop(); },
+                Some(v) if *v == 0 => {
+                    self.tracking.pop();
+                }
                 _ => break,
             }
         }
     }
-    
-    /// Drop a depth before we've seen enough elements. This can be used by map/seq serializers 
-    /// that didn't know their total length ahead of time. This way, they can put in a 
-    /// maximally-sized map/array element, then run through the depth tracker as normal, calling 
+
+    /// Drop a depth before we've seen enough elements. This can be used by map/seq serializers
+    /// that didn't know their total length ahead of time. This way, they can put in a
+    /// maximally-sized map/array element, then run through the depth tracker as normal, calling
     /// this when done.
     pub fn early_end(&mut self) {
         self.tracking.pop();

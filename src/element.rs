@@ -1,7 +1,10 @@
 use std::convert::TryFrom;
 
-use crate::{Integer, Timestamp, error::{Error, Result}, get_int_internal, integer};
 use crate::marker::*;
+use crate::{
+    error::{Error, Result},
+    get_int_internal, integer, Integer, Timestamp,
+};
 use fog_crypto::{
     hash::Hash,
     identity::Identity,
@@ -46,51 +49,51 @@ impl<'a> Element<'a> {
     pub fn name(&self) -> &'static str {
         use self::Element::*;
         match self {
-            Null               => "Null",
-            Bool(_)            => "Bool",
-            Int(_)             => "Int",
-            Str(_)             => "Str",
-            F32(_)             => "F32",
-            F64(_)             => "F64",
-            Bin(_)             => "Bin",
-            Array(_)           => "Array",
-            Map(_)             => "Map",
-            Timestamp(_)       => "Time",
-            Hash(_)            => "Hash",
-            Identity(_)        => "Identity",
-            LockId(_)          => "LockId",
-            StreamId(_)        => "StreamId",
-            DataLockbox(_)     => "DataLockbox",
+            Null => "Null",
+            Bool(_) => "Bool",
+            Int(_) => "Int",
+            Str(_) => "Str",
+            F32(_) => "F32",
+            F64(_) => "F64",
+            Bin(_) => "Bin",
+            Array(_) => "Array",
+            Map(_) => "Map",
+            Timestamp(_) => "Time",
+            Hash(_) => "Hash",
+            Identity(_) => "Identity",
+            LockId(_) => "LockId",
+            StreamId(_) => "StreamId",
+            DataLockbox(_) => "DataLockbox",
             IdentityLockbox(_) => "IdentityLockbox",
-            StreamLockbox(_)   => "StreamLockbox",
-            LockLockbox(_)     => "LockLockbox",
+            StreamLockbox(_) => "StreamLockbox",
+            LockLockbox(_) => "LockLockbox",
         }
     }
 
     pub fn unexpected(&self) -> Unexpected {
         use self::Element::*;
         match self {
-            Null               => Unexpected::Unit,
-            Bool(v)            => Unexpected::Bool(*v),
-            Int(v)             => match get_int_internal(v) {
+            Null => Unexpected::Unit,
+            Bool(v) => Unexpected::Bool(*v),
+            Int(v) => match get_int_internal(v) {
                 integer::IntPriv::PosInt(v) => Unexpected::Unsigned(v),
                 integer::IntPriv::NegInt(v) => Unexpected::Signed(v),
             },
-            Str(v)             => Unexpected::Str(v),
-            F32(v)             => Unexpected::Float(*v as f64),
-            F64(v)             => Unexpected::Float(*v),
-            Bin(v)             => Unexpected::Bytes(v),
-            Array(_)           => Unexpected::Seq,
-            Map(_)             => Unexpected::Map,
-            Timestamp(_)       => Unexpected::Other("timestamp"),
-            Hash(_)            => Unexpected::Other("Hash"),
-            Identity(_)        => Unexpected::Other("Identity"),
-            LockId(_)          => Unexpected::Other("LockId"),
-            StreamId(_)        => Unexpected::Other("StreamId"),
-            DataLockbox(_)     => Unexpected::Other("DataLockbox"),
+            Str(v) => Unexpected::Str(v),
+            F32(v) => Unexpected::Float(*v as f64),
+            F64(v) => Unexpected::Float(*v),
+            Bin(v) => Unexpected::Bytes(v),
+            Array(_) => Unexpected::Seq,
+            Map(_) => Unexpected::Map,
+            Timestamp(_) => Unexpected::Other("timestamp"),
+            Hash(_) => Unexpected::Other("Hash"),
+            Identity(_) => Unexpected::Other("Identity"),
+            LockId(_) => Unexpected::Other("LockId"),
+            StreamId(_) => Unexpected::Other("StreamId"),
+            DataLockbox(_) => Unexpected::Other("DataLockbox"),
             IdentityLockbox(_) => Unexpected::Other("IdentityLockbox"),
-            StreamLockbox(_)   => Unexpected::Other("StreamLockbox"),
-            LockLockbox(_)     => Unexpected::Other("LockLockbox"),
+            StreamLockbox(_) => Unexpected::Other("StreamLockbox"),
+            LockLockbox(_) => Unexpected::Other("LockLockbox"),
         }
     }
 }
@@ -277,9 +280,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn peek_marker(&self) -> Option<Marker> {
-        self.data
-            .first()
-            .and_then(|n| Some(Marker::from_u8(*n)))
+        self.data.first().and_then(|n| Some(Marker::from_u8(*n)))
     }
 
     // Given a retrieved marker, try to turn it into the next element, which may move through the
@@ -287,471 +288,490 @@ impl<'a> Parser<'a> {
     // up to the caller.
     fn parse_element(&mut self, marker: Marker) -> Result<Element<'a>> {
         use self::Marker::*;
-        let elem = match marker {
-            Reserved => return Err(Error::BadEncode(String::from("Reserved marker found"))),
-            Null => Element::Null,
-            False => Element::Bool(false),
-            True => Element::Bool(true),
-            PosFixInt(v) => Element::Int(v.into()),
-            UInt8 => {
-                let v = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                    step: "decode UInt8",
-                    actual: 0,
-                    expected: 1,
-                })?;
-                if v < 128 {
-                    return Err(Error::BadEncode(format!(
-                        "Got UInt8 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+        let elem =
+            match marker {
+                Reserved => return Err(Error::BadEncode(String::from("Reserved marker found"))),
+                Null => Element::Null,
+                False => Element::Bool(false),
+                True => Element::Bool(true),
+                PosFixInt(v) => Element::Int(v.into()),
+                UInt8 => {
+                    let v = self.data.read_u8().map_err(|_| Error::LengthTooShort {
+                        step: "decode UInt8",
+                        actual: 0,
+                        expected: 1,
+                    })?;
+                    if v < 128 {
+                        return Err(Error::BadEncode(format!(
+                            "Got UInt8 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            UInt16 => {
-                let v =
-                    self.data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                UInt16 => {
+                    let v = self.data.read_u16::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode UInt16",
                             actual: self.data.len(),
                             expected: 2,
-                        })?;
-                if v <= u8::MAX as u16 {
-                    return Err(Error::BadEncode(format!(
-                        "Got UInt16 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+                        }
+                    })?;
+                    if v <= u8::MAX as u16 {
+                        return Err(Error::BadEncode(format!(
+                            "Got UInt16 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            UInt32 => {
-                let v =
-                    self.data
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                UInt32 => {
+                    let v = self.data.read_u32::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode UInt32",
                             actual: self.data.len(),
                             expected: 4,
-                        })?;
-                if v <= u16::MAX as u32 {
-                    return Err(Error::BadEncode(format!(
-                        "Got UInt32 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+                        }
+                    })?;
+                    if v <= u16::MAX as u32 {
+                        return Err(Error::BadEncode(format!(
+                            "Got UInt32 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            UInt64 => {
-                let v =
-                    self.data
-                        .read_u64::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                UInt64 => {
+                    let v = self.data.read_u64::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode UInt64",
                             actual: self.data.len(),
                             expected: 8,
-                        })?;
-                if v <= u32::MAX as u64 {
-                    return Err(Error::BadEncode(format!(
-                        "Got UInt64 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+                        }
+                    })?;
+                    if v <= u32::MAX as u64 {
+                        return Err(Error::BadEncode(format!(
+                            "Got UInt64 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            NegFixInt(v) => Element::Int(v.into()),
-            Int8 => {
-                let v = self.data.read_i8().map_err(|_| Error::LengthTooShort {
-                    step: "decode UInt8",
-                    actual: 0,
-                    expected: 1,
-                })?;
-                if v >= -32 {
-                    return Err(Error::BadEncode(format!(
-                        "Got Int8 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+                NegFixInt(v) => Element::Int(v.into()),
+                Int8 => {
+                    let v = self.data.read_i8().map_err(|_| Error::LengthTooShort {
+                        step: "decode UInt8",
+                        actual: 0,
+                        expected: 1,
+                    })?;
+                    if v >= -32 {
+                        return Err(Error::BadEncode(format!(
+                            "Got Int8 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            Int16 => {
-                let v =
-                    self.data
-                        .read_i16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                Int16 => {
+                    let v = self.data.read_i16::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode Int16",
                             actual: self.data.len(),
                             expected: 2,
-                        })?;
-                if v >= i8::MIN as i16 {
-                    return Err(Error::BadEncode(format!(
-                        "Got Int16 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+                        }
+                    })?;
+                    if v >= i8::MIN as i16 {
+                        return Err(Error::BadEncode(format!(
+                            "Got Int16 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            Int32 => {
-                let v =
-                    self.data
-                        .read_i32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                Int32 => {
+                    let v = self.data.read_i32::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode Int32",
                             actual: self.data.len(),
                             expected: 4,
-                        })?;
-                if v >= i16::MIN as i32 {
-                    return Err(Error::BadEncode(format!(
-                        "Got Int32 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+                        }
+                    })?;
+                    if v >= i16::MIN as i32 {
+                        return Err(Error::BadEncode(format!(
+                            "Got Int32 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            Int64 => {
-                let v =
-                    self.data
-                        .read_i64::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                Int64 => {
+                    let v = self.data.read_i64::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode Int64",
                             actual: self.data.len(),
                             expected: 8,
-                        })?;
-                if v >= i32::MIN as i64 {
-                    return Err(Error::BadEncode(format!(
-                        "Got Int64 with value = {}. This is not the shortest encoding.",
-                        v
-                    )));
+                        }
+                    })?;
+                    if v >= i32::MIN as i64 {
+                        return Err(Error::BadEncode(format!(
+                            "Got Int64 with value = {}. This is not the shortest encoding.",
+                            v
+                        )));
+                    }
+                    Element::Int(v.into())
                 }
-                Element::Int(v.into())
-            }
-            Bin8 => {
-                let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                    step: "decode Bin8 length",
-                    actual: 0,
-                    expected: 1,
-                })? as usize;
-                if len > self.data.len() {
-                    return Err(Error::LengthTooShort {
-                        step: "get Bin8 content",
-                        actual: self.data.len(),
-                        expected: len,
-                    });
-                }
-                let (bytes, data) = self.data.split_at(len);
-                self.data = data;
-                Element::Bin(bytes)
-            }
-            Bin16 => {
-                let len =
-                    self.data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Bin16 length",
+                Bin8 => {
+                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
+                        step: "decode Bin8 length",
+                        actual: 0,
+                        expected: 1,
+                    })? as usize;
+                    if len > self.data.len() {
+                        return Err(Error::LengthTooShort {
+                            step: "get Bin8 content",
                             actual: self.data.len(),
-                            expected: 2,
-                        })? as usize;
-                if len <= (u8::MAX as usize) {
-                    return Err(Error::BadEncode(format!(
-                        "Got Bin16 with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                            expected: len,
+                        });
+                    }
+                    let (bytes, data) = self.data.split_at(len);
+                    self.data = data;
+                    Element::Bin(bytes)
                 }
-                if len > self.data.len() {
-                    return Err(Error::LengthTooShort {
-                        step: "get Bin16 content",
-                        actual: self.data.len(),
-                        expected: len,
-                    });
-                }
-                let (bytes, data) = self.data.split_at(len);
-                self.data = data;
-                Element::Bin(bytes)
-            }
-            Bin32 => {
-                let len =
-                    self.data
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Bin32 length",
+                Bin16 => {
+                    let len =
+                        self.data
+                            .read_u16::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Bin16 length",
+                                actual: self.data.len(),
+                                expected: 2,
+                            })? as usize;
+                    if len <= (u8::MAX as usize) {
+                        return Err(Error::BadEncode(format!(
+                            "Got Bin16 with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    if len > self.data.len() {
+                        return Err(Error::LengthTooShort {
+                            step: "get Bin16 content",
                             actual: self.data.len(),
-                            expected: 4,
-                        })? as usize;
-                if len <= (u16::MAX as usize) {
-                    return Err(Error::BadEncode(format!(
-                        "Got Bin32 with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                            expected: len,
+                        });
+                    }
+                    let (bytes, data) = self.data.split_at(len);
+                    self.data = data;
+                    Element::Bin(bytes)
                 }
-                if len > self.data.len() {
-                    return Err(Error::LengthTooShort {
-                        step: "get Bin32 content",
-                        actual: self.data.len(),
-                        expected: len,
-                    });
+                Bin32 => {
+                    let len =
+                        self.data
+                            .read_u32::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Bin32 length",
+                                actual: self.data.len(),
+                                expected: 4,
+                            })? as usize;
+                    if len <= (u16::MAX as usize) {
+                        return Err(Error::BadEncode(format!(
+                            "Got Bin32 with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    if len > self.data.len() {
+                        return Err(Error::LengthTooShort {
+                            step: "get Bin32 content",
+                            actual: self.data.len(),
+                            expected: len,
+                        });
+                    }
+                    let (bytes, data) = self.data.split_at(len);
+                    self.data = data;
+                    Element::Bin(bytes)
                 }
-                let (bytes, data) = self.data.split_at(len);
-                self.data = data;
-                Element::Bin(bytes)
-            }
-            F32 => {
-                let v =
-                    self.data
-                        .read_f32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                F32 => {
+                    let v = self.data.read_f32::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode F32",
                             actual: self.data.len(),
                             expected: 4,
-                        })?;
-                Element::F32(v.into())
-            }
-            F64 => {
-                let v =
-                    self.data
-                        .read_f64::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
+                        }
+                    })?;
+                    Element::F32(v.into())
+                }
+                F64 => {
+                    let v = self.data.read_f64::<LittleEndian>().map_err(|_| {
+                        Error::LengthTooShort {
                             step: "decode F64",
                             actual: self.data.len(),
                             expected: 8,
-                        })?;
-                Element::F64(v.into())
-            }
-            FixStr(len) => {
-                let len = len as usize;
-                if len > self.data.len() {
-                    return Err(Error::LengthTooShort {
-                        step: "get FixStr content",
-                        actual: self.data.len(),
-                        expected: len,
-                    });
+                        }
+                    })?;
+                    Element::F64(v.into())
                 }
-                let (string, data) = self.data.split_at(len);
-                self.data = data;
-                let string =
-                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                Element::Str(string)
-            }
-            Str8 => {
-                let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                    step: "decode Str8 length",
-                    actual: 0,
-                    expected: 1,
-                })? as usize;
-                if len <= 31 {
-                    return Err(Error::BadEncode(format!(
-                        "Got Str8 with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
-                }
-                if len > self.data.len() {
-                    return Err(Error::LengthTooShort {
-                        step: "get Str8 content",
-                        actual: self.data.len(),
-                        expected: len,
-                    });
-                }
-                let (string, data) = self.data.split_at(len);
-                self.data = data;
-                let string =
-                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                Element::Str(string)
-            }
-            Str16 => {
-                let len =
-                    self.data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Str16 length",
+                FixStr(len) => {
+                    let len = len as usize;
+                    if len > self.data.len() {
+                        return Err(Error::LengthTooShort {
+                            step: "get FixStr content",
                             actual: self.data.len(),
-                            expected: 2,
-                        })? as usize;
-                if len <= (u8::MAX as usize) {
-                    return Err(Error::BadEncode(format!(
-                        "Got Str16 with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                            expected: len,
+                        });
+                    }
+                    let (string, data) = self.data.split_at(len);
+                    self.data = data;
+                    let string = std::str::from_utf8(string)
+                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                    Element::Str(string)
                 }
-                if len > self.data.len() {
-                    return Err(Error::LengthTooShort {
-                        step: "get Str16 content",
-                        actual: self.data.len(),
-                        expected: len,
-                    });
-                }
-                let (string, data) = self.data.split_at(len);
-                self.data = data;
-                let string =
-                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                Element::Str(string)
-            }
-            Str32 => {
-                let len =
-                    self.data
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Str32 length",
+                Str8 => {
+                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
+                        step: "decode Str8 length",
+                        actual: 0,
+                        expected: 1,
+                    })? as usize;
+                    if len <= 31 {
+                        return Err(Error::BadEncode(format!(
+                            "Got Str8 with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    if len > self.data.len() {
+                        return Err(Error::LengthTooShort {
+                            step: "get Str8 content",
                             actual: self.data.len(),
-                            expected: 4,
-                        })? as usize;
-                if len <= (u16::MAX as usize) {
-                    return Err(Error::BadEncode(format!(
-                        "Got Str32 with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                            expected: len,
+                        });
+                    }
+                    let (string, data) = self.data.split_at(len);
+                    self.data = data;
+                    let string = std::str::from_utf8(string)
+                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                    Element::Str(string)
                 }
-                if len > self.data.len() {
-                    return Err(Error::LengthTooShort {
-                        step: "get Str32 content",
-                        actual: self.data.len(),
-                        expected: len,
-                    });
+                Str16 => {
+                    let len =
+                        self.data
+                            .read_u16::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Str16 length",
+                                actual: self.data.len(),
+                                expected: 2,
+                            })? as usize;
+                    if len <= (u8::MAX as usize) {
+                        return Err(Error::BadEncode(format!(
+                            "Got Str16 with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    if len > self.data.len() {
+                        return Err(Error::LengthTooShort {
+                            step: "get Str16 content",
+                            actual: self.data.len(),
+                            expected: len,
+                        });
+                    }
+                    let (string, data) = self.data.split_at(len);
+                    self.data = data;
+                    let string = std::str::from_utf8(string)
+                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                    Element::Str(string)
                 }
-                let (string, data) = self.data.split_at(len);
-                self.data = data;
-                let string =
-                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                Element::Str(string)
-            }
-            FixArray(len) => Element::Array(len as usize),
-            Array8 => {
-                let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                    step: "decode Array8 length",
-                    actual: 0,
-                    expected: 1,
-                })? as usize;
-                if len <= 15 {
-                    return Err(Error::BadEncode(format!(
+                Str32 => {
+                    let len =
+                        self.data
+                            .read_u32::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Str32 length",
+                                actual: self.data.len(),
+                                expected: 4,
+                            })? as usize;
+                    if len <= (u16::MAX as usize) {
+                        return Err(Error::BadEncode(format!(
+                            "Got Str32 with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    if len > self.data.len() {
+                        return Err(Error::LengthTooShort {
+                            step: "get Str32 content",
+                            actual: self.data.len(),
+                            expected: len,
+                        });
+                    }
+                    let (string, data) = self.data.split_at(len);
+                    self.data = data;
+                    let string = std::str::from_utf8(string)
+                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                    Element::Str(string)
+                }
+                FixArray(len) => Element::Array(len as usize),
+                Array8 => {
+                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
+                        step: "decode Array8 length",
+                        actual: 0,
+                        expected: 1,
+                    })? as usize;
+                    if len <= 15 {
+                        return Err(Error::BadEncode(format!(
                         "Got Array8 marker with length = {}. This is not the shortest encoding.",
                         len
                     )));
+                    }
+                    Element::Array(len)
                 }
-                Element::Array(len)
-            }
-            Array16 => {
-                let len =
-                    self.data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Array16 length",
-                            actual: self.data.len(),
-                            expected: 2,
-                        })? as usize;
-                if len <= u8::MAX as usize {
-                    return Err(Error::BadEncode(format!(
+                Array16 => {
+                    let len =
+                        self.data
+                            .read_u16::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Array16 length",
+                                actual: self.data.len(),
+                                expected: 2,
+                            })? as usize;
+                    if len <= u8::MAX as usize {
+                        return Err(Error::BadEncode(format!(
                         "Got Array16 marker with length = {}. This is not the shortest encoding.",
                         len
                     )));
+                    }
+                    if len > self.data.len() {
+                        return Err(Error::BadEncode(format!(
+                        "Got Array16 marker with length = {}, but there are only {} bytes left.",
+                        len, self.data.len()
+                    )));
+                    }
+                    Element::Array(len)
                 }
-                Element::Array(len)
-            }
-            Array32 => {
-                let len =
-                    self.data
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Array32 length",
-                            actual: self.data.len(),
-                            expected: 4,
-                        })? as usize;
-                if len <= u16::MAX as usize {
-                    return Err(Error::BadEncode(format!(
+                Array32 => {
+                    let len =
+                        self.data
+                            .read_u32::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Array32 length",
+                                actual: self.data.len(),
+                                expected: 4,
+                            })? as usize;
+                    if len <= u16::MAX as usize {
+                        return Err(Error::BadEncode(format!(
                         "Got Array32 marker with length = {}. This is not the shortest encoding.",
                         len
                     )));
-                }
-                Element::Array(len)
-            }
-            FixMap(len) => Element::Map(len as usize),
-            Map8 => {
-                let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                    step: "decode Map8 length",
-                    actual: 0,
-                    expected: 1,
-                })? as usize;
-                if len <= 15 {
-                    return Err(Error::BadEncode(format!(
-                        "Got Map8 marker with length = {}. This is not the shortest encoding.",
-                        len
+                    }
+                    if len > self.data.len() {
+                        return Err(Error::BadEncode(format!(
+                        "Got Array32 marker with length = {}, but there are only {} bytes left.",
+                        len, self.data.len()
                     )));
+                    }
+                    Element::Array(len)
                 }
-                Element::Map(len)
-            }
-            Map16 => {
-                let len =
-                    self.data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Map16 length",
-                            actual: self.data.len(),
-                            expected: 2,
-                        })? as usize;
-                if len <= u8::MAX as usize {
-                    return Err(Error::BadEncode(format!(
-                        "Got Map16 marker with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                FixMap(len) => Element::Map(len as usize),
+                Map8 => {
+                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
+                        step: "decode Map8 length",
+                        actual: 0,
+                        expected: 1,
+                    })? as usize;
+                    if len <= 15 {
+                        return Err(Error::BadEncode(format!(
+                            "Got Map8 marker with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    Element::Map(len)
                 }
-                Element::Map(len)
-            }
-            Map32 => {
-                let len =
-                    self.data
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Map32 length",
-                            actual: self.data.len(),
-                            expected: 4,
-                        })? as usize;
-                if len <= u16::MAX as usize {
-                    return Err(Error::BadEncode(format!(
-                        "Got Map32 marker with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                Map16 => {
+                    let len =
+                        self.data
+                            .read_u16::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Map16 length",
+                                actual: self.data.len(),
+                                expected: 2,
+                            })? as usize;
+                    if len <= u8::MAX as usize {
+                        return Err(Error::BadEncode(format!(
+                            "Got Map16 marker with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    if 2 * len > self.data.len() {
+                        return Err(Error::BadEncode(format!(
+                            "Got Map16 marker with length = {}, but there are only {} bytes left.",
+                            len,
+                            self.data.len()
+                        )));
+                    }
+                    Element::Map(len)
                 }
-                Element::Map(len)
-            }
-            Ext8 => {
-                let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                    step: "decode Ext8 length",
-                    actual: 0,
-                    expected: 1,
-                })? as usize;
-                self.parse_ext(len)?
-            }
-            Ext16 => {
-                let len =
-                    self.data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Ext16 length",
-                            actual: self.data.len(),
-                            expected: 2,
-                        })? as usize;
-                if len <= u8::MAX as usize {
-                    return Err(Error::BadEncode(format!(
-                        "Got Ext16 marker with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                Map32 => {
+                    let len =
+                        self.data
+                            .read_u32::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Map32 length",
+                                actual: self.data.len(),
+                                expected: 4,
+                            })? as usize;
+                    if len <= u16::MAX as usize {
+                        return Err(Error::BadEncode(format!(
+                            "Got Map32 marker with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    if 2 * len > self.data.len() {
+                        return Err(Error::BadEncode(format!(
+                            "Got Map32 marker with length = {}, but there are only {} bytes left.",
+                            len,
+                            self.data.len()
+                        )));
+                    }
+                    Element::Map(len)
                 }
-                self.parse_ext(len)?
-            }
-            Ext32 => {
-                let len =
-                    self.data
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Ext32 length",
-                            actual: self.data.len(),
-                            expected: 4,
-                        })? as usize;
-                if len <= u16::MAX as usize {
-                    return Err(Error::BadEncode(format!(
-                        "Got Ext32 marker with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
+                Ext8 => {
+                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
+                        step: "decode Ext8 length",
+                        actual: 0,
+                        expected: 1,
+                    })? as usize;
+                    self.parse_ext(len)?
                 }
-                self.parse_ext(len)?
-            }
-        };
+                Ext16 => {
+                    let len =
+                        self.data
+                            .read_u16::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Ext16 length",
+                                actual: self.data.len(),
+                                expected: 2,
+                            })? as usize;
+                    if len <= u8::MAX as usize {
+                        return Err(Error::BadEncode(format!(
+                            "Got Ext16 marker with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    self.parse_ext(len)?
+                }
+                Ext32 => {
+                    let len =
+                        self.data
+                            .read_u32::<LittleEndian>()
+                            .map_err(|_| Error::LengthTooShort {
+                                step: "decode Ext32 length",
+                                actual: self.data.len(),
+                                expected: 4,
+                            })? as usize;
+                    if len <= u16::MAX as usize {
+                        return Err(Error::BadEncode(format!(
+                            "Got Ext32 marker with length = {}. This is not the shortest encoding.",
+                            len
+                        )));
+                    }
+                    self.parse_ext(len)?
+                }
+            };
         Ok(elem)
     }
 
@@ -819,9 +839,13 @@ mod test {
     fn reserved() {
         let data = [0xc1, 0x00, 0xdd, 0x00, 0xde, 0x00, 0xdf, 0x00];
         for i in 0..3 {
-            let mut parser = Parser::new(&data[2*i..2*i+1]);
+            let mut parser = Parser::new(&data[2 * i..2 * i + 1]);
             let result = parser.next().unwrap();
-            assert!(result.is_err(), "0x{:x} should fail because it is a reserved marker byte", data[2*i]);
+            assert!(
+                result.is_err(),
+                "0x{:x} should fail because it is a reserved marker byte",
+                data[2 * i]
+            );
             assert!(parser.next().is_none());
         }
     }
@@ -841,7 +865,8 @@ mod test {
             let result = parser.next().unwrap();
             let val = result.unwrap();
             assert!(parser.next().is_none());
-            if let Element::Null = val {} else {
+            if let Element::Null = val {
+            } else {
                 panic!("Element wasn't Null");
             }
         }
@@ -872,8 +897,7 @@ mod test {
             assert!(parser.next().is_none());
             if let Element::Bool(val) = val {
                 assert_eq!(val, true);
-            }
-            else {
+            } else {
                 panic!("Element wasn't an Integer");
             }
         }
@@ -892,8 +916,7 @@ mod test {
             assert!(parser.next().is_none());
             if let Element::Bool(val) = val {
                 assert_eq!(val, false);
-            }
-            else {
+            } else {
                 panic!("Element wasn't an Integer");
             }
         }
@@ -949,8 +972,7 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::Int(val) = val {
                     assert_eq!(val.as_u64().unwrap(), case);
-                }
-                else {
+                } else {
                     panic!("Element wasn't an Integer");
                 }
             }
@@ -990,8 +1012,7 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::Int(val) = val {
                     assert_eq!(val.as_i64().unwrap(), case);
-                }
-                else {
+                } else {
                     panic!("Element wasn't an Integer");
                 }
             }
@@ -1179,8 +1200,7 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::F32(val) = val {
                     assert_eq!(val, *case);
-                }
-                else {
+                } else {
                     panic!("Element wasn't F32");
                 }
             }
@@ -1252,8 +1272,7 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::F64(val) = val {
                     assert_eq!(val, *case);
-                }
-                else {
+                } else {
                     panic!("Element wasn't F64");
                 }
             }
@@ -1339,27 +1358,28 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::Bin(val) = val {
                     assert_eq!(val, &test[..]);
-                }
-                else {
+                } else {
                     panic!("Element wasn't Bin");
                 }
             }
         }
 
         #[test]
-        fn non_canonical() {
-        }
+        fn non_canonical() {}
 
         #[test]
         fn not_enough_bytes() {
             // Run through the boundary cases
             let mut test_cases: Vec<Vec<u8>> = Vec::new();
             test_cases.push(vec![0xc4, 0x01]);
-            let mut case = vec![0xc4, 0xff]; case.resize(256, 0u8);
+            let mut case = vec![0xc4, 0xff];
+            case.resize(256, 0u8);
             test_cases.push(case);
-            let mut case = vec![0xc5, 0xff, 0xff]; case.resize(65537, 0u8);
+            let mut case = vec![0xc5, 0xff, 0xff];
+            case.resize(65537, 0u8);
             test_cases.push(case);
-            let mut case = vec![0xc6, 0xff, 0xff, 0xff, 0xff]; case.resize(80000, 0u8);
+            let mut case = vec![0xc6, 0xff, 0xff, 0xff, 0xff];
+            case.resize(80000, 0u8);
             test_cases.push(case);
 
             for case in test_cases {
@@ -1384,11 +1404,14 @@ mod test {
             let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
             test_cases.push((0, vec![0xc4, 0x00]));
             test_cases.push((1, vec![0xc4, 0x01, 0x00]));
-            let mut case = vec![0xc4, 0xff]; case.resize(255+2, 0u8);
+            let mut case = vec![0xc4, 0xff];
+            case.resize(255 + 2, 0u8);
             test_cases.push((255, case));
-            let mut case = vec![0xc5, 0xff, 0xff]; case.resize(65535+3, 0u8);
+            let mut case = vec![0xc5, 0xff, 0xff];
+            case.resize(65535 + 3, 0u8);
             test_cases.push((65535, case));
-            let mut case = vec![0xc6, 0x00, 0x00, 0x01, 0x00]; case.resize(65536+5, 0u8);
+            let mut case = vec![0xc6, 0x00, 0x00, 0x01, 0x00];
+            case.resize(65536 + 5, 0u8);
             test_cases.push((65536, case));
 
             for (index, case) in test_cases.iter().enumerate() {
@@ -1438,8 +1461,7 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::Str(val) = val {
                     assert_eq!(val, &test[..]);
-                }
-                else {
+                } else {
                     panic!("Element wasn't Str");
                 }
             }
@@ -1450,13 +1472,17 @@ mod test {
             // Run through the boundary cases
             let mut test_cases: Vec<Vec<u8>> = Vec::new();
             test_cases.push(vec![0xa1]);
-            let mut case = vec![0xbf]; case.resize(31, 0u8);
+            let mut case = vec![0xbf];
+            case.resize(31, 0u8);
             test_cases.push(case);
-            let mut case = vec![0xd4, 0xff]; case.resize(256, 0u8);
+            let mut case = vec![0xd4, 0xff];
+            case.resize(256, 0u8);
             test_cases.push(case);
-            let mut case = vec![0xd5, 0xff, 0xff]; case.resize(65537, 0u8);
+            let mut case = vec![0xd5, 0xff, 0xff];
+            case.resize(65537, 0u8);
             test_cases.push(case);
-            let mut case = vec![0xd6, 0xff, 0xff, 0xff, 0xff]; case.resize(80000, 0u8);
+            let mut case = vec![0xd6, 0xff, 0xff, 0xff, 0xff];
+            case.resize(80000, 0u8);
             test_cases.push(case);
 
             for case in test_cases {
@@ -1481,15 +1507,18 @@ mod test {
             let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
             test_cases.push((0, vec![0xa0]));
             test_cases.push((1, vec![0xa1, 0x00]));
-            let mut case = vec![0xbf]; case.resize(32, 0u8);
+            let mut case = vec![0xbf];
+            case.resize(32, 0u8);
             test_cases.push((31, case));
-            let mut case = vec![0xd4, 0xff]; case.resize(255+2, 0u8);
+            let mut case = vec![0xd4, 0xff];
+            case.resize(255 + 2, 0u8);
             test_cases.push((255, case));
-            let mut case = vec![0xd5, 0xff, 0xff]; case.resize(65535+3, 0u8);
+            let mut case = vec![0xd5, 0xff, 0xff];
+            case.resize(65535 + 3, 0u8);
             test_cases.push((65535, case));
-            let mut case = vec![0xd6, 0x00, 0x00, 0x01, 0x00]; case.resize(65536+5, 0u8);
+            let mut case = vec![0xd6, 0x00, 0x00, 0x01, 0x00];
+            case.resize(65536 + 5, 0u8);
             test_cases.push((65536, case));
-
 
             for (index, case) in test_cases.iter().enumerate() {
                 println!("Test #{}: {}", index, case.0);
@@ -1501,9 +1530,14 @@ mod test {
                 let mut enc = Vec::new();
                 println!("Encoded len is {}", enc.len());
                 serialize_elem(&mut enc, elem);
-                assert_eq!(enc, case.1,
+                assert_eq!(
+                    enc,
+                    case.1,
                     "Encoded starts with {:x?}, is size {}. Expected starts with {:x?}, is size {}",
-                    &enc[0..6], enc.len(), &case.1[0..6], case.1.len()
+                    &enc[0..6],
+                    enc.len(),
+                    &case.1[0..6],
+                    case.1.len()
                 );
             }
         }
@@ -1531,7 +1565,7 @@ mod test {
             test_cases.push((256, vec![0xd8, 0x00, 0x01]));
             test_cases.push((65535, vec![0xd8, 0xff, 0xff]));
             test_cases.push((65536, vec![0xd9, 0x00, 0x00, 0x01, 0x00]));
-            test_cases.push((65536*2, vec![0xd9, 0x00, 0x00, 0x02, 0x00]));
+            test_cases.push((65536 * 2, vec![0xd9, 0x00, 0x00, 0x02, 0x00]));
             test_cases
         }
 
@@ -1542,17 +1576,29 @@ mod test {
                 let elem = Element::Array(case);
                 let mut enc = Vec::new();
                 serialize_elem(&mut enc, elem);
+                enc.resize(enc.len() + case, 0xa0);
                 let mut parser = Parser::new(&enc);
                 let val = parser
                     .next()
                     .expect("Should have gotten a result")
                     .expect("Should have gotten an Ok result");
-                assert!(parser.next().is_none());
                 if let Element::Array(val) = val {
                     assert_eq!(val, case);
-                }
-                else {
+                } else {
                     panic!("Element wasn't an Array type");
+                }
+                if case > 0 {
+                    let val_next = parser
+                        .next()
+                        .expect("Should have gotten the next element")
+                        .expect("Should have gotten an Ok result");
+                    if let Element::Str(val) = val_next {
+                        assert_eq!(val, "");
+                    } else {
+                        panic!("Next element wasn't the empty string");
+                    }
+                } else {
+                    assert!(parser.next().is_none());
                 }
             }
         }
@@ -1561,7 +1607,9 @@ mod test {
         fn not_enough_bytes() {
             for case in spec_examples() {
                 println!("Test with spec, size = {}", case.0);
-                if case.1.len() == 1 { continue; }
+                if case.1.len() == 1 {
+                    continue;
+                }
                 let mut enc = case.1.clone();
                 enc.pop();
                 let mut parser = Parser::new(&enc);
@@ -1573,24 +1621,43 @@ mod test {
 
         #[test]
         fn not_shortest() {
-            let mut test_cases = Vec::new();
-            test_cases.push(vec![0xd7, 0x00]);
-            test_cases.push(vec![0xd7, 0x01]);
-            test_cases.push(vec![0xd7, 0x0f]);
-            test_cases.push(vec![0xd8, 0x0f, 0x00]);
-            test_cases.push(vec![0xd8, 0x10, 0x00]);
-            test_cases.push(vec![0xd8, 0xff, 0x00]);
-            test_cases.push(vec![0xd9, 0x0f, 0x00, 0x00, 0x00]);
-            test_cases.push(vec![0xd9, 0x10, 0x00, 0x00, 0x00]);
-            test_cases.push(vec![0xd9, 0xff, 0x00, 0x00, 0x00]);
-            test_cases.push(vec![0xd9, 0x00, 0x01, 0x00, 0x00]);
-            test_cases.push(vec![0xd9, 0x00, 0x10, 0x00, 0x00]);
-            test_cases.push(vec![0xd9, 0xff, 0xff, 0x00, 0x00]);
-            for case in test_cases {
-                println!("Test with vec {:x?}", case);
-                let mut parser = Parser::new(&case);
+            let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
+            test_cases.push((0, vec![0xd7, 0x00]));
+            test_cases.push((1, vec![0xd7, 0x01]));
+            test_cases.push((15, vec![0xd7, 0x0f]));
+            test_cases.push((15, vec![0xd8, 0x0f, 0x00]));
+            test_cases.push((16, vec![0xd8, 0x10, 0x00]));
+            test_cases.push((255, vec![0xd8, 0xff, 0x00]));
+            test_cases.push((15, vec![0xd9, 0x0f, 0x00, 0x00, 0x00]));
+            test_cases.push((16, vec![0xd9, 0x10, 0x00, 0x00, 0x00]));
+            test_cases.push((255, vec![0xd9, 0xff, 0x00, 0x00, 0x00]));
+            test_cases.push((256, vec![0xd9, 0x00, 0x01, 0x00, 0x00]));
+            test_cases.push((256 * 16, vec![0xd9, 0x00, 0x10, 0x00, 0x00]));
+            test_cases.push((65535, vec![0xd9, 0xff, 0xff, 0x00, 0x00]));
+            for (len, enc) in test_cases.iter_mut() {
+                enc.resize(enc.len() + *len, 0xa0);
+            }
+            for (len, enc) in test_cases {
+                println!(
+                    "Test with vec {:x?}... (array len={})",
+                    &enc[0..(enc.len().min(5))],
+                    len
+                );
+                let mut parser = Parser::new(&enc);
                 assert!(parser.next().unwrap().is_err());
-                assert!(parser.next().is_none());
+                if len > 0 {
+                    let val_next = parser
+                        .next()
+                        .expect("Should have gotten the next element")
+                        .expect("Should have gotten an Ok result");
+                    if let Element::Str(val) = val_next {
+                        assert_eq!(val, "");
+                    } else {
+                        panic!("Next element wasn't the empty string");
+                    }
+                } else {
+                    assert!(parser.next().is_none());
+                }
             }
         }
 
@@ -1602,18 +1669,30 @@ mod test {
                 let mut enc = Vec::new();
                 serialize_elem(&mut enc, elem);
                 assert_eq!(enc, case.1);
-                let mut parser = Parser::new(&case.1);
+                enc.resize(enc.len() + case.0, 0xa0);
+                let mut parser = Parser::new(&enc);
                 let val = parser
                     .next()
                     .expect("Should have gotten a result")
                     .expect("Should have gotten an Ok result");
                 if let Element::Array(val) = val {
                     assert_eq!(val, case.0);
-                }
-                else {
+                } else {
                     panic!("Element wasn't an Array type");
                 }
-                assert!(parser.next().is_none());
+                if case.0 > 0 {
+                    let val_next = parser
+                        .next()
+                        .expect("Should have gotten the next element")
+                        .expect("Should have gotten an Ok result");
+                    if let Element::Str(val) = val_next {
+                        assert_eq!(val, "");
+                    } else {
+                        panic!("Next element wasn't the empty string");
+                    }
+                } else {
+                    assert!(parser.next().is_none());
+                }
             }
         }
     }
@@ -1640,7 +1719,7 @@ mod test {
             test_cases.push((256, vec![0xdb, 0x00, 0x01]));
             test_cases.push((65535, vec![0xdb, 0xff, 0xff]));
             test_cases.push((65536, vec![0xdc, 0x00, 0x00, 0x01, 0x00]));
-            test_cases.push((65536*2, vec![0xdc, 0x00, 0x00, 0x02, 0x00]));
+            test_cases.push((65536 * 2, vec![0xdc, 0x00, 0x00, 0x02, 0x00]));
             test_cases
         }
 
@@ -1660,8 +1739,7 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::Map(val) = val {
                     assert_eq!(val, case);
-                }
-                else {
+                } else {
                     panic!("Element wasn't a Map type");
                 }
             }
@@ -1671,7 +1749,9 @@ mod test {
         fn not_enough_bytes() {
             for case in spec_examples() {
                 println!("Test with spec, size = {}", case.0);
-                if case.1.len() == 1 { continue; }
+                if case.1.len() == 1 {
+                    continue;
+                }
                 let mut enc = case.1.clone();
                 enc.pop();
                 let mut parser = Parser::new(&enc);
@@ -1719,8 +1799,7 @@ mod test {
                     .expect("Should have gotten an Ok result");
                 if let Element::Map(val) = val {
                     assert_eq!(val, case.0);
-                }
-                else {
+                } else {
                     panic!("Element wasn't a Map type");
                 }
                 assert!(parser.next().is_none());
@@ -1736,7 +1815,7 @@ mod test {
             let test_cases = vec![
                 vec![0xc7, 0x01, 0x00, 0x00],
                 vec![0xc7, 0x01, 0xfe, 0x00],
-                vec![0xc7, 0x01, 0x09, 0x00]
+                vec![0xc7, 0x01, 0x09, 0x00],
             ];
             for case in test_cases {
                 let mut parser = Parser::new(&case);
@@ -1764,13 +1843,13 @@ mod test {
             for case in test_cases {
                 let mut parser = Parser::new(&case);
                 let err = parser.next().unwrap().unwrap_err();
-                if let Error::BadEncode(_) = err {} else {
+                if let Error::BadEncode(_) = err {
+                } else {
                     panic!("Was expecting a different error class for this");
                 }
                 assert!(parser.next().is_none());
             }
         }
-
     }
 
     mod timestamp {
@@ -1808,8 +1887,7 @@ mod test {
                 assert!(parser.next().is_none());
                 if let Element::Timestamp(val) = val {
                     assert_eq!(val, case.1);
-                }
-                else {
+                } else {
                     panic!("Element wasn't a Timestamp type");
                 }
             }
@@ -1833,8 +1911,7 @@ mod test {
             assert!(parser.next().is_none());
             if let Element::Hash(val) = val {
                 assert_eq!(val, hash);
-            }
-            else {
+            } else {
                 panic!("Element wasn't a Hash type");
             }
         }
@@ -1849,9 +1926,7 @@ mod test {
             enc[1] += 1;
             enc.push(0u8);
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -1866,9 +1941,7 @@ mod test {
             enc[1] -= 1;
             enc.pop();
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -1893,8 +1966,7 @@ mod test {
             assert!(parser.next().is_none());
             if let Element::Identity(val) = val {
                 assert_eq!(val, identity);
-            }
-            else {
+            } else {
                 panic!("Element wasn't a Identity type");
             }
         }
@@ -1911,9 +1983,7 @@ mod test {
             enc[1] += 1;
             enc.push(0u8);
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -1930,9 +2000,7 @@ mod test {
             enc[1] -= 1;
             enc.pop();
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -1957,8 +2025,7 @@ mod test {
             assert!(parser.next().is_none());
             if let Element::LockId(val) = val {
                 assert_eq!(val, id);
-            }
-            else {
+            } else {
                 panic!("Element wasn't a LockId type");
             }
         }
@@ -1975,9 +2042,7 @@ mod test {
             enc[1] += 1;
             enc.push(0u8);
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -1994,9 +2059,7 @@ mod test {
             enc[1] -= 1;
             enc.pop();
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -2021,8 +2084,7 @@ mod test {
             assert!(parser.next().is_none());
             if let Element::StreamId(val) = val {
                 assert_eq!(val, id);
-            }
-            else {
+            } else {
                 panic!("Element wasn't a LockId type");
             }
         }
@@ -2039,9 +2101,7 @@ mod test {
             enc[1] += 1;
             enc.push(0u8);
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -2058,9 +2118,7 @@ mod test {
             enc[1] -= 1;
             enc.pop();
             let mut parser = Parser::new(&enc);
-            let val = parser
-                .next()
-                .expect("Should have gotten a result");
+            let val = parser.next().expect("Should have gotten a result");
             assert!(val.is_err());
             assert!(parser.next().is_none());
         }
@@ -2086,8 +2144,7 @@ mod test {
             if let Element::DataLockbox(val) = val {
                 let dec = key.decrypt_data(val).unwrap();
                 assert_eq!(dec, data);
-            }
-            else {
+            } else {
                 panic!("Element wasn't a DataLockbox type");
             }
         }
@@ -2121,8 +2178,7 @@ mod test {
             if let Element::IdentityLockbox(val) = val {
                 let dec = key.decrypt_identity_key(val).unwrap();
                 assert_eq!(dec.id(), to_send.id());
-            }
-            else {
+            } else {
                 panic!("Element wasn't a IdentityLockbox type");
             }
         }
@@ -2145,8 +2201,7 @@ mod test {
             if let Element::StreamLockbox(val) = val {
                 let dec = key.decrypt_stream_key(val).unwrap();
                 assert_eq!(dec.id(), to_send.id());
-            }
-            else {
+            } else {
                 panic!("Element wasn't a StreamLockbox type");
             }
         }
@@ -2169,11 +2224,9 @@ mod test {
             if let Element::LockLockbox(val) = val {
                 let dec = key.decrypt_lock_key(val).unwrap();
                 assert_eq!(dec.id(), to_send.id());
-            }
-            else {
+            } else {
                 panic!("Element wasn't a LockLockbox type");
             }
         }
-
     }
 }

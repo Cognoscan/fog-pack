@@ -1,21 +1,18 @@
 use std::cmp;
+use std::convert::TryFrom;
 use std::fmt;
 use std::ops;
 use std::time;
-use std::convert::TryFrom;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use fog_crypto::serde::{
-    FOG_TYPE_ENUM,
-    FOG_TYPE_ENUM_TIME_NAME,
-    FOG_TYPE_ENUM_TIME_INDEX,
-    CryptoEnum
+    CryptoEnum, FOG_TYPE_ENUM, FOG_TYPE_ENUM_TIME_INDEX, FOG_TYPE_ENUM_TIME_NAME,
 };
 
 use serde::{
     de::{Deserialize, Deserializer, EnumAccess, Error, Unexpected, VariantAccess},
-    ser::{Serialize, Serializer, SerializeStructVariant},
+    ser::{Serialize, SerializeStructVariant, Serializer},
 };
 use serde_bytes::{ByteBuf, Bytes};
 
@@ -266,9 +263,9 @@ impl Serialize for Timestamp {
                 FOG_TYPE_ENUM,
                 FOG_TYPE_ENUM_TIME_INDEX as u32,
                 FOG_TYPE_ENUM_TIME_NAME,
-                2
+                2,
             )?;
-            // Always serialize all fields, in case the field names are omitted and this is turned 
+            // Always serialize all fields, in case the field names are omitted and this is turned
             // into just an array
             sv.serialize_field("std", &self.standard)?;
             sv.serialize_field("secs", &self.sec)?;
@@ -325,12 +322,16 @@ impl<'de> Deserialize<'de> for Timestamp {
                     struct TimeStructVisitor;
                     impl<'de> serde::de::Visitor<'de> for TimeStructVisitor {
                         type Value = Timestamp;
-                        fn expecting(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+                        fn expecting(
+                            &self,
+                            fmt: &mut fmt::Formatter<'_>,
+                        ) -> Result<(), fmt::Error> {
                             write!(fmt, "timestamp struct")
                         }
 
                         fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-                            where A: MapAccess<'de>
+                        where
+                            A: MapAccess<'de>,
                         {
                             let mut secs: Option<i64> = None;
                             let mut nanos: u32 = 0;
@@ -339,23 +340,29 @@ impl<'de> Deserialize<'de> for Timestamp {
                                     "std" => {
                                         let v: u8 = map.next_value()?;
                                         if v != 0 {
-                                            return Err(A::Error::invalid_value(Unexpected::Unsigned(v as u64), &"0"));
+                                            return Err(A::Error::invalid_value(
+                                                Unexpected::Unsigned(v as u64),
+                                                &"0",
+                                            ));
                                         }
-                                    },
+                                    }
                                     "secs" => {
                                         secs = Some(map.next_value()?);
-                                    },
+                                    }
                                     "nanos" => {
                                         nanos = map.next_value()?;
-                                    },
-                                    _ => return Err(A::Error::unknown_field(
+                                    }
+                                    _ => {
+                                        return Err(A::Error::unknown_field(
                                             key.as_ref(),
-                                            &["std", "secs", "nanos"]
-                                    )),
+                                            &["std", "secs", "nanos"],
+                                        ))
+                                    }
                                 }
                             }
                             let secs = secs.ok_or(A::Error::missing_field("secs"))?;
-                            Timestamp::from_utc(secs, nanos).ok_or(A::Error::custom("Invalid timestamp"))
+                            Timestamp::from_utc(secs, nanos)
+                                .ok_or(A::Error::custom("Invalid timestamp"))
                         }
                     }
                     variant.struct_variant(&["std", "secs", "nanos"], TimeStructVisitor)
@@ -374,7 +381,6 @@ impl<'de> Deserialize<'de> for Timestamp {
         )
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -429,5 +435,4 @@ mod test {
             assert!(Timestamp::try_from(enc.as_ref()).is_err());
         }
     }
-
 }

@@ -1,20 +1,34 @@
-use crate::*;
+use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
-use serde::{Serialize, Deserialize};
+use crate::*;
+use serde::{Deserialize, Serialize};
 use std::default::Default;
-use super::*;
 
 #[inline]
-fn is_false(v: &bool) -> bool { !v }
+fn is_false(v: &bool) -> bool {
+    !v
+}
 #[inline]
-fn u64_is_zero(v: &u64) -> bool { *v == 0 }
+fn u64_is_zero(v: &u64) -> bool {
+    *v == 0
+}
 #[inline]
-fn int_is_zero(v: &Integer) -> bool { v.as_u64().and_then(|v| Some(v == 0)).unwrap_or(false) }
+fn int_is_zero(v: &Integer) -> bool {
+    v.as_u64().and_then(|v| Some(v == 0)).unwrap_or(false)
+}
 #[inline]
-fn int_is_max(v: &Integer) -> bool { v.as_u64().and_then(|v| Some(v == u64::MAX)).unwrap_or(false) }
+fn int_is_max(v: &Integer) -> bool {
+    v.as_u64()
+        .and_then(|v| Some(v == u64::MAX))
+        .unwrap_or(false)
+}
 #[inline]
-fn int_is_min(v: &Integer) -> bool { v.as_i64().and_then(|v| Some(v == i64::MIN)).unwrap_or(false) }
+fn int_is_min(v: &Integer) -> bool {
+    v.as_i64()
+        .and_then(|v| Some(v == i64::MIN))
+        .unwrap_or(false)
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -72,32 +86,59 @@ impl IntValidator {
         let elem = parser
             .next()
             .ok_or(Error::FailValidate("Expected a integer".to_string()))??;
-        let int = if let Element::Int(v) = elem { v } else {
-            return Err(Error::FailValidate(format!("Expected Int, got {}", elem.name())));
+        let int = if let Element::Int(v) = elem {
+            v
+        } else {
+            return Err(Error::FailValidate(format!(
+                "Expected Int, got {}",
+                elem.name()
+            )));
         };
         let bits = int.as_bits();
         if self.in_list.len() > 0 {
             if !self.in_list.iter().any(|v| *v == int) {
-                return Err(Error::FailValidate("Integer is not on `in` list".to_string()));
+                return Err(Error::FailValidate(
+                    "Integer is not on `in` list".to_string(),
+                ));
             }
         }
         if self.nin_list.iter().any(|v| *v == int) {
             return Err(Error::FailValidate("Integer is on `nin` list".to_string()));
         }
         if (bits & self.bits_clr) != 0 {
-            return Err(Error::FailValidate("Integer does not have all required bits cleared".to_string()));
+            return Err(Error::FailValidate(
+                "Integer does not have all required bits cleared".to_string(),
+            ));
         }
         if (bits & self.bits_set) != self.bits_set {
-            return Err(Error::FailValidate("Integer does not have all required bits set".to_string()));
+            return Err(Error::FailValidate(
+                "Integer does not have all required bits set".to_string(),
+            ));
         }
         match int.cmp(&self.max) {
-            std::cmp::Ordering::Equal if self.ex_max => return Err(Error::FailValidate("Integer greater than maximum allowed".to_string())),
-            std::cmp::Ordering::Greater => return Err(Error::FailValidate("Integer greater than maximum allowed".to_string())),
+            std::cmp::Ordering::Equal if self.ex_max => {
+                return Err(Error::FailValidate(
+                    "Integer greater than maximum allowed".to_string(),
+                ))
+            }
+            std::cmp::Ordering::Greater => {
+                return Err(Error::FailValidate(
+                    "Integer greater than maximum allowed".to_string(),
+                ))
+            }
             _ => (),
         }
         match int.cmp(&self.min) {
-            std::cmp::Ordering::Equal if self.ex_min => return Err(Error::FailValidate("Integer less than minimum allowed".to_string())),
-            std::cmp::Ordering::Less => return Err(Error::FailValidate("Integer less than minimum allowed".to_string())),
+            std::cmp::Ordering::Equal if self.ex_min => {
+                return Err(Error::FailValidate(
+                    "Integer less than minimum allowed".to_string(),
+                ))
+            }
+            std::cmp::Ordering::Less => {
+                return Err(Error::FailValidate(
+                    "Integer less than minimum allowed".to_string(),
+                ))
+            }
             _ => (),
         }
         Ok(())
@@ -108,11 +149,14 @@ impl IntValidator {
             Validator::Int(other) => {
                 (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
                     && (self.bit || (other.bits_clr == 0 && other.bits_set == 0))
-                    && (self.ord || (!other.ex_min && !other.ex_max && int_is_max(&other.max) && int_is_min(&other.min)))
-            },
+                    && (self.ord
+                        || (!other.ex_min
+                            && !other.ex_max
+                            && int_is_max(&other.max)
+                            && int_is_min(&other.min)))
+            }
             Validator::Any => true,
             _ => false,
         }
     }
 }
-

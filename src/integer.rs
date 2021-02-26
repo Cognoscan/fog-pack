@@ -97,7 +97,9 @@ pub(crate) fn get_int_internal(val: &Integer) -> IntPriv {
 
 impl std::default::Default for Integer {
     fn default() -> Self {
-        Self { n: IntPriv::PosInt(0) }
+        Self {
+            n: IntPriv::PosInt(0),
+        }
     }
 }
 
@@ -183,115 +185,73 @@ impl LowerHex for Integer {
     }
 }
 
-impl From<u8> for Integer {
-    fn from(n: u8) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
+macro_rules! impl_from_unsigned {
+    ($t: ty) => {
+        impl From<$t> for Integer {
+            fn from(n: $t) -> Self {
+                Integer {
+                    n: IntPriv::PosInt(n as u64),
+                }
+            }
         }
-    }
+    };
 }
 
-impl From<u16> for Integer {
-    fn from(n: u16) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
+macro_rules! impl_from_signed {
+    ($t: ty) => {
+        impl From<$t> for Integer {
+            fn from(n: $t) -> Self {
+                if n < 0 {
+                    Integer {
+                        n: IntPriv::NegInt(n as i64),
+                    }
+                } else {
+                    Integer {
+                        n: IntPriv::PosInt(n as u64),
+                    }
+                }
+            }
         }
-    }
+    };
 }
 
-impl From<u32> for Integer {
-    fn from(n: u32) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
+impl_from_unsigned!(u8);
+impl_from_unsigned!(u16);
+impl_from_unsigned!(u32);
+impl_from_unsigned!(u64);
+impl_from_unsigned!(usize);
+impl_from_signed!(i8);
+impl_from_signed!(i16);
+impl_from_signed!(i32);
+impl_from_signed!(i64);
+impl_from_signed!(isize);
+
+use std::convert::TryFrom;
+
+macro_rules! impl_try_from {
+    ($t: ty) => {
+        impl TryFrom<Integer> for $t {
+            type Error = Integer;
+            fn try_from(v: Integer) -> Result<Self, Self::Error> {
+                match v.n {
+                    IntPriv::PosInt(n) => TryFrom::try_from(n).map_err(|_| v),
+                    IntPriv::NegInt(n) => TryFrom::try_from(n).map_err(|_| v),
+                }
+            }
         }
-    }
+    };
 }
 
-impl From<u64> for Integer {
-    fn from(n: u64) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
-        }
-    }
-}
-
-impl From<usize> for Integer {
-    fn from(n: usize) -> Self {
-        Integer {
-            n: IntPriv::PosInt(n as u64),
-        }
-    }
-}
-
-impl From<i8> for Integer {
-    fn from(n: i8) -> Self {
-        if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
-        } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
-        }
-    }
-}
-
-impl From<i16> for Integer {
-    fn from(n: i16) -> Self {
-        if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
-        } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
-        }
-    }
-}
-
-impl From<i32> for Integer {
-    fn from(n: i32) -> Self {
-        if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
-        } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
-        }
-    }
-}
-
-impl From<i64> for Integer {
-    fn from(n: i64) -> Self {
-        if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
-        } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
-        }
-    }
-}
-
-impl From<isize> for Integer {
-    fn from(n: isize) -> Self {
-        if n < 0 {
-            Integer {
-                n: IntPriv::NegInt(n as i64),
-            }
-        } else {
-            Integer {
-                n: IntPriv::PosInt(n as u64),
-            }
-        }
-    }
-}
+impl_try_from!(u8);
+impl_try_from!(u16);
+impl_try_from!(u32);
+impl_try_from!(u64);
+impl_try_from!(usize);
+impl_try_from!(i8);
+impl_try_from!(i16);
+impl_try_from!(i32);
+impl_try_from!(i64);
+impl_try_from!(isize);
 
 use serde::{
     de::{Deserialize, Deserializer},
@@ -327,7 +287,6 @@ impl<'de> Deserialize<'de> for Integer {
             fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
                 Ok(Integer::from(v))
             }
-
         }
 
         deserializer.deserialize_any(IntVisitor)

@@ -122,4 +122,3 @@ impl de::Error for Error {
         Error::SerdeFail(msg.to_string())
     }
 }
-

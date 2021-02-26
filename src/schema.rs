@@ -1,10 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::*;
-use crate::{
-    compress::Compress,
-    validator::Validator,
-};
+use crate::{compress::Compress, validator::Validator};
 
 pub struct InnerSchema {
     description: String,
@@ -16,5 +13,3 @@ pub struct InnerSchema {
     types: BTreeMap<String, Validator>,
     version: Integer,
 }
-
-

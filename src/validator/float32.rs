@@ -1,15 +1,21 @@
+use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::default::Default;
-use super::*;
 
 #[inline]
-fn is_false(v: &bool) -> bool { !v }
+fn is_false(v: &bool) -> bool {
+    !v
+}
 #[inline]
-fn f32_is_zero(v: &f32) -> bool { *v == 0.0 }
+fn f32_is_zero(v: &f32) -> bool {
+    *v == 0.0
+}
 #[inline]
-fn is_nan(v: &f32) -> bool { v.is_nan() }
+fn is_nan(v: &f32) -> bool {
+    v.is_nan()
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -55,9 +61,16 @@ impl Default for F32Validator {
 
 impl F32Validator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
-        let elem = parser.next().ok_or(Error::FailValidate("Expected a f32".to_string()))??;
-        let elem = if let Element::F32(v) = elem { v } else {
-            return Err(Error::FailValidate(format!("Expected F32, got {}", elem.name())));
+        let elem = parser
+            .next()
+            .ok_or(Error::FailValidate("Expected a f32".to_string()))??;
+        let elem = if let Element::F32(v) = elem {
+            v
+        } else {
+            return Err(Error::FailValidate(format!(
+                "Expected F32, got {}",
+                elem.name()
+            )));
         };
         let bytes = elem.to_ne_bytes();
         if self.in_list.len() > 0 {
@@ -71,24 +84,30 @@ impl F32Validator {
         if !self.max.is_nan() {
             if self.ex_max {
                 if elem >= self.max {
-                    return Err(Error::FailValidate("F32 greater than maximum allowed".to_string()));
+                    return Err(Error::FailValidate(
+                        "F32 greater than maximum allowed".to_string(),
+                    ));
                 }
-            }
-            else {
+            } else {
                 if elem > self.max {
-                    return Err(Error::FailValidate("F32 greater than maximum allowed".to_string()));
+                    return Err(Error::FailValidate(
+                        "F32 greater than maximum allowed".to_string(),
+                    ));
                 }
             }
         }
         if !self.min.is_nan() {
             if self.ex_min {
                 if elem <= self.min {
-                    return Err(Error::FailValidate("F32 less than maximum allowed".to_string()));
+                    return Err(Error::FailValidate(
+                        "F32 less than maximum allowed".to_string(),
+                    ));
                 }
-            }
-            else {
+            } else {
                 if elem < self.min {
-                    return Err(Error::FailValidate("F32 less than maximum allowed".to_string()));
+                    return Err(Error::FailValidate(
+                        "F32 less than maximum allowed".to_string(),
+                    ));
                 }
             }
         }
@@ -99,11 +118,14 @@ impl F32Validator {
         match other {
             Validator::F32(other) => {
                 (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
-                    && (self.ord || (!other.ex_min && !other.ex_max && other.min.is_nan() && other.max.is_nan()))
-            },
+                    && (self.ord
+                        || (!other.ex_min
+                            && !other.ex_max
+                            && other.min.is_nan()
+                            && other.max.is_nan()))
+            }
             Validator::Any => true,
             _ => false,
         }
     }
 }
-

@@ -1,12 +1,11 @@
-
 mod bool;
-mod integer;
 mod float32;
+mod integer;
 
-use std::collections::BTreeMap;
 pub use self::bool::*;
-pub use self::integer::*;
 pub use self::float32::*;
+pub use self::integer::*;
+use std::collections::BTreeMap;
 
 pub enum Validator {
     Null,
@@ -30,4 +29,3 @@ pub enum Validator {
     Enum(BTreeMap<String, Option<Validator>>),
     Any,
 }
-

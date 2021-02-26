@@ -201,4 +201,3 @@ impl From<ExtType> for u8 {
         val.into_u8()
     }
 }
-

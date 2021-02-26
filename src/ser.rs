@@ -7,9 +7,9 @@
 //! - Tuple - Map with one pair. Key is variant name, content is the tuple as an array
 //! - Struct - Map with one pair. Key is variant name, content is the struct
 
-use std::{mem, collections::BTreeMap, convert::TryFrom};
 use fog_crypto::serde::FOG_TYPE_ENUM;
 use serde::ser::*;
+use std::{collections::BTreeMap, convert::TryFrom, mem};
 
 use crate::element::*;
 use crate::marker::ExtType;
@@ -21,14 +21,13 @@ use crate::depth_tracking::DepthTracker;
 struct FogSerializer {
     must_be_ordered: bool,
     depth_tracking: DepthTracker,
-    buf: Vec<u8>
+    buf: Vec<u8>,
 }
 
 impl Default for FogSerializer {
     fn default() -> Self {
         Self::with_params(false)
     }
-
 }
 
 impl FogSerializer {
@@ -121,7 +120,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
     fn serialize_none(self) -> Result<()> {
         self.serialize_unit()
     }
-    
+
     fn serialize_some<T: Serialize + ?Sized>(self, v: &T) -> Result<()> {
         v.serialize(self)
     }
@@ -134,11 +133,20 @@ impl<'a> Serializer for &'a mut FogSerializer {
         self.serialize_unit()
     }
 
-    fn serialize_unit_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str) -> Result<()> {
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+    ) -> Result<()> {
         self.serialize_str(variant)
     }
 
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _name: &'static str, v: &T) -> Result<()> {
+    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+        self,
+        _name: &'static str,
+        v: &T,
+    ) -> Result<()> {
         v.serialize(self)
     }
 
@@ -147,9 +155,8 @@ impl<'a> Serializer for &'a mut FogSerializer {
         name: &'static str,
         variant_index: u32,
         variant: &'static str,
-        value: &T
-    ) -> Result<()>
-    {
+        value: &T,
+    ) -> Result<()> {
         if name == FOG_TYPE_ENUM {
             let index = u8::try_from(variant_index)
                 .map_err(|_| Error::SerdeFail("unrecognized FogPack variant".to_string()))?;
@@ -157,8 +164,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                 .ok_or_else(|| Error::SerdeFail("unrecognized FogPack variant".to_string()))?;
             let mut ext_se = ExtSerializer::new(ext, &mut self);
             value.serialize(&mut ext_se)
-        }
-        else {
+        } else {
             self.encode_element(Element::Map(1))?;
             self.encode_element(Element::Str(variant))?;
             value.serialize(self)
@@ -174,7 +180,11 @@ impl<'a> Serializer for &'a mut FogSerializer {
         Ok(TupleSerializer::new(self))
     }
 
-    fn serialize_tuple_struct(self, _name: &'static str, len: usize) -> Result<TupleSerializer<'a>> {
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        len: usize,
+    ) -> Result<TupleSerializer<'a>> {
         // Tuple structs usually just discard the name
         self.encode_element(Element::Array(len))?;
         Ok(TupleSerializer::new(self))
@@ -183,11 +193,10 @@ impl<'a> Serializer for &'a mut FogSerializer {
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
-        _variant_index: u32, 
-        variant: &'static str, 
-        len: usize
-    ) -> Result<Self::SerializeTupleVariant>
-    {
+        _variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
         self.encode_element(Element::Map(1))?;
         self.encode_element(Element::Str(variant))?;
         self.encode_element(Element::Array(len))?;
@@ -203,7 +212,13 @@ impl<'a> Serializer for &'a mut FogSerializer {
         Ok(StructSerializer::new(self))
     }
 
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeStructVariant> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
         self.encode_element(Element::Map(1))?;
         self.encode_element(Element::Str(variant))?;
         self.encode_element(Element::Map(len))?;
@@ -223,7 +238,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                     tuple_ser.serialize_element(&item)?;
                 }
                 Ok(())
-            },
+            }
             (lo, _) => {
                 let mut v: Vec<I::Item> = Vec::with_capacity(lo);
                 for item in iter {
@@ -262,19 +277,16 @@ impl<'a> Serializer for &'a mut FogSerializer {
                         if new_key <= *last_key {
                             return Err(Error::SerdeFail(format!(
                                 "map keys are unordered: {} follows {}",
-                                new_key,
-                                last_key
+                                new_key, last_key
                             )));
                         }
                         mem::swap(&mut new_key, &mut *last_key);
-                    }
-                    else {
+                    } else {
                         last_key = Some(mem::replace(&mut new_key, String::new()));
                     }
                     v.serialize(&mut *self)?;
                 }
-            }
-            else {
+            } else {
                 // Sized & Unordered
                 let mut map = BTreeMap::new();
                 // Collect into ordered map
@@ -289,8 +301,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                     v.serialize(&mut *self)?;
                 }
             }
-        }
-        else {
+        } else {
             if self.must_be_ordered {
                 // Unsized & Ordered
                 let mut map = Vec::with_capacity(iter.size_hint().0);
@@ -301,8 +312,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                         if key <= *last_key {
                             return Err(Error::SerdeFail(format!(
                                 "map keys are unordered: {} follows {}",
-                                key,
-                                last_key
+                                key, last_key
                             )));
                         }
                     }
@@ -313,8 +323,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                     self.encode_element(Element::Str(k))?;
                     v.serialize(&mut *self)?;
                 }
-            }
-            else {
+            } else {
                 // Unsized & Unordered
                 let mut map = BTreeMap::new();
                 // Collect into ordered map
@@ -333,12 +342,11 @@ impl<'a> Serializer for &'a mut FogSerializer {
         }
         Ok(())
     }
-
 }
 
 /// Encode a sequence of possibly unknown length.
 ///
-/// If the length is known, this is easy and looks pretty much like the TupleSerializer. However, 
+/// If the length is known, this is easy and looks pretty much like the TupleSerializer. However,
 /// if the length is unknown, we can't encode the array marker ahead of time. So instead, we:
 ///
 /// 1. Swap in a temporary buffer into the FogSerializer
@@ -350,7 +358,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
 /// 7. Copy over the entire temporary buffer
 /// 8. Update the depth tracker by dropping the placeholder element
 ///
-/// This is about the best we can do for unknown length sequences, unless you can call collect_seq 
+/// This is about the best we can do for unknown length sequences, unless you can call collect_seq
 /// instead, in which case we can avoid temporarily encoding to a buffer.
 struct SeqSerializer<'a> {
     se: &'a mut FogSerializer,
@@ -365,9 +373,9 @@ impl<'a> SeqSerializer<'a> {
                 se,
                 unknown_len: None,
             })
-        }
-        else {
-            se.depth_tracking.update_elem(&Element::Array(u32::MAX as usize))?;
+        } else {
+            se.depth_tracking
+                .update_elem(&Element::Array(u32::MAX as usize))?;
             let enc = mem::replace(&mut se.buf, Vec::new());
             Ok(Self {
                 se,
@@ -395,8 +403,7 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
             self.se.buf.extend_from_slice(&enc);
             self.se.depth_tracking.early_end();
             Ok(())
-        }
-        else {
+        } else {
             Ok(())
         }
     }
@@ -408,9 +415,7 @@ struct TupleSerializer<'a> {
 
 impl<'a> TupleSerializer<'a> {
     fn new(se: &'a mut FogSerializer) -> Self {
-        Self {
-            se
-        }
+        Self { se }
     }
 }
 
@@ -488,17 +493,16 @@ impl<'a> MapSerializer<'a> {
                     last_key: None,
                     new_key: String::new(),
                 }
-            }
-            else {
+            } else {
                 MapSerializer::SizedUnordered {
                     se,
                     map: BTreeMap::new(),
                     pending_key: String::new(),
                 }
             })
-        }
-        else {
-            se.depth_tracking.update_elem(&Element::Map(u32::MAX as usize))?;
+        } else {
+            se.depth_tracking
+                .update_elem(&Element::Map(u32::MAX as usize))?;
             if se.must_be_ordered {
                 let buf = mem::replace(&mut se.buf, Vec::new());
                 Ok(MapSerializer::UnsizedOrdered {
@@ -508,8 +512,7 @@ impl<'a> MapSerializer<'a> {
                     len: 0,
                     buf,
                 })
-            }
-            else {
+            } else {
                 Ok(MapSerializer::UnsizedUnordered {
                     se,
                     map: BTreeMap::new(),
@@ -526,8 +529,12 @@ impl<'a> SerializeMap for MapSerializer<'a> {
 
     fn serialize_key<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<()> {
         match self {
-            MapSerializer::SizedOrdered {se, new_key, last_key} => {
-                // Turn the key into a String or fail (this clears out the string before 
+            MapSerializer::SizedOrdered {
+                se,
+                new_key,
+                last_key,
+            } => {
+                // Turn the key into a String or fail (this clears out the string before
                 // serializing)
                 value.serialize(KeySerializer::new(new_key))?;
                 // Immediately serialize, while our string is unwrapped
@@ -537,21 +544,25 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                     if new_key <= last_key {
                         return Err(Error::SerdeFail(format!(
                             "map keys are unordered: {} follows {}",
-                            new_key,
-                            last_key
+                            new_key, last_key
                         )));
                     }
                     mem::swap(new_key, last_key);
-                }
-                else {
+                } else {
                     // Replace new_key with a new string, and load the last key into memory
                     *last_key = Some(mem::replace(new_key, String::new()));
                 }
-            },
+            }
             MapSerializer::SizedUnordered { pending_key, .. } => {
                 value.serialize(KeySerializer::new(pending_key))?;
-            },
-            MapSerializer::UnsizedOrdered {se, last_key, new_key, len, ..} => {
+            }
+            MapSerializer::UnsizedOrdered {
+                se,
+                last_key,
+                new_key,
+                len,
+                ..
+            } => {
                 *len += 1;
                 value.serialize(KeySerializer::new(new_key))?;
                 se.encode_element(Element::Str(new_key))?;
@@ -559,20 +570,18 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                     if new_key <= last_key {
                         return Err(Error::SerdeFail(format!(
                             "map keys are unordered: {} follows {}",
-                            new_key,
-                            last_key
+                            new_key, last_key
                         )));
                     }
                     mem::swap(new_key, last_key);
-                }
-                else {
+                } else {
                     // Replace new_key with a new string, and load the last key into memory
                     *last_key = Some(mem::replace(new_key, String::new()));
                 }
-            },
+            }
             MapSerializer::UnsizedUnordered { pending_key, .. } => {
                 value.serialize(KeySerializer::new(pending_key))?;
-            },
+            }
         }
         Ok(())
     }
@@ -581,9 +590,13 @@ impl<'a> SerializeMap for MapSerializer<'a> {
         match self {
             MapSerializer::SizedOrdered { se, .. } => {
                 value.serialize(&mut **se)?;
-            },
-            MapSerializer::SizedUnordered { se, map, pending_key, } => {
-                // Slot in buffer, fill it like we're writing to the actual buffer, then store it 
+            }
+            MapSerializer::SizedUnordered {
+                se,
+                map,
+                pending_key,
+            } => {
+                // Slot in buffer, fill it like we're writing to the actual buffer, then store it
                 // off for later reordering
                 let buf = mem::replace(&mut se.buf, Vec::new());
                 se.encode_element(Element::Str(pending_key))?;
@@ -592,12 +605,16 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::replace(pending_key, String::new());
                 map.insert(key, buf);
-            },
+            }
             MapSerializer::UnsizedOrdered { se, .. } => {
                 value.serialize(&mut **se)?;
-            },
-            MapSerializer::UnsizedUnordered { se, map, pending_key } => {
-                // Slot in buffer, fill it like we're writing to the actual buffer, then store it 
+            }
+            MapSerializer::UnsizedUnordered {
+                se,
+                map,
+                pending_key,
+            } => {
+                // Slot in buffer, fill it like we're writing to the actual buffer, then store it
                 // off for later reordering
                 let buf = mem::replace(&mut se.buf, Vec::new());
                 se.encode_element(Element::Str(pending_key))?;
@@ -606,7 +623,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::replace(pending_key, String::new());
                 map.insert(key, buf);
-            },
+            }
         }
         Ok(())
     }
@@ -619,24 +636,24 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 for (_, vec) in map.iter() {
                     se.buf.extend_from_slice(&vec);
                 }
-            },
+            }
             MapSerializer::UnsizedOrdered { se, len, buf, .. } => {
-                // The serializer has our temporary buffer. Swap back, put in the real Map marker, 
+                // The serializer has our temporary buffer. Swap back, put in the real Map marker,
                 // and extend
                 let enc = mem::replace(&mut se.buf, buf);
                 serialize_elem(&mut se.buf, Element::Map(len));
                 se.buf.extend_from_slice(&enc);
                 se.depth_tracking.early_end();
-            },
+            }
             MapSerializer::UnsizedUnordered { se, map, .. } => {
-                // Fill in the real map marker, update depth tracking, and 
+                // Fill in the real map marker, update depth tracking, and
                 // flush all buffers, in order, out to the main one
                 serialize_elem(&mut se.buf, Element::Map(map.len()));
                 for (_, vec) in map.iter() {
                     se.buf.extend_from_slice(&vec);
                 }
                 se.depth_tracking.early_end();
-            },
+            }
         }
         Ok(())
     }
@@ -650,18 +667,14 @@ enum StructSerializer<'a> {
     Unordered {
         se: &'a mut FogSerializer,
         map: BTreeMap<&'static str, Vec<u8>>,
-    }
+    },
 }
 
 impl<'a> StructSerializer<'a> {
     fn new(se: &'a mut FogSerializer) -> Self {
         if se.must_be_ordered {
-            StructSerializer::Ordered {
-                se,
-                last_key: None,
-            }
-        }
-        else {
+            StructSerializer::Ordered { se, last_key: None }
+        } else {
             StructSerializer::Unordered {
                 se,
                 map: BTreeMap::new(),
@@ -669,27 +682,29 @@ impl<'a> StructSerializer<'a> {
         }
     }
 
-    fn serialize_field_inner<T: Serialize + ?Sized>(&mut self, field: &'static str, value: &T) -> Result<()> {
+    fn serialize_field_inner<T: Serialize + ?Sized>(
+        &mut self,
+        field: &'static str,
+        value: &T,
+    ) -> Result<()> {
         match self {
             StructSerializer::Ordered { se, last_key } => {
                 if let Some(last_key) = last_key {
                     if field <= last_key {
                         return Err(Error::SerdeFail(format!(
-                                    "map keys are unordered: {} follows {}",
-                                    field,
-                                    last_key
+                            "map keys are unordered: {} follows {}",
+                            field, last_key
                         )));
                     }
                     *last_key = field;
-                }
-                else {
+                } else {
                     *last_key = Some(field);
                 }
                 se.encode_element(Element::Str(field))?;
                 value.serialize(&mut **se)?;
-            },
+            }
             StructSerializer::Unordered { se, map } => {
-                // Slot in buffer, fill it like we're writing to the actual buffer, then store it 
+                // Slot in buffer, fill it like we're writing to the actual buffer, then store it
                 // off for later reordering
                 let buf = mem::replace(&mut se.buf, Vec::new());
                 se.encode_element(Element::Str(field))?;
@@ -697,7 +712,7 @@ impl<'a> StructSerializer<'a> {
                 // Replace buffers & store off in BTreeMap
                 let buf = mem::replace(&mut se.buf, buf);
                 map.insert(field, buf);
-            },
+            }
         }
         Ok(())
     }
@@ -709,7 +724,7 @@ impl<'a> StructSerializer<'a> {
                 for (_, vec) in map.iter() {
                     se.buf.extend_from_slice(&vec);
                 }
-            },
+            }
         }
         Ok(())
     }
@@ -719,7 +734,11 @@ impl<'a> SerializeStruct for StructSerializer<'a> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, field: &'static str, value: &T) -> Result<()> {
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        field: &'static str,
+        value: &T,
+    ) -> Result<()> {
         self.serialize_field_inner(field, value)
     }
 
@@ -732,7 +751,11 @@ impl<'a> SerializeStructVariant for StructSerializer<'a> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, field: &'static str, value: &T) -> Result<()> {
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        field: &'static str,
+        value: &T,
+    ) -> Result<()> {
         self.serialize_field_inner(field, value)
     }
 
@@ -771,54 +794,65 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
             self.received = true;
             let elem = match self.ext {
                 ExtType::Timestamp => {
-                    let v = crate::Timestamp::try_from(v)
-                        .map_err(|_| Error::SerdeFail("Timestamp bytes weren't valid on encode".to_string()))?;
+                    let v = crate::Timestamp::try_from(v).map_err(|_| {
+                        Error::SerdeFail("Timestamp bytes weren't valid on encode".to_string())
+                    })?;
                     Element::Timestamp(v)
-                },
+                }
                 ExtType::Hash => {
-                    let v = fog_crypto::hash::Hash::try_from(v)
-                        .map_err(|_| Error::SerdeFail("Hash bytes weren't valid on encode".to_string()))?;
+                    let v = fog_crypto::hash::Hash::try_from(v).map_err(|_| {
+                        Error::SerdeFail("Hash bytes weren't valid on encode".to_string())
+                    })?;
                     Element::Hash(v)
-                },
+                }
                 ExtType::Identity => {
-                    let v = fog_crypto::identity::Identity::try_from(v)
-                        .map_err(|_| Error::SerdeFail("Identity bytes weren't valid on encode".to_string()))?;
+                    let v = fog_crypto::identity::Identity::try_from(v).map_err(|_| {
+                        Error::SerdeFail("Identity bytes weren't valid on encode".to_string())
+                    })?;
                     Element::Identity(v)
-                },
+                }
                 ExtType::LockId => {
-                    let v = fog_crypto::lock::LockId::try_from(v)
-                        .map_err(|_| Error::SerdeFail("LockId bytes weren't valid on encode".to_string()))?;
+                    let v = fog_crypto::lock::LockId::try_from(v).map_err(|_| {
+                        Error::SerdeFail("LockId bytes weren't valid on encode".to_string())
+                    })?;
                     Element::LockId(v)
-                },
+                }
                 ExtType::StreamId => {
-                    let v = fog_crypto::stream::StreamId::try_from(v)
-                        .map_err(|_| Error::SerdeFail("StreamId bytes weren't valid on encode".to_string()))?;
+                    let v = fog_crypto::stream::StreamId::try_from(v).map_err(|_| {
+                        Error::SerdeFail("StreamId bytes weren't valid on encode".to_string())
+                    })?;
                     Element::StreamId(v)
-                },
+                }
                 ExtType::DataLockbox => {
-                    let v = fog_crypto::lockbox::DataLockboxRef::from_bytes(v)
-                        .map_err(|_| Error::SerdeFail("DataLockbox bytes weren't valid on encode".to_string()))?;
+                    let v = fog_crypto::lockbox::DataLockboxRef::from_bytes(v).map_err(|_| {
+                        Error::SerdeFail("DataLockbox bytes weren't valid on encode".to_string())
+                    })?;
                     Element::DataLockbox(v)
-                },
+                }
                 ExtType::IdentityLockbox => {
-                    let v = fog_crypto::lockbox::IdentityLockboxRef::from_bytes(v)
-                        .map_err(|_| Error::SerdeFail("IdentityLockbox bytes weren't valid on encode".to_string()))?;
+                    let v =
+                        fog_crypto::lockbox::IdentityLockboxRef::from_bytes(v).map_err(|_| {
+                            Error::SerdeFail(
+                                "IdentityLockbox bytes weren't valid on encode".to_string(),
+                            )
+                        })?;
                     Element::IdentityLockbox(v)
-                },
+                }
                 ExtType::StreamLockbox => {
-                    let v = fog_crypto::lockbox::StreamLockboxRef::from_bytes(v)
-                        .map_err(|_| Error::SerdeFail("StreamLockbox bytes weren't valid on encode".to_string()))?;
+                    let v = fog_crypto::lockbox::StreamLockboxRef::from_bytes(v).map_err(|_| {
+                        Error::SerdeFail("StreamLockbox bytes weren't valid on encode".to_string())
+                    })?;
                     Element::StreamLockbox(v)
-                },
+                }
                 ExtType::LockLockbox => {
-                    let v = fog_crypto::lockbox::LockLockboxRef::from_bytes(v)
-                        .map_err(|_| Error::SerdeFail("LockLockbox bytes weren't valid on encode".to_string()))?;
+                    let v = fog_crypto::lockbox::LockLockboxRef::from_bytes(v).map_err(|_| {
+                        Error::SerdeFail("LockLockbox bytes weren't valid on encode".to_string())
+                    })?;
                     Element::LockLockbox(v)
-                },
+                }
             };
             self.se.encode_element(elem)
-        }
-        else {
+        } else {
             Err(self.ser_fail("a second byte sequence"))
         }
     }
@@ -831,7 +865,9 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
     type SerializeStruct = Impossible<(), Error>;
     type SerializeStructVariant = Impossible<(), Error>;
 
-    fn is_human_readable(&self) -> bool { false }
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 
     fn serialize_bool(self, _: bool) -> Result<()> {
         Err(self.ser_fail("bool"))
@@ -901,11 +937,20 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
         Err(self.ser_fail("unit_struct"))
     }
 
-    fn serialize_unit_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str) -> Result<()> {
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+    ) -> Result<()> {
         Err(self.ser_fail("unit_variant"))
     }
 
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _name: &'static str, _v: &T) -> Result<()> {
+    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+        self,
+        _name: &'static str,
+        _v: &T,
+    ) -> Result<()> {
         Err(self.ser_fail("newtype_struct"))
     }
 
@@ -914,9 +959,8 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _value: &T
-    ) -> Result<()>
-    {
+        _value: &T,
+    ) -> Result<()> {
         Err(self.ser_fail("newtype_variant"))
     }
 
@@ -928,12 +972,21 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
         Err(self.ser_fail("tuple"))
     }
 
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct> {
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
         Err(self.ser_fail("tuple_struct"))
-        
     }
 
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeTupleVariant> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
         Err(self.ser_fail("tuple_variant"))
     }
 
@@ -945,10 +998,15 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
         Err(self.ser_fail("struct"))
     }
 
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
         Err(self.ser_fail("struct_variant"))
     }
-
 }
 
 struct KeySerializer<'a> {
@@ -985,7 +1043,7 @@ impl<'a> Serializer for KeySerializer<'a> {
         self,
         _name: &'static str,
         _variant_index: u32,
-        variant: &'static str
+        variant: &'static str,
     ) -> Result<()> {
         self.s.push_str(variant);
         Ok(())
@@ -994,7 +1052,7 @@ impl<'a> Serializer for KeySerializer<'a> {
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
         self,
         _name: &'static str,
-        v: &T
+        v: &T,
     ) -> Result<()> {
         v.serialize(self)
     }
@@ -1007,7 +1065,9 @@ impl<'a> Serializer for KeySerializer<'a> {
     type SerializeStruct = Impossible<(), Error>;
     type SerializeStructVariant = Impossible<(), Error>;
 
-    fn is_human_readable(&self) -> bool { false }
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 
     fn serialize_bool(self, _: bool) -> Result<()> {
         Err(self.ser_fail("bool"))
@@ -1078,9 +1138,8 @@ impl<'a> Serializer for KeySerializer<'a> {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _value: &T
-    ) -> Result<()>
-    {
+        _value: &T,
+    ) -> Result<()> {
         Err(self.ser_fail("newtype_variant"))
     }
 
@@ -1092,12 +1151,21 @@ impl<'a> Serializer for KeySerializer<'a> {
         Err(self.ser_fail("tuple"))
     }
 
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct> {
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
         Err(self.ser_fail("tuple_struct"))
-        
     }
 
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeTupleVariant> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
         Err(self.ser_fail("tuple_variant"))
     }
 
@@ -1109,9 +1177,13 @@ impl<'a> Serializer for KeySerializer<'a> {
         Err(self.ser_fail("struct"))
     }
 
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
         Err(self.ser_fail("struct_variant"))
     }
-
 }
-

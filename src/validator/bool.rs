@@ -1,11 +1,13 @@
+use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::default::Default;
-use super::*;
 
 #[inline]
-fn is_false(v: &bool) -> bool { !v }
+fn is_false(v: &bool) -> bool {
+    !v
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -36,13 +38,22 @@ impl Default for BoolValidator {
 
 impl BoolValidator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
-        let elem = parser.next().ok_or(Error::FailValidate("Expected a boolean".to_string()))??;
-        let elem = if let Element::Bool(v) = elem { v } else {
-            return Err(Error::FailValidate(format!("Expected Bool, got {}", elem.name())));
+        let elem = parser
+            .next()
+            .ok_or(Error::FailValidate("Expected a boolean".to_string()))??;
+        let elem = if let Element::Bool(v) = elem {
+            v
+        } else {
+            return Err(Error::FailValidate(format!(
+                "Expected Bool, got {}",
+                elem.name()
+            )));
         };
         if self.in_list.len() > 0 {
             if !self.in_list.iter().any(|v| *v == elem) {
-                return Err(Error::FailValidate("Boolean is not on `in` list".to_string()));
+                return Err(Error::FailValidate(
+                    "Boolean is not on `in` list".to_string(),
+                ));
             }
         }
         if self.nin_list.iter().any(|v| *v == elem) {
@@ -55,7 +66,7 @@ impl BoolValidator {
         match other {
             Validator::Bool(other) => {
                 self.query || (other.in_list.is_empty() && other.nin_list.is_empty())
-            },
+            }
             Validator::Any => true,
             _ => false,
         }

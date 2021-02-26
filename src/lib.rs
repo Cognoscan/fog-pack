@@ -6,6 +6,7 @@ mod depth_tracking;
 mod schema;
 pub mod validator;
 pub mod value;
+pub mod value_ref;
 
 pub mod timestamp;
 pub use timestamp::*;

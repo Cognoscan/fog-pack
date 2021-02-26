@@ -1557,15 +1557,15 @@ mod test {
 
         fn spec_examples() -> Vec<(usize, Vec<u8>)> {
             let mut test_cases = Vec::new();
-            test_cases.push((0, vec![0x90]));
-            test_cases.push((1, vec![0x91]));
-            test_cases.push((15, vec![0x9f]));
-            test_cases.push((16, vec![0xd7, 0x10]));
-            test_cases.push((255, vec![0xd7, 0xff]));
-            test_cases.push((256, vec![0xd8, 0x00, 0x01]));
-            test_cases.push((65535, vec![0xd8, 0xff, 0xff]));
-            test_cases.push((65536, vec![0xd9, 0x00, 0x00, 0x01, 0x00]));
-            test_cases.push((65536 * 2, vec![0xd9, 0x00, 0x00, 0x02, 0x00]));
+            test_cases.push((0x000000, vec![0x90]));
+            test_cases.push((0x000001, vec![0x91]));
+            test_cases.push((0x00000f, vec![0x9f]));
+            test_cases.push((0x000010, vec![0xd7, 0x10]));
+            test_cases.push((0x0000ff, vec![0xd7, 0xff]));
+            test_cases.push((0x000100, vec![0xd8, 0x00, 0x01]));
+            test_cases.push((0x00ffff, vec![0xd8, 0xff, 0xff]));
+            test_cases.push((0x010000, vec![0xd9, 0x00, 0x00, 0x01, 0x00]));
+            test_cases.push((0x020000, vec![0xd9, 0x00, 0x00, 0x02, 0x00]));
             test_cases
         }
 
@@ -1622,18 +1622,18 @@ mod test {
         #[test]
         fn not_shortest() {
             let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
-            test_cases.push((0, vec![0xd7, 0x00]));
-            test_cases.push((1, vec![0xd7, 0x01]));
-            test_cases.push((15, vec![0xd7, 0x0f]));
-            test_cases.push((15, vec![0xd8, 0x0f, 0x00]));
-            test_cases.push((16, vec![0xd8, 0x10, 0x00]));
-            test_cases.push((255, vec![0xd8, 0xff, 0x00]));
-            test_cases.push((15, vec![0xd9, 0x0f, 0x00, 0x00, 0x00]));
-            test_cases.push((16, vec![0xd9, 0x10, 0x00, 0x00, 0x00]));
-            test_cases.push((255, vec![0xd9, 0xff, 0x00, 0x00, 0x00]));
-            test_cases.push((256, vec![0xd9, 0x00, 0x01, 0x00, 0x00]));
-            test_cases.push((256 * 16, vec![0xd9, 0x00, 0x10, 0x00, 0x00]));
-            test_cases.push((65535, vec![0xd9, 0xff, 0xff, 0x00, 0x00]));
+            test_cases.push((0x0000, vec![0xd7, 0x00]));
+            test_cases.push((0x0001, vec![0xd7, 0x01]));
+            test_cases.push((0x000f, vec![0xd7, 0x0f]));
+            test_cases.push((0x000f, vec![0xd8, 0x0f, 0x00]));
+            test_cases.push((0x0010, vec![0xd8, 0x10, 0x00]));
+            test_cases.push((0x00ff, vec![0xd8, 0xff, 0x00]));
+            test_cases.push((0x000f, vec![0xd9, 0x0f, 0x00, 0x00, 0x00]));
+            test_cases.push((0x0010, vec![0xd9, 0x10, 0x00, 0x00, 0x00]));
+            test_cases.push((0x00ff, vec![0xd9, 0xff, 0x00, 0x00, 0x00]));
+            test_cases.push((0x0100, vec![0xd9, 0x00, 0x01, 0x00, 0x00]));
+            test_cases.push((0x1000, vec![0xd9, 0x00, 0x10, 0x00, 0x00]));
+            test_cases.push((0xffff, vec![0xd9, 0xff, 0xff, 0x00, 0x00]));
             for (len, enc) in test_cases.iter_mut() {
                 enc.resize(enc.len() + *len, 0xa0);
             }
@@ -1644,20 +1644,8 @@ mod test {
                     len
                 );
                 let mut parser = Parser::new(&enc);
-                assert!(parser.next().unwrap().is_err());
-                if len > 0 {
-                    let val_next = parser
-                        .next()
-                        .expect("Should have gotten the next element")
-                        .expect("Should have gotten an Ok result");
-                    if let Element::Str(val) = val_next {
-                        assert_eq!(val, "");
-                    } else {
-                        panic!("Next element wasn't the empty string");
-                    }
-                } else {
-                    assert!(parser.next().is_none());
-                }
+                assert!(parser.next().unwrap().is_err(), "Not shortest should cause failure");
+                assert!(parser.next().is_none(), "Should always return None after failure");
             }
         }
 
@@ -1711,15 +1699,15 @@ mod test {
 
         fn spec_examples() -> Vec<(usize, Vec<u8>)> {
             let mut test_cases = Vec::new();
-            test_cases.push((0, vec![0x80]));
-            test_cases.push((1, vec![0x81]));
-            test_cases.push((15, vec![0x8f]));
-            test_cases.push((16, vec![0xda, 0x10]));
-            test_cases.push((255, vec![0xda, 0xff]));
-            test_cases.push((256, vec![0xdb, 0x00, 0x01]));
-            test_cases.push((65535, vec![0xdb, 0xff, 0xff]));
-            test_cases.push((65536, vec![0xdc, 0x00, 0x00, 0x01, 0x00]));
-            test_cases.push((65536 * 2, vec![0xdc, 0x00, 0x00, 0x02, 0x00]));
+            test_cases.push((0x000000, vec![0x80]));
+            test_cases.push((0x000001, vec![0x81]));
+            test_cases.push((0x00000f, vec![0x8f]));
+            test_cases.push((0x000010, vec![0xda, 0x10]));
+            test_cases.push((0x0000ff, vec![0xda, 0xff]));
+            test_cases.push((0x000100, vec![0xdb, 0x00, 0x01]));
+            test_cases.push((0x00ffff, vec![0xdb, 0xff, 0xff]));
+            test_cases.push((0x010000, vec![0xdc, 0x00, 0x00, 0x01, 0x00]));
+            test_cases.push((0x020000, vec![0xdc, 0x00, 0x00, 0x02, 0x00]));
             test_cases
         }
 
@@ -1731,16 +1719,29 @@ mod test {
                 let mut enc = Vec::new();
                 serialize_elem(&mut enc, elem);
                 println!("{:x?}", &enc);
+                enc.resize(enc.len() + 2*case, 0xa0);
                 let mut parser = Parser::new(&enc);
                 let val = parser
                     .next()
                     .expect("Should have gotten a result")
                     .expect("Should have gotten an Ok result");
-                assert!(parser.next().is_none());
                 if let Element::Map(val) = val {
                     assert_eq!(val, case);
                 } else {
                     panic!("Element wasn't a Map type");
+                }
+                if case > 0 {
+                    let val_next = parser
+                        .next()
+                        .expect("Should have gotten the next element")
+                        .expect("Should have gotten an Ok result");
+                    if let Element::Str(val) = val_next {
+                        assert_eq!(val, "");
+                    } else {
+                        panic!("Next element wasn't the empty string");
+                    }
+                } else {
+                    assert!(parser.next().is_none());
                 }
             }
         }
@@ -1764,23 +1765,30 @@ mod test {
         #[test]
         fn not_shortest() {
             let mut test_cases = Vec::new();
-            test_cases.push(vec![0xda, 0x00]);
-            test_cases.push(vec![0xda, 0x01]);
-            test_cases.push(vec![0xda, 0x0f]);
-            test_cases.push(vec![0xdb, 0x0f, 0x00]);
-            test_cases.push(vec![0xdb, 0x10, 0x00]);
-            test_cases.push(vec![0xdb, 0xff, 0x00]);
-            test_cases.push(vec![0xdc, 0x0f, 0x00, 0x00, 0x00]);
-            test_cases.push(vec![0xdc, 0x10, 0x00, 0x00, 0x00]);
-            test_cases.push(vec![0xdc, 0xff, 0x00, 0x00, 0x00]);
-            test_cases.push(vec![0xdc, 0x00, 0x01, 0x00, 0x00]);
-            test_cases.push(vec![0xdc, 0x00, 0x10, 0x00, 0x00]);
-            test_cases.push(vec![0xdc, 0xff, 0xff, 0x00, 0x00]);
-            for case in test_cases {
-                println!("Test with vec {:x?}", case);
-                let mut parser = Parser::new(&case);
-                assert!(parser.next().unwrap().is_err());
-                assert!(parser.next().is_none());
+            test_cases.push((0x0000, vec![0xda, 0x00]));
+            test_cases.push((0x0001, vec![0xda, 0x01]));
+            test_cases.push((0x000f, vec![0xda, 0x0f]));
+            test_cases.push((0x000f, vec![0xdb, 0x0f, 0x00]));
+            test_cases.push((0x0010, vec![0xdb, 0x10, 0x00]));
+            test_cases.push((0x00ff, vec![0xdb, 0xff, 0x00]));
+            test_cases.push((0x000f, vec![0xdc, 0x0f, 0x00, 0x00, 0x00]));
+            test_cases.push((0x0010, vec![0xdc, 0x10, 0x00, 0x00, 0x00]));
+            test_cases.push((0x00ff, vec![0xdc, 0xff, 0x00, 0x00, 0x00]));
+            test_cases.push((0x0100, vec![0xdc, 0x00, 0x01, 0x00, 0x00]));
+            test_cases.push((0x1000, vec![0xdc, 0x00, 0x10, 0x00, 0x00]));
+            test_cases.push((0xffff, vec![0xdc, 0xff, 0xff, 0x00, 0x00]));
+            for (len, enc) in test_cases.iter_mut() {
+                enc.resize(enc.len() + (*len * 2), 0xa0);
+            }
+            for (len, enc) in test_cases {
+                println!(
+                    "Test with vec {:x?}... (map len={})",
+                    &enc[0..(enc.len().min(5))],
+                    len
+                );
+                let mut parser = Parser::new(&enc);
+                assert!(parser.next().unwrap().is_err(), "Not shortest should cause failure");
+                assert!(parser.next().is_none(), "Should always return None after failure");
             }
         }
 
@@ -1792,7 +1800,8 @@ mod test {
                 let mut enc = Vec::new();
                 serialize_elem(&mut enc, elem);
                 assert_eq!(enc, case.1);
-                let mut parser = Parser::new(&case.1);
+                enc.resize(enc.len() + 2 * case.0, 0xa0);
+                let mut parser = Parser::new(&enc);
                 let val = parser
                     .next()
                     .expect("Should have gotten a result")
@@ -1802,7 +1811,19 @@ mod test {
                 } else {
                     panic!("Element wasn't a Map type");
                 }
-                assert!(parser.next().is_none());
+                if case.0 > 0 {
+                    let val_next = parser
+                        .next()
+                        .expect("Should have gotten the next element")
+                        .expect("Should have gotten an Ok result");
+                    if let Element::Str(val) = val_next {
+                        assert_eq!(val, "");
+                    } else {
+                        panic!("Next element wasn't the empty string");
+                    }
+                } else {
+                    assert!(parser.next().is_none());
+                }
             }
         }
     }

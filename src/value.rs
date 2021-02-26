@@ -1,8 +1,8 @@
 use crate::*;
-use serde::{Deserialize, Serialize};
+use crate::value_ref::ValueRef;
 use std::borrow::Cow;
 use std::ops::Index;
-use std::{collections::BTreeMap, default, fmt::Debug};
+use std::{collections::BTreeMap, fmt::Debug};
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -591,10 +591,6 @@ impl<'de> serde::Deserialize<'de> for Value {
                 Ok(Value::F64(v))
             }
 
-            fn visit_char<E: Error>(self, v: char) -> Result<Self::Value, E> {
-                Ok(Value::Str(v.into()))
-            }
-
             fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(Value::Str(v.into()))
             }
@@ -616,8 +612,10 @@ impl<'de> serde::Deserialize<'de> for Value {
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+                // Allocate with the size hint, but be conservative. 4096 is what serde uses 
+                // internally for collections, so we'll do likewise.
                 let mut seq = match access.size_hint() {
-                    Some(size) => Vec::with_capacity(size),
+                    Some(size) => Vec::with_capacity(size.min(4096)),
                     None => Vec::new(),
                 };
                 while let Some(elem) = access.next_element()? {
@@ -626,39 +624,72 @@ impl<'de> serde::Deserialize<'de> for Value {
                 Ok(Value::Array(seq))
             }
 
-            //fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
-            //    let mut map = match access.size_hint() {
-            //        Some(size) => Vec::with_capacity(size),
-            //        None => Vec::new(),
-            //    };
+            fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+                let mut map = BTreeMap::new();
+                while let Some((key, val)) = access.next_entry()? {
+                    map.insert(key, val);
+                }
+                Ok(Value::Map(map))
+            }
 
-            //}
+            /// Should only be called when deserializing our special types.
+            /// Fogpack's deserializer will always turn the variant into a u64
+            fn visit_enum<A: EnumAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
+                let (variant, access) = access.variant()?;
+                use fog_crypto::serde::*;
+                use serde_bytes::Bytes;
+                let bytes: &Bytes = access.newtype_variant()?;
+                match variant {
+                    FOG_TYPE_ENUM_TIME_INDEX => {
+                        let val = Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))?;
+                        Ok(Value::Timestamp(val))
+                    },
+                    FOG_TYPE_ENUM_HASH_INDEX => {
+                        let val = Hash::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        Ok(Value::Hash(val))
+                    },
+                    FOG_TYPE_ENUM_IDENTITY_INDEX => {
+                        let val = Identity::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        Ok(Value::Identity(val))
+                    },
+                    FOG_TYPE_ENUM_LOCK_ID_INDEX => {
+                        let val = LockId::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        Ok(Value::LockId(val))
+                    },
+                    FOG_TYPE_ENUM_STREAM_ID_INDEX => {
+                        let val = StreamId::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        Ok(Value::StreamId(val))
+                    },
+                    FOG_TYPE_ENUM_DATA_LOCKBOX_INDEX => {
+                        let val = DataLockboxRef::from_bytes(&bytes)
+                            .map_err(|e| A::Error::custom(e.serde_err()))?
+                            .to_owned();
+                        Ok(Value::DataLockbox(val))
+                    },
+                    FOG_TYPE_ENUM_IDENTITY_LOCKBOX_INDEX => {
+                        let val = IdentityLockboxRef::from_bytes(&bytes)
+                            .map_err(|e| A::Error::custom(e.serde_err()))?
+                            .to_owned();
+                        Ok(Value::IdentityLockbox(val))
+                    },
+                    FOG_TYPE_ENUM_STREAM_LOCKBOX_INDEX => {
+                        let val = StreamLockboxRef::from_bytes(&bytes)
+                            .map_err(|e| A::Error::custom(e.serde_err()))?
+                            .to_owned();
+                        Ok(Value::StreamLockbox(val))
+                    },
+                    FOG_TYPE_ENUM_LOCK_LOCKBOX_INDEX => {
+                        let val = LockLockboxRef::from_bytes(&bytes)
+                            .map_err(|e| A::Error::custom(e.serde_err()))?
+                            .to_owned();
+                        Ok(Value::LockLockbox(val))
+                    },
+                    _ => Err(A::Error::custom("unrecognized fogpack extension type")),
+                }
+            }
         }
 
         deserializer.deserialize_any(ValueVisitor)
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum ValueRef<'a> {
-    Null,
-    Bool(bool),
-    Int(Integer),
-    Str(&'a str),
-    F32(f32),
-    F64(f64),
-    Bin(&'a [u8]),
-    Array(Vec<ValueRef<'a>>),
-    Map(BTreeMap<&'a str, ValueRef<'a>>),
-    Hash(Hash),
-    Identity(Identity),
-    StreamId(StreamId),
-    LockId(LockId),
-    Timestamp(Timestamp),
-    DataLockbox(&'a DataLockboxRef),
-    IdentityLockbox(&'a IdentityLockboxRef),
-    StreamLockbox(&'a StreamLockboxRef),
-    LockLockbox(&'a LockLockboxRef),
-}
-
-static NULL_REF: ValueRef<'static> = ValueRef::Null;

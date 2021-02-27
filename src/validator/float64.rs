@@ -9,46 +9,46 @@ fn is_false(v: &bool) -> bool {
     !v
 }
 #[inline]
-fn f32_is_zero(v: &f32) -> bool {
+fn f64_is_zero(v: &f64) -> bool {
     *v == 0.0
 }
 #[inline]
-fn is_nan(v: &f32) -> bool {
+fn is_nan(v: &f64) -> bool {
     v.is_nan()
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
-pub struct F32Validator {
+pub struct F64Validator {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
-    #[serde(skip_serializing_if = "f32_is_zero")]
-    pub default: f32,
+    #[serde(skip_serializing_if = "f64_is_zero")]
+    pub default: f64,
     #[serde(skip_serializing_if = "is_nan")]
-    pub max: f32,
+    pub max: f64,
     #[serde(skip_serializing_if = "is_nan")]
-    pub min: f32,
+    pub min: f64,
     #[serde(skip_serializing_if = "is_false")]
     pub ex_max: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub ex_min: bool,
     #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
-    pub in_list: Vec<f32>,
+    pub in_list: Vec<f64>,
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
-    pub nin_list: Vec<f32>,
+    pub nin_list: Vec<f64>,
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub ord: bool,
 }
 
-impl Default for F32Validator {
+impl Default for F64Validator {
     fn default() -> Self {
         Self {
             comment: String::new(),
-            default: f32::default(),
-            max: f32::NAN,
-            min: f32::NAN,
+            default: f64::default(),
+            max: f64::NAN,
+            min: f64::NAN,
             ex_max: false,
             ex_min: false,
             in_list: Vec::new(),
@@ -59,39 +59,39 @@ impl Default for F32Validator {
     }
 }
 
-impl F32Validator {
+impl F64Validator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a f32".to_string()))??;
-        let elem = if let Element::F32(v) = elem {
+            .ok_or(Error::FailValidate("Expected a f64".to_string()))??;
+        let elem = if let Element::F64(v) = elem {
             v
         } else {
             return Err(Error::FailValidate(format!(
-                "Expected F32, got {}",
+                "Expected F64, got {}",
                 elem.name()
             )));
         };
         let bytes = elem.to_ne_bytes();
         if self.in_list.len() > 0 {
             if !self.in_list.iter().any(|v| v.to_ne_bytes() == bytes) {
-                return Err(Error::FailValidate("F32 is not on `in` list".to_string()));
+                return Err(Error::FailValidate("F64 is not on `in` list".to_string()));
             }
         }
         if self.nin_list.iter().any(|v| v.to_ne_bytes() == bytes) {
-            return Err(Error::FailValidate("F32 is on `nin` list".to_string()));
+            return Err(Error::FailValidate("F64 is on `nin` list".to_string()));
         }
         if !self.max.is_nan() {
             if self.ex_max {
                 if elem >= self.max {
                     return Err(Error::FailValidate(
-                        "F32 greater than maximum allowed".to_string(),
+                        "F64 greater than maximum allowed".to_string(),
                     ));
                 }
             } else {
                 if elem > self.max {
                     return Err(Error::FailValidate(
-                        "F32 greater than maximum allowed".to_string(),
+                        "F64 greater than maximum allowed".to_string(),
                     ));
                 }
             }
@@ -100,13 +100,13 @@ impl F32Validator {
             if self.ex_min {
                 if elem <= self.min {
                     return Err(Error::FailValidate(
-                        "F32 less than maximum allowed".to_string(),
+                        "F64 less than maximum allowed".to_string(),
                     ));
                 }
             } else {
                 if elem < self.min {
                     return Err(Error::FailValidate(
-                        "F32 less than maximum allowed".to_string(),
+                        "F64 less than maximum allowed".to_string(),
                     ));
                 }
             }
@@ -116,7 +116,7 @@ impl F32Validator {
 
     pub(crate) fn query_check(&self, other: &Validator) -> bool {
         match other {
-            Validator::F32(other) => {
+            Validator::F64(other) => {
                 (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
                     && (self.ord
                         || (!other.ex_min

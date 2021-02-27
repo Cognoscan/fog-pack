@@ -83,7 +83,7 @@
               "default": { "Str": {} },
               "in": { "Array": { "item_type": { "Str": {} } } },
               "nin": { "Array": { "item_type": { "Str": {} } } },
-              "matches": { "Array": { "item_type": { "Str": {} } } },
+              "matches": { "Str": {} },
               "max_len": { "Int": { "min": 0 } },
               "min_len": { "Int": { "min": 0 } },
               "max_char": { "Int": { "min": 0 } },

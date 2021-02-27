@@ -31,7 +31,7 @@ fn int_is_min(v: &Integer) -> bool {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, default)]
 pub struct IntValidator {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,

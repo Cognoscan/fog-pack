@@ -3,7 +3,6 @@ use crate::element::*;
 use crate::error::{Error, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::default::Default;
 
 #[inline]
 fn is_false(v: &bool) -> bool {
@@ -92,10 +91,10 @@ impl StrValidator {
         // Get element
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a string".to_string()))??;
+            .ok_or(Error::FailValidate("expected a string".to_string()))??;
         let val = if let Element::Str(v) = elem { v } else {
             return Err(Error::FailValidate(format!(
-                "Expected Str, got {}",
+                "expected Str, got {}",
                 elem.name()
             )));
         };
@@ -193,17 +192,23 @@ impl StrValidator {
         Ok(())
     }
 
+    fn query_check_str(&self, other: &Self) -> bool {
+        (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
+            && (self.regex || other.matches.is_none())
+            && (self.size
+                || (usize_is_max(&other.max_len)
+                    && usize_is_zero(&other.min_len)
+                    && usize_is_max(&other.max_char)
+                    && usize_is_zero(&other.min_char)))
+    }
+
     pub(crate) fn query_check(&self, other: &Validator) -> bool {
         match other {
-            Validator::Str(other) => {
-                (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
-                    && (self.regex || other.matches.is_none())
-                    && (self.size
-                        || (usize_is_max(&other.max_len)
-                            && usize_is_zero(&other.min_len)
-                            && usize_is_max(&other.max_char)
-                            && usize_is_zero(&other.min_char)))
-            }
+            Validator::Str(other) => self.query_check_str(other),
+            Validator::Multi(list) => list.iter().all(|other| match other {
+                Validator::Str(other) => self.query_check_str(other),
+                _ => false,
+            }),
             Validator::Any => true,
             _ => false,
         }

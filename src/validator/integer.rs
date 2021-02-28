@@ -3,7 +3,6 @@ use crate::element::*;
 use crate::error::{Error, Result};
 use crate::*;
 use serde::{Deserialize, Serialize};
-use std::default::Default;
 
 #[inline]
 fn is_false(v: &bool) -> bool {
@@ -61,7 +60,7 @@ pub struct IntValidator {
     pub ord: bool,
 }
 
-impl Default for IntValidator {
+impl std::default::Default for IntValidator {
     fn default() -> Self {
         Self {
             comment: String::new(),
@@ -144,17 +143,23 @@ impl IntValidator {
         Ok(())
     }
 
+    fn query_check_int(&self, other: &Self) -> bool {
+        (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
+            && (self.bit || (other.bits_clr == 0 && other.bits_set == 0))
+            && (self.ord
+                || (!other.ex_min
+                    && !other.ex_max
+                    && int_is_max(&other.max)
+                    && int_is_min(&other.min)))
+    }
+
     pub(crate) fn query_check(&self, other: &Validator) -> bool {
         match other {
-            Validator::Int(other) => {
-                (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
-                    && (self.bit || (other.bits_clr == 0 && other.bits_set == 0))
-                    && (self.ord
-                        || (!other.ex_min
-                            && !other.ex_max
-                            && int_is_max(&other.max)
-                            && int_is_min(&other.min)))
-            }
+            Validator::Int(other) => self.query_check_int(other),
+            Validator::Multi(list) => list.iter().all(|other| match other {
+                Validator::Int(other) => self.query_check_int(other),
+                _ => false,
+            }),
             Validator::Any => true,
             _ => false,
         }

@@ -124,8 +124,8 @@
             "opt": {
               "comment": { "Str": {} },
               "default": { "F64": {} },
-              "max": { "F64": { "min": "<F64(-inf)>", "max": "<F64(inf)>" } },
-              "min": { "F64": { "min": "<F64(-inf)>", "max": "<F64(inf)>" } },
+              "max": { "F64": { } },
+              "min": { "F64": { } },
               "ex_max": { "Bool": {} },
               "ex_min": { "Bool": {} },
               "in": { "Array": { "item_type": { "F64": {} } } },
@@ -140,7 +140,7 @@
             "comment": "The Binary type validator",
             "opt": {
               "comment": { "Str": {} },
-              "default": { "F64": {} },
+              "default": { "Bin": {} },
               "bits_clr": { "type": "Bin" },
               "bits_set": { "type": "Bin" },
               "ex_max": { "Bool": {} },

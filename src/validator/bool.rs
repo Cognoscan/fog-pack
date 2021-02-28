@@ -2,7 +2,6 @@ use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::default::Default;
 
 #[inline]
 fn is_false(v: &bool) -> bool {
@@ -24,7 +23,7 @@ pub struct BoolValidator {
     pub query: bool,
 }
 
-impl Default for BoolValidator {
+impl std::default::Default for BoolValidator {
     fn default() -> Self {
         Self {
             comment: String::new(),
@@ -62,11 +61,17 @@ impl BoolValidator {
         Ok(())
     }
 
+    fn query_check_bool(&self, other: &Self) -> bool {
+        self.query || (other.in_list.is_empty() && other.nin_list.is_empty())
+    }
+
     pub(crate) fn query_check(&self, other: &Validator) -> bool {
         match other {
-            Validator::Bool(other) => {
-                self.query || (other.in_list.is_empty() && other.nin_list.is_empty())
-            }
+            Validator::Bool(other) => self.query_check_bool(other),
+            Validator::Multi(list) => list.iter().all(|other| match other {
+                Validator::Bool(other) => self.query_check_bool(other),
+                _ => false,
+            }),
             Validator::Any => true,
             _ => false,
         }

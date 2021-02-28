@@ -2,7 +2,6 @@ use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::default::Default;
 
 #[inline]
 fn is_false(v: &bool) -> bool {
@@ -42,7 +41,7 @@ pub struct F32Validator {
     pub ord: bool,
 }
 
-impl Default for F32Validator {
+impl std::default::Default for F32Validator {
     fn default() -> Self {
         Self {
             comment: String::new(),
@@ -114,16 +113,22 @@ impl F32Validator {
         Ok(())
     }
 
+    fn query_check_f32(&self, other: &Self) -> bool {
+        (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
+            && (self.ord
+                || (!other.ex_min
+                    && !other.ex_max
+                    && other.min.is_nan()
+                    && other.max.is_nan()))
+    }
+
     pub(crate) fn query_check(&self, other: &Validator) -> bool {
         match other {
-            Validator::F32(other) => {
-                (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
-                    && (self.ord
-                        || (!other.ex_min
-                            && !other.ex_max
-                            && other.min.is_nan()
-                            && other.max.is_nan()))
-            }
+            Validator::F32(other) => self.query_check_f32(other),
+            Validator::Multi(list) => list.iter().all(|other| match other {
+                Validator::F32(other) => self.query_check_f32(other),
+                _ => false,
+            }),
             Validator::Any => true,
             _ => false,
         }

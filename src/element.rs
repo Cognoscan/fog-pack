@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use crate::marker::*;
+use crate::{depth_tracking::DepthTracker, marker::*};
 use crate::{
     error::{Error, Result},
     get_int_internal, integer, Integer, Timestamp,
@@ -266,8 +266,10 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Parser<'a> {
     data: &'a [u8],
+    depth_tracking: DepthTracker,
     errored: bool,
 }
 
@@ -275,6 +277,7 @@ impl<'a> Parser<'a> {
     pub fn new(data: &'a [u8]) -> Parser<'a> {
         Self {
             data,
+            depth_tracking: DepthTracker::new(),
             errored: false,
         }
     }
@@ -772,11 +775,11 @@ impl<'a> Parser<'a> {
                     self.parse_ext(len)?
                 }
             };
+        self.depth_tracking.update_elem(&elem)?;
         Ok(elem)
     }
 
     fn parse_ext(&mut self, len: usize) -> Result<Element<'a>> {
-        use std::convert::TryFrom;
 
         let ext_type = self.data.read_u8().map_err(|_| Error::LengthTooShort {
             step: "decode Ext type",

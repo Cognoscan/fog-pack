@@ -50,8 +50,17 @@ impl Timestamp {
         }
     }
 
+    /// Zero time - UTC epoch time
+    pub const fn zero() -> Timestamp {
+        Timestamp {
+            sec: 0,
+            nano: 0,
+            standard: 0,
+        }
+    }
+
     /// Minimum possible time that can be represented
-    pub fn min_value() -> Timestamp {
+    pub const fn min_value() -> Timestamp {
         Timestamp {
             sec: i64::MIN,
             nano: 0,
@@ -60,7 +69,7 @@ impl Timestamp {
     }
 
     /// Maximum possible time that can be represented
-    pub fn max_value() -> Timestamp {
+    pub const fn max_value() -> Timestamp {
         Timestamp {
             sec: i64::MAX,
             nano: MAX_NANOSEC,
@@ -196,10 +205,9 @@ impl ops::Sub<i64> for Timestamp {
 
 impl cmp::Ord for Timestamp {
     fn cmp(&self, other: &Timestamp) -> cmp::Ordering {
-        if self.sec == other.sec {
-            self.nano.cmp(&other.nano)
-        } else {
-            self.sec.cmp(&other.sec)
+        match self.sec.cmp(&other.sec) {
+            cmp::Ordering::Equal => self.nano.cmp(&other.nano),
+            other => other,
         }
     }
 }

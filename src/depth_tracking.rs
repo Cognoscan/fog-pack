@@ -4,6 +4,7 @@ use crate::{
     MAX_DEPTH,
 };
 
+#[derive(Clone, Debug)]
 pub struct DepthTracker {
     tracking: Vec<u32>,
 }

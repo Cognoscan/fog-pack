@@ -8,7 +8,6 @@ use fog_crypto::serde::FOG_TYPE_ENUM;
 use serde::de::Error as DeError;
 use serde::de::*;
 
-use crate::depth_tracking::DepthTracker;
 use crate::{
     element::*,
     error::{Error, Result},
@@ -17,14 +16,12 @@ use crate::{
 };
 
 struct FogDeserializer<'a> {
-    depth_tracking: DepthTracker,
     parser: Parser<'a>,
 }
 
 impl<'a> FogDeserializer<'a> {
     fn new(buf: &'a [u8]) -> Self {
         Self {
-            depth_tracking: DepthTracker::new(),
             parser: Parser::new(buf),
         }
     }
@@ -34,7 +31,6 @@ impl<'a> FogDeserializer<'a> {
             .parser
             .next()
             .ok_or_else(|| Error::SerdeFail("missing next value".to_string()))??;
-        self.depth_tracking.update_elem(&elem)?;
         Ok(elem)
     }
 }

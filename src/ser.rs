@@ -293,7 +293,9 @@ impl<'a> Serializer for &'a mut FogSerializer {
                 for (k, v) in iter {
                     let mut key = String::new();
                     k.serialize(KeySerializer::new(&mut key))?;
-                    map.insert(key, v);
+                    if map.insert(key, v).is_some() {
+                        return Err(Error::SerdeFail(format!("map has repeated keys")));
+                    }
                 }
                 // Serialize in order
                 for (k, v) in map.iter() {
@@ -330,7 +332,9 @@ impl<'a> Serializer for &'a mut FogSerializer {
                 for (k, v) in iter {
                     let mut key = String::new();
                     k.serialize(KeySerializer::new(&mut key))?;
-                    map.insert(key, v);
+                    if map.insert(key, v).is_some() {
+                        return Err(Error::SerdeFail(format!("map has repeated keys")));
+                    }
                 }
                 // Serialize in order
                 self.encode_element(Element::Map(map.len()))?;
@@ -502,7 +506,7 @@ impl<'a> MapSerializer<'a> {
             })
         } else {
             se.depth_tracking
-                .update_elem(&Element::Map(u32::MAX as usize))?;
+                .update_elem(&Element::Map((u32::MAX >> 1) as usize))?;
             if se.must_be_ordered {
                 let buf = mem::replace(&mut se.buf, Vec::new());
                 Ok(MapSerializer::UnsizedOrdered {
@@ -604,7 +608,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 // Replace buffers & store off in BTreeMap
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::replace(pending_key, String::new());
-                map.insert(key, buf);
+                if map.insert(key, buf).is_some() {
+                    return Err(Error::SerdeFail(format!("map has repeated keys")));
+                }
             }
             MapSerializer::UnsizedOrdered { se, .. } => {
                 value.serialize(&mut **se)?;
@@ -622,7 +628,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 // Replace buffers & store off in BTreeMap
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::replace(pending_key, String::new());
-                map.insert(key, buf);
+                if map.insert(key, buf).is_some() {
+                    return Err(Error::SerdeFail(format!("map has repeated keys")));
+                }
             }
         }
         Ok(())
@@ -711,7 +719,7 @@ impl<'a> StructSerializer<'a> {
                 value.serialize(&mut **se)?;
                 // Replace buffers & store off in BTreeMap
                 let buf = mem::replace(&mut se.buf, buf);
-                map.insert(field, buf);
+                map.insert(field, buf); // Structs should never have repeated fields, so don't check for them
             }
         }
         Ok(())
@@ -1186,4 +1194,599 @@ impl<'a> Serializer for KeySerializer<'a> {
     ) -> Result<Self::SerializeStructVariant> {
         Err(self.ser_fail("struct_variant"))
     }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde::Serialize;
+
+    #[test]
+    fn ser_unit() {
+        let mut ser = FogSerializer::default();
+        ().serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xc0]);
+
+        #[derive(Serialize)]
+        struct WhatAnAbsoluteUnit;
+
+        let mut ser = FogSerializer::default();
+        let to_ser = WhatAnAbsoluteUnit;
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xc0]);
+    }
+
+    #[test]
+    fn ser_bool() {
+        let to_ser = true;
+        let mut ser = FogSerializer::default();
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xc3]);
+
+        let to_ser = false;
+        let mut ser = FogSerializer::default();
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xc2]);
+    }
+
+    #[test]
+    fn ser_u8() {
+        let mut test_cases: Vec<(u8, Vec<u8>)> = Vec::new();
+        test_cases.push((0x00, vec![0x00]));
+        test_cases.push((0x01, vec![0x01]));
+        test_cases.push((0x7f, vec![0x7f]));
+        test_cases.push((0x80, vec![0xcc, 0x80]));
+        test_cases.push((0xff, vec![0xcc, 0xff]));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_u16() {
+        let mut test_cases: Vec<(u16, Vec<u8>)> = Vec::new();
+        test_cases.push((0x0000, vec![0x00]));
+        test_cases.push((0x0001, vec![0x01]));
+        test_cases.push((0x007f, vec![0x7f]));
+        test_cases.push((0x0080, vec![0xcc, 0x80]));
+        test_cases.push((0x00ff, vec![0xcc, 0xff]));
+        test_cases.push((0x0100, vec![0xcd, 0x00, 0x01]));
+        test_cases.push((0xffff, vec![0xcd, 0xff, 0xff]));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_u32() {
+        let mut test_cases: Vec<(u32, Vec<u8>)> = Vec::new();
+        test_cases.push((0x0000_0000, vec![0x00]));
+        test_cases.push((0x0000_0001, vec![0x01]));
+        test_cases.push((0x0000_007f, vec![0x7f]));
+        test_cases.push((0x0000_0080, vec![0xcc, 0x80]));
+        test_cases.push((0x0000_00ff, vec![0xcc, 0xff]));
+        test_cases.push((0x0000_0100, vec![0xcd, 0x00, 0x01]));
+        test_cases.push((0x0000_ffff, vec![0xcd, 0xff, 0xff]));
+        test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
+        test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_u64() {
+        let mut test_cases: Vec<(u64, Vec<u8>)> = Vec::new();
+        test_cases.push((0x0000_0000, vec![0x00]));
+        test_cases.push((0x0000_0001, vec![0x01]));
+        test_cases.push((0x0000_007f, vec![0x7f]));
+        test_cases.push((0x0000_0080, vec![0xcc, 0x80]));
+        test_cases.push((0x0000_00ff, vec![0xcc, 0xff]));
+        test_cases.push((0x0000_0100, vec![0xcd, 0x00, 0x01]));
+        test_cases.push((0x0000_ffff, vec![0xcd, 0xff, 0xff]));
+        test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
+        test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
+        test_cases.push((
+                u32::MAX as u64 + 1,
+                vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
+        ));
+        test_cases.push((
+                u64::MAX,
+                vec![0xcf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        ));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_i8() {
+        let mut test_cases: Vec<(i8, Vec<u8>)> = Vec::new();
+        test_cases.push((0x00, vec![0x00]));
+        test_cases.push((0x01, vec![0x01]));
+        test_cases.push((0x7f, vec![0x7f]));
+        test_cases.push((-1, vec![0xff]));
+        test_cases.push((-2, vec![0xfe]));
+        test_cases.push((-32, vec![0xe0]));
+        test_cases.push((-33, vec![0xd0, 0xdf]));
+        test_cases.push((i8::MIN as i8, vec![0xd0, 0x80]));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_i16() {
+        let mut test_cases: Vec<(i16, Vec<u8>)> = Vec::new();
+        test_cases.push((0x0000, vec![0x00]));
+        test_cases.push((0x0001, vec![0x01]));
+        test_cases.push((0x007f, vec![0x7f]));
+        test_cases.push((0x0080, vec![0xcc, 0x80]));
+        test_cases.push((0x00ff, vec![0xcc, 0xff]));
+        test_cases.push((0x0100, vec![0xcd, 0x00, 0x01]));
+        test_cases.push((-1, vec![0xff]));
+        test_cases.push((-2, vec![0xfe]));
+        test_cases.push((-32, vec![0xe0]));
+        test_cases.push((-33, vec![0xd0, 0xdf]));
+        test_cases.push((i8::MIN as i16, vec![0xd0, 0x80]));
+        test_cases.push((i8::MIN as i16 - 1, vec![0xd1, 0x7f, 0xff]));
+        test_cases.push((i16::MIN as i16, vec![0xd1, 0x00, 0x80]));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_i32() {
+        let mut test_cases: Vec<(i32, Vec<u8>)> = Vec::new();
+        test_cases.push((0x0000_0000, vec![0x00]));
+        test_cases.push((0x0000_0001, vec![0x01]));
+        test_cases.push((0x0000_007f, vec![0x7f]));
+        test_cases.push((0x0000_0080, vec![0xcc, 0x80]));
+        test_cases.push((0x0000_00ff, vec![0xcc, 0xff]));
+        test_cases.push((0x0000_0100, vec![0xcd, 0x00, 0x01]));
+        test_cases.push((0x0000_ffff, vec![0xcd, 0xff, 0xff]));
+        test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
+        test_cases.push((-1, vec![0xff]));
+        test_cases.push((-2, vec![0xfe]));
+        test_cases.push((-32, vec![0xe0]));
+        test_cases.push((-33, vec![0xd0, 0xdf]));
+        test_cases.push((i8::MIN as i32, vec![0xd0, 0x80]));
+        test_cases.push((i8::MIN as i32 - 1, vec![0xd1, 0x7f, 0xff]));
+        test_cases.push((i16::MIN as i32, vec![0xd1, 0x00, 0x80]));
+        test_cases.push((i16::MIN as i32 - 1, vec![0xd2, 0xff, 0x7f, 0xff, 0xff]));
+        test_cases.push((i32::MIN as i32, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_i64() {
+        let mut test_cases: Vec<(i64, Vec<u8>)> = Vec::new();
+        test_cases.push((0x0000_0000, vec![0x00]));
+        test_cases.push((0x0000_0001, vec![0x01]));
+        test_cases.push((0x0000_007f, vec![0x7f]));
+        test_cases.push((0x0000_0080, vec![0xcc, 0x80]));
+        test_cases.push((0x0000_00ff, vec![0xcc, 0xff]));
+        test_cases.push((0x0000_0100, vec![0xcd, 0x00, 0x01]));
+        test_cases.push((0x0000_ffff, vec![0xcd, 0xff, 0xff]));
+        test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
+        test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
+        test_cases.push((
+                u32::MAX as i64 + 1,
+                vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
+        ));
+        test_cases.push((-1, vec![0xff]));
+        test_cases.push((-2, vec![0xfe]));
+        test_cases.push((-32, vec![0xe0]));
+        test_cases.push((-33, vec![0xd0, 0xdf]));
+        test_cases.push((i8::MIN as i64, vec![0xd0, 0x80]));
+        test_cases.push((i8::MIN as i64 - 1, vec![0xd1, 0x7f, 0xff]));
+        test_cases.push((i16::MIN as i64, vec![0xd1, 0x00, 0x80]));
+        test_cases.push((i16::MIN as i64 - 1, vec![0xd2, 0xff, 0x7f, 0xff, 0xff]));
+        test_cases.push((i32::MIN as i64, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
+        test_cases.push((
+                i32::MIN as i64 - 1,
+                vec![0xd3, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff],
+        ));
+        test_cases.push((
+                i64::MIN,
+                vec![0xd3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80],
+        ));
+        
+        for (int, enc) in test_cases {
+            let to_ser = int;
+            let mut ser = FogSerializer::default();
+            to_ser.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_f32() {
+        let mut test_cases: Vec<(f32, Vec<u8>)> = Vec::new();
+        test_cases.push((0.0, vec![0xca, 0x00, 0x00, 0x00, 0x00]));
+        test_cases.push((1.0, vec![0xca, 0x00, 0x00, 0x80, 0x3f]));
+        test_cases.push((-1.0, vec![0xca, 0x00, 0x00, 0x80, 0xbf]));
+        test_cases.push((f32::NEG_INFINITY, vec![0xca, 0x00, 0x00, 0x80, 0xff]));
+        test_cases.push((f32::INFINITY, vec![0xca, 0x00, 0x00, 0x80, 0x7f]));
+        for (float, enc) in test_cases {
+            let mut ser = FogSerializer::default();
+            float.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_f64() {
+        let mut test_cases: Vec<(f64, Vec<u8>)> = Vec::new();
+        test_cases.push((
+                0.0,
+                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ));
+        test_cases.push((
+                1.0,
+                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f],
+        ));
+        test_cases.push((
+                -1.0,
+                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xbf],
+        ));
+        test_cases.push((
+                f64::NEG_INFINITY,
+                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff],
+        ));
+        test_cases.push((
+                f64::INFINITY,
+                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f],
+        ));
+        for (float, enc) in test_cases {
+            let mut ser = FogSerializer::default();
+            float.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_bin() {
+        let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
+        test_cases.push((0, vec![0xc4, 0x00]));
+        test_cases.push((1, vec![0xc4, 0x01, 0x00]));
+        let mut case = vec![0xc4, 0xff];
+        case.resize(255 + 2, 0u8);
+        test_cases.push((255, case));
+        let mut case = vec![0xc5, 0xff, 0xff];
+        case.resize(65535 + 3, 0u8);
+        test_cases.push((65535, case));
+        let mut case = vec![0xc6, 0x00, 0x00, 0x01, 0x00];
+        case.resize(65536 + 5, 0u8);
+        test_cases.push((65536, case));
+
+        use serde_bytes::ByteBuf;
+        for (len, enc) in test_cases {
+            let mut ser = FogSerializer::default();
+            let test_vec = vec![0u8; len];
+            let bin: ByteBuf = ByteBuf::from(test_vec);
+            bin.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_str() {
+        let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
+        test_cases.push((0, vec![0xa0]));
+        test_cases.push((1, vec![0xa1, 0x00]));
+        let mut case = vec![0xbf];
+        case.resize(32, 0u8);
+        test_cases.push((31, case));
+        let mut case = vec![0xd4, 0xff];
+        case.resize(255 + 2, 0u8);
+        test_cases.push((255, case));
+        let mut case = vec![0xd5, 0xff, 0xff];
+        case.resize(65535 + 3, 0u8);
+        test_cases.push((65535, case));
+        let mut case = vec![0xd6, 0x00, 0x00, 0x01, 0x00];
+        case.resize(65536 + 5, 0u8);
+        test_cases.push((65536, case));
+
+        for (len, enc) in test_cases {
+            let mut ser = FogSerializer::default();
+            let test_vec = String::from_utf8(vec![0u8; len]).unwrap();
+            test_vec.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
+    }
+
+    #[test]
+    fn ser_char() {
+        let mut ser = FogSerializer::default();
+        'c'.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xa1, 'c' as u8]);
+        let mut ser = FogSerializer::default();
+        '0'.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xa1, '0' as u8]);
+    }
+
+    #[test]
+    fn ser_option() {
+        let mut ser = FogSerializer::default();
+        let opt: Option<char> = None;
+        opt.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xc0]);
+
+        let mut ser = FogSerializer::default();
+        let opt: Option<char> = Some('0');
+        opt.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xa1, '0' as u8]);
+    }
+
+    #[test]
+    fn ser_newtype() {
+        #[derive(Serialize)]
+        struct MyChar(char);
+        let mut ser = FogSerializer::default();
+        let to_ser: MyChar = MyChar('0');
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0xa1, '0' as u8]);
+    }
+
+    #[test]
+    fn ser_seq() {
+        let mut ser = FogSerializer::default();
+        let to_ser: Vec<u8> = (0..5).collect();
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0x95, 0x00, 0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn ser_tuple() {
+        let mut ser = FogSerializer::default();
+        let to_ser = (0u8, 'c', "\0\0");
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0x93, 0x00, 0xa1, 'c' as u8, 0xa2, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn ser_tuple_struct() {
+        #[derive(Serialize)]
+        struct TupleOfThings(u8, char, String);
+        let mut ser = FogSerializer::default();
+        let to_ser = TupleOfThings(0u8, 'c', "\0\0".to_string());
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, vec![0x93, 0x00, 0xa1, 'c' as u8, 0xa2, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn ser_struct_is_unordered() {
+        #[derive(Serialize)]
+        struct IttyBittyStruct {
+            itty: u8,
+            bitty: char,
+        }
+        let mut ser = FogSerializer::default();
+        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        let mut expected = vec![0x82];
+        expected.push(0xa5);
+        expected.extend_from_slice("bitty".as_bytes());
+        expected.push(0xa1);
+        expected.push('c' as u8);
+        expected.push(0xa4);
+        expected.extend_from_slice("itty".as_bytes());
+        expected.push(0x00);
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::with_params(true);
+        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        to_ser.serialize(&mut ser).unwrap_err();
+    }
+
+    #[test]
+    fn ser_struct_is_ordered() {
+        #[derive(Serialize)]
+        struct IttyBittyStruct {
+            bitty: char,
+            itty: u8,
+        }
+        let mut ser = FogSerializer::default();
+        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        let mut expected = vec![0x82];
+        expected.push(0xa5);
+        expected.extend_from_slice("bitty".as_bytes());
+        expected.push(0xa1);
+        expected.push('c' as u8);
+        expected.push(0xa4);
+        expected.extend_from_slice("itty".as_bytes());
+        expected.push(0x00);
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::with_params(true);
+        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        to_ser.serialize(&mut ser).expect("Should serialize");
+        assert_eq!(ser.buf, expected);
+    }
+
+    fn expected_map() -> Vec<u8> {
+        let mut expected = vec![0x82];
+        expected.push(0xa5);
+        expected.extend_from_slice("bitty".as_bytes());
+        expected.push(0xa1);
+        expected.push('b' as u8);
+        expected.push(0xa4);
+        expected.extend_from_slice("itty".as_bytes());
+        expected.push(0xa1);
+        expected.push('i' as u8);
+        expected
+    }
+
+    #[test]
+    fn ser_map() {
+        use std::collections::HashMap;
+        let mut to_ser = HashMap::new();
+        to_ser.insert("itty", 'i');
+        to_ser.insert("bitty", 'b');
+        let mut ser = FogSerializer::default();
+        to_ser.serialize(&mut ser).expect("Should serialize");
+
+        let expected = expected_map();
+        assert_eq!(ser.buf, expected);
+    }
+
+    #[test]
+    fn ser_map_unsized_unordered() {
+        let expected = expected_map();
+        let mut ser = FogSerializer::default();
+        let mut map_ser = ser.serialize_map(None).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("bitty", &'b').unwrap();
+        map_ser.end().unwrap();
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::default();
+        let mut map_ser = ser.serialize_map(None).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("itty", &'b').unwrap_err();
+    }
+
+    #[test]
+    fn ser_map_sized_unordered() {
+        let expected = expected_map();
+        let mut ser = FogSerializer::default();
+        let mut map_ser = ser.serialize_map(Some(2)).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("bitty", &'b').unwrap();
+        map_ser.end().unwrap();
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::default();
+        let mut map_ser = ser.serialize_map(Some(2)).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("itty", &'b').unwrap_err();
+    }
+
+    #[test]
+    fn ser_map_unsized_ordered() {
+        let expected = expected_map();
+        let mut ser = FogSerializer::with_params(true);
+        let mut map_ser = ser.serialize_map(None).unwrap();
+        map_ser.serialize_entry("bitty", &'b').unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.end().unwrap();
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::with_params(true);
+        let mut map_ser = ser.serialize_map(None).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("bitty", &'b').unwrap_err();
+
+        let mut ser = FogSerializer::with_params(true);
+        let mut map_ser = ser.serialize_map(None).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("itty", &'b').unwrap_err();
+    }
+
+    #[test]
+    fn ser_map_sized_ordered() {
+        let expected = expected_map();
+        let mut ser = FogSerializer::with_params(true);
+        let mut map_ser = ser.serialize_map(Some(2)).unwrap();
+        map_ser.serialize_entry("bitty", &'b').unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.end().unwrap();
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::with_params(true);
+        let mut map_ser = ser.serialize_map(Some(2)).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("bitty", &'b').unwrap_err();
+
+        let mut ser = FogSerializer::with_params(true);
+        let mut map_ser = ser.serialize_map(Some(2)).unwrap();
+        map_ser.serialize_entry("itty", &'i').unwrap();
+        map_ser.serialize_entry("itty", &'b').unwrap_err();
+    }
+
+    #[test]
+    fn ser_enum() {
+        #[derive(Serialize)]
+        enum EnumerateThis {
+            Null,
+            Newtype(char),
+            Tuple(char, u8),
+            Struct { b: char, a: u8 },
+        }
+
+        let mut ser = FogSerializer::default();
+        let to_ser = EnumerateThis::Null;
+        to_ser.serialize(&mut ser).unwrap();
+        let mut expected = Vec::new();
+        expected.push(0xa4); expected.extend_from_slice("Null".as_bytes());
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::default();
+        let to_ser = EnumerateThis::Newtype('🙃'); // Encodes as "f0 9f 99 83"
+        to_ser.serialize(&mut ser).unwrap();
+        let mut expected = Vec::new();
+        expected.push(0x81);
+        expected.push(0xa7); expected.extend_from_slice("Newtype".as_bytes());
+        expected.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::default();
+        let to_ser = EnumerateThis::Tuple('🙃', 4);
+        to_ser.serialize(&mut ser).unwrap();
+        let mut expected = Vec::new();
+        expected.push(0x81);
+        expected.push(0xa5); expected.extend_from_slice("Tuple".as_bytes());
+        expected.extend_from_slice(&[0x92, 0xa4, 0xf0, 0x9f, 0x99, 0x83, 0x04]);
+        assert_eq!(ser.buf, expected);
+
+        let mut ser = FogSerializer::default();
+        let to_ser = EnumerateThis::Struct { b: '🙃', a: 4 };
+        to_ser.serialize(&mut ser).unwrap();
+        let mut expected = Vec::new();
+        expected.push(0x81);
+        expected.push(0xa6); expected.extend_from_slice("Struct".as_bytes());
+        expected.push(0x82);
+        // map a
+        expected.extend_from_slice(&[0xa1, 'a' as u8]);
+        expected.push(0x04);
+        // map b
+        expected.extend_from_slice(&[0xa1, 'b' as u8]);
+        expected.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
+        assert_eq!(ser.buf, expected);
+    }
+
 }

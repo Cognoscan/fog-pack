@@ -11,7 +11,7 @@ use fog_crypto::serde::FOG_TYPE_ENUM;
 use serde::ser::*;
 use std::{collections::BTreeMap, convert::TryFrom, mem};
 
-use crate::element::*;
+use crate::{MAX_DOC_SIZE, element::*};
 use crate::marker::ExtType;
 
 use crate::error::{Error, Result};
@@ -48,6 +48,16 @@ impl FogSerializer {
     }
 
     pub(crate) fn encode_element(&mut self, elem: Element) -> Result<()> {
+        let len_too_long = match &elem {
+            Element::Str(v) if v.len() > MAX_DOC_SIZE => Some(v.len()),
+            Element::Bin(v) if v.len() > MAX_DOC_SIZE => Some(v.len()),
+            Element::Array(v) if *v > MAX_DOC_SIZE => Some(*v),
+            Element::Map(v) if *v > (MAX_DOC_SIZE/2) => Some(*v),
+            _ => None
+        };
+        if let Some(len) = len_too_long {
+            return Err(Error::SerdeFail(format!("Value too large: {} elements/bytes", len)));
+        }
         self.depth_tracking.update_elem(&elem)?;
         serialize_elem(&mut self.buf, elem);
         Ok(())
@@ -391,7 +401,7 @@ impl<'a> SeqSerializer<'a> {
             })
         } else {
             se.depth_tracking
-                .update_elem(&Element::Array(u32::MAX as usize))?;
+                .update_elem(&Element::Array(MAX_DOC_SIZE))?;
             let enc = mem::replace(&mut se.buf, Vec::new());
             Ok(Self {
                 se,
@@ -408,6 +418,9 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<()> {
         if let Some((ref mut len, _)) = self.unknown_len {
             *len += 1;
+            if *len > MAX_DOC_SIZE {
+                return Err(Error::SerdeFail(format!("array too large: {} elements", len)));
+            }
         }
         value.serialize(&mut *self.se)
     }
@@ -518,7 +531,7 @@ impl<'a> MapSerializer<'a> {
             })
         } else {
             se.depth_tracking
-                .update_elem(&Element::Map((u32::MAX >> 1) as usize))?;
+                .update_elem(&Element::Map(MAX_DOC_SIZE >> 1))?;
             if se.must_be_ordered {
                 let buf = mem::replace(&mut se.buf, Vec::new());
                 Ok(MapSerializer::UnsizedOrdered {
@@ -580,6 +593,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 ..
             } => {
                 *len += 1;
+                if *len > (MAX_DOC_SIZE>>1) {
+                    return Err(Error::SerdeFail(format!("map too large: {} pairs", len)));
+                }
                 value.serialize(KeySerializer::new(new_key))?;
                 se.encode_element(Element::Str(new_key))?;
                 if let Some(last_key) = last_key {
@@ -642,6 +658,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 let key = mem::replace(pending_key, String::new());
                 if map.insert(key, buf).is_some() {
                     return Err(Error::SerdeFail(format!("map has repeated keys")));
+                }
+                if map.len() > (MAX_DOC_SIZE>>1) {
+                    return Err(Error::SerdeFail(format!("map too large: {} pairs", map.len())));
                 }
             }
         }
@@ -810,6 +829,9 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
     type Error = Error;
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+        if v.len() > MAX_DOC_SIZE {
+            return Err(Error::SerdeFail(format!("Value too large: {} bytes", v.len())));
+        }
         if !self.received {
             self.received = true;
             let elem = match self.ext {
@@ -1211,6 +1233,8 @@ impl<'a> Serializer for KeySerializer<'a> {
 
 #[cfg(test)]
 mod test {
+    use crate::MAX_DOC_SIZE;
+
     use super::*;
     use serde::Serialize;
 
@@ -1500,8 +1524,8 @@ mod test {
         let mut case = vec![0xc5, 0xff, 0xff];
         case.resize(65535 + 3, 0u8);
         test_cases.push((65535, case));
-        let mut case = vec![0xc6, 0x00, 0x00, 0x01, 0x00];
-        case.resize(65536 + 5, 0u8);
+        let mut case = vec![0xc6, 0x00, 0x00, 0x01];
+        case.resize(65536 + 4, 0u8);
         test_cases.push((65536, case));
 
         use serde_bytes::ByteBuf;
@@ -1512,6 +1536,14 @@ mod test {
             bin.serialize(&mut ser).expect("Should serialize");
             assert_eq!(ser.buf, enc);
         }
+    }
+
+    #[test]
+    fn ser_bin_too_big() {
+        let mut ser = FogSerializer::default();
+        let test_vec = vec![0u8; (1<<20)+3];
+        let bin = serde_bytes::ByteBuf::from(test_vec);
+        bin.serialize(&mut ser).expect_err("Should fail due to being too big");
     }
 
     #[test]
@@ -1528,8 +1560,8 @@ mod test {
         let mut case = vec![0xd5, 0xff, 0xff];
         case.resize(65535 + 3, 0u8);
         test_cases.push((65535, case));
-        let mut case = vec![0xd6, 0x00, 0x00, 0x01, 0x00];
-        case.resize(65536 + 5, 0u8);
+        let mut case = vec![0xd6, 0x00, 0x00, 0x01];
+        case.resize(65536 + 4, 0u8);
         test_cases.push((65536, case));
 
         for (len, enc) in test_cases {
@@ -1538,6 +1570,13 @@ mod test {
             test_vec.serialize(&mut ser).expect("Should serialize");
             assert_eq!(ser.buf, enc);
         }
+    }
+
+    #[test]
+    fn ser_str_too_big() {
+        let mut ser = FogSerializer::default();
+        let test_vec = String::from_utf8(vec![0u8; (1<<20)+3]).unwrap();
+        test_vec.serialize(&mut ser).expect_err("Should fail due to being too big");
     }
 
     #[test]
@@ -1579,6 +1618,13 @@ mod test {
         let to_ser: Vec<u8> = (0..5).collect();
         to_ser.serialize(&mut ser).expect("Should serialize");
         assert_eq!(ser.buf, vec![0x95, 0x00, 0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn ser_seq_too_big() {
+        let mut ser = FogSerializer::default();
+        let to_ser: Vec<u8> = (0..17000000).map(|x| (x & 0xff) as u8).collect();
+        to_ser.serialize(&mut ser).expect_err("Should fail because the sequence is too long");
     }
 
     #[test]
@@ -1674,6 +1720,23 @@ mod test {
 
         let expected = expected_map();
         assert_eq!(ser.buf, expected);
+    }
+
+    #[test]
+    fn ser_map_too_big() {
+        let mut ser = FogSerializer::default();
+        assert!(ser.serialize_map(Some(MAX_DOC_SIZE/2+1)).is_err(), "Map should have failed due to being too big");
+
+        let mut ser = FogSerializer::default();
+        let mut ser_map = ser.serialize_map(None).unwrap();
+        let mut err = false;
+        for x in 0..(MAX_DOC_SIZE/2+1) {
+            if ser_map.serialize_entry(&format!("{}", x), &x).is_err() {
+                err = true;
+                break;
+            }
+        }
+        assert!(err, "Should have failed while serializing such a long map");
     }
 
     #[test]

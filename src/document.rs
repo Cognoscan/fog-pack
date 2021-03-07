@@ -365,26 +365,26 @@ mod test {
 
         // Should be large enough to include the signature
         let sign_len = key.sign(&Hash::new(b"meh")).size();
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10-sign_len)]), None).unwrap();
+        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9-sign_len)]), None).unwrap();
         let signed_doc = new_doc.clone().sign(&key).unwrap();
         assert_eq!(&signed_doc.buf[..(signed_doc.buf.len()-sign_len)], &new_doc.buf[..]);
 
         // Should be just large enough
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-11)]), None).unwrap();
+        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10)]), None).unwrap();
         let mut expected = vec![0x00, 0x00];
         expected.extend_from_slice(&(MAX_DOC_SIZE-6).to_le_bytes()[..3]);
         assert_eq!(new_doc.buf[0..5], expected);
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10)]), None).unwrap();
+        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9)]), None).unwrap();
         let mut expected = vec![0x00, 0x00];
         expected.extend_from_slice(&(MAX_DOC_SIZE-5).to_le_bytes()[..3]);
         assert_eq!(new_doc.buf[0..5], expected);
         new_doc.sign(&key).unwrap_err(); // We have no space for a signature
 
         // Should fail by virtue of being too large
-        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9)]), None).unwrap_err();
         NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-8)]), None).unwrap_err();
         NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-7)]), None).unwrap_err();
         NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-6)]), None).unwrap_err();
+        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-5)]), None).unwrap_err();
     }
 
     #[test]
@@ -398,17 +398,19 @@ mod test {
 
         // Should be large enough to include the signature
         let sign_len = key.sign(&Hash::new(b"meh")).size();
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10-sign_len-hash_len)]), Some(&schema_hash)).unwrap();
+        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9-sign_len-hash_len)]), Some(&schema_hash)).unwrap();
         let signed_doc = new_doc.clone().sign(&key).unwrap();
         assert_eq!(&signed_doc.buf[..(signed_doc.buf.len()-sign_len)], &new_doc.buf[..]);
 
-        // Should be just large enough
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-11-hash_len)]), Some(&schema_hash)).unwrap();
+        // Should be 1 byte below max - check against expected format
+        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10-hash_len)]), Some(&schema_hash)).unwrap();
         let mut expected = vec![0x00, hash_len as u8];
         expected.extend_from_slice(schema_hash.as_ref());
         expected.extend_from_slice(&(MAX_DOC_SIZE-6-hash_len).to_le_bytes()[..3]);
         assert_eq!(new_doc.buf[0..(5+hash_len)], expected);
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10-hash_len)]), Some(&schema_hash)).unwrap();
+
+        // Should be at max - check against expected format
+        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9-hash_len)]), Some(&schema_hash)).unwrap();
         let mut expected = vec![0x00, hash_len as u8];
         expected.extend_from_slice(schema_hash.as_ref());
         expected.extend_from_slice(&(MAX_DOC_SIZE-5-hash_len).to_le_bytes()[..3]);
@@ -416,10 +418,10 @@ mod test {
         new_doc.sign(&key).unwrap_err(); // We have no space for a signature
 
         // Should fail by virtue of being too large
-        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9-hash_len)]), Some(&schema_hash)).unwrap_err();
         NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-8-hash_len)]), Some(&schema_hash)).unwrap_err();
         NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-7-hash_len)]), Some(&schema_hash)).unwrap_err();
         NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-6-hash_len)]), Some(&schema_hash)).unwrap_err();
+        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-5-hash_len)]), Some(&schema_hash)).unwrap_err();
     }
 
     /*

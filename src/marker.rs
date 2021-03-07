@@ -1,3 +1,5 @@
+use crate::MAX_DOC_SIZE;
+
 /// MessagePack Format Markers. For internal use only.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Marker {
@@ -11,10 +13,10 @@ pub enum Marker {
     True,
     Bin8,
     Bin16,
-    Bin32,
+    Bin24,
     Ext8,
     Ext16,
-    Ext32,
+    Ext24,
     F32,
     F64,
     UInt8,
@@ -27,13 +29,13 @@ pub enum Marker {
     Int64,
     Str8,
     Str16,
-    Str32,
+    Str24,
     Array8,
     Array16,
-    Array32,
+    Array24,
     Map8,
     Map16,
-    Map32,
+    Map24,
     NegFixInt(i8),
 }
 
@@ -51,10 +53,10 @@ impl Marker {
             0xc3 => Marker::True,
             0xc4 => Marker::Bin8,
             0xc5 => Marker::Bin16,
-            0xc6 => Marker::Bin32,
+            0xc6 => Marker::Bin24,
             0xc7 => Marker::Ext8,
             0xc8 => Marker::Ext16,
-            0xc9 => Marker::Ext32,
+            0xc9 => Marker::Ext24,
             0xca => Marker::F32,
             0xcb => Marker::F64,
             0xcc => Marker::UInt8,
@@ -67,13 +69,13 @@ impl Marker {
             0xd3 => Marker::Int64,
             0xd4 => Marker::Str8,
             0xd5 => Marker::Str16,
-            0xd6 => Marker::Str32,
+            0xd6 => Marker::Str24,
             0xd7 => Marker::Array8,
             0xd8 => Marker::Array16,
-            0xd9 => Marker::Array32,
+            0xd9 => Marker::Array24,
             0xda => Marker::Map8,
             0xdb => Marker::Map16,
-            0xdc => Marker::Map32,
+            0xdc => Marker::Map24,
             0xdd => Marker::Reserved,
             0xde => Marker::Reserved,
             0xdf => Marker::Reserved,
@@ -95,10 +97,10 @@ impl Marker {
             Marker::True => 0xc3,
             Marker::Bin8 => 0xc4,
             Marker::Bin16 => 0xc5,
-            Marker::Bin32 => 0xc6,
+            Marker::Bin24 => 0xc6,
             Marker::Ext8 => 0xc7,
             Marker::Ext16 => 0xc8,
-            Marker::Ext32 => 0xc9,
+            Marker::Ext24 => 0xc9,
             Marker::F32 => 0xca,
             Marker::F64 => 0xcb,
             Marker::UInt8 => 0xcc,
@@ -111,28 +113,28 @@ impl Marker {
             Marker::Int64 => 0xd3,
             Marker::Str8 => 0xd4,
             Marker::Str16 => 0xd5,
-            Marker::Str32 => 0xd6,
+            Marker::Str24 => 0xd6,
             Marker::Array8 => 0xd7,
             Marker::Array16 => 0xd8,
-            Marker::Array32 => 0xd9,
+            Marker::Array24 => 0xd9,
             Marker::Map8 => 0xda,
             Marker::Map16 => 0xdb,
-            Marker::Map32 => 0xdc,
+            Marker::Map24 => 0xdc,
             Marker::NegFixInt(val) => val as u8,
         }
     }
 
     pub fn encode_ext_marker(buf: &mut Vec<u8>, len: usize) {
-        assert!(len < u32::MAX as usize);
+        assert!(len <= MAX_DOC_SIZE);
         if len < u8::MAX as usize {
             buf.push(Marker::Ext8.into());
             buf.push(len as u8);
         } else if len < u16::MAX as usize {
             buf.push(Marker::Ext16.into());
-            buf.extend_from_slice(&(len as u16).to_le_bytes());
+            buf.extend_from_slice(&len.to_le_bytes()[..2]);
         } else {
-            buf.push(Marker::Ext32.into());
-            buf.extend_from_slice(&(len as u32).to_le_bytes());
+            buf.push(Marker::Ext24.into());
+            buf.extend_from_slice(&len.to_le_bytes()[..3]);
         }
     }
 }

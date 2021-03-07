@@ -288,7 +288,7 @@ impl<'a, 'de> serde::de::EnumAccess<'de> for EnumAccess<'a, 'de> {
                 self.has_value = true;
                 seed.deserialize(&mut *self.de)?
             }
-            Marker::FixStr(_) | Marker::Str8 | Marker::Str16 | Marker::Str32 => {
+            Marker::FixStr(_) | Marker::Str8 | Marker::Str16 | Marker::Str24 => {
                 self.has_value = false;
                 seed.deserialize(&mut *self.de)?
             }
@@ -775,8 +775,8 @@ mod test {
         let mut case = vec![0xc5, 0xff, 0xff];
         case.resize(65535 + 3, 0u8);
         test_cases.push((65535, case));
-        let mut case = vec![0xc6, 0x00, 0x00, 0x01, 0x00];
-        case.resize(65536 + 5, 0u8);
+        let mut case = vec![0xc6, 0x00, 0x00, 0x01];
+        case.resize(65536 + 4, 0u8);
         test_cases.push((65536, case));
 
         use serde_bytes::ByteBuf;
@@ -803,8 +803,8 @@ mod test {
         let mut case = vec![0xd5, 0xff, 0xff];
         case.resize(65535 + 3, 0u8);
         test_cases.push((65535, case));
-        let mut case = vec![0xd6, 0x00, 0x00, 0x01, 0x00];
-        case.resize(65536 + 5, 0u8);
+        let mut case = vec![0xd6, 0x00, 0x00, 0x01];
+        case.resize(65536 + 4, 0u8);
         test_cases.push((65536, case));
 
         for (len, enc) in test_cases {

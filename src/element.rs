@@ -1,6 +1,6 @@
 use std::{convert::TryFrom, fmt::Debug};
 
-use crate::{depth_tracking::DepthTracker, marker::*};
+use crate::{MAX_DOC_SIZE, depth_tracking::DepthTracker, marker::*};
 use crate::{
     error::{Error, Result},
     get_int_internal, integer, Integer, Timestamp,
@@ -143,7 +143,7 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
         },
         Str(v) => {
             let len = v.len();
-            assert!(len <= (u32::MAX as usize));
+            assert!(len <= MAX_DOC_SIZE);
             if len <= 31 {
                 buf.push(Marker::FixStr(len as u8).into());
             } else if len <= u8::MAX as usize {
@@ -151,10 +151,10 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
                 buf.push(len as u8);
             } else if len <= u16::MAX as usize {
                 buf.push(Marker::Str16.into());
-                buf.extend_from_slice(&(len as u16).to_le_bytes());
+                buf.extend_from_slice(&len.to_le_bytes()[..2]);
             } else {
-                buf.push(Marker::Str32.into());
-                buf.extend_from_slice(&(len as u32).to_le_bytes());
+                buf.push(Marker::Str24.into());
+                buf.extend_from_slice(&len.to_le_bytes()[..3]);
             }
             buf.extend_from_slice(v.as_bytes());
         }
@@ -168,21 +168,21 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
         }
         Bin(v) => {
             let len = v.len();
-            assert!(len <= (u32::MAX as usize));
+            assert!(len <= MAX_DOC_SIZE);
             if len <= u8::MAX as usize {
                 buf.push(Marker::Bin8.into());
                 buf.push(len as u8);
             } else if len <= u16::MAX as usize {
                 buf.push(Marker::Bin16.into());
-                buf.extend_from_slice(&(len as u16).to_le_bytes());
+                buf.extend_from_slice(&len.to_le_bytes()[..2]);
             } else {
-                buf.push(Marker::Bin32.into());
-                buf.extend_from_slice(&(len as u32).to_le_bytes());
+                buf.push(Marker::Bin24.into());
+                buf.extend_from_slice(&len.to_le_bytes()[..3]);
             }
             buf.extend_from_slice(v);
         }
         Array(len) => {
-            assert!(len <= (u32::MAX as usize));
+            assert!(len <= MAX_DOC_SIZE);
             // Write marker
             if len <= 15 {
                 buf.push(Marker::FixArray(len as u8).into());
@@ -191,14 +191,14 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
                 buf.push(len as u8);
             } else if len <= u16::MAX as usize {
                 buf.push(Marker::Array16.into());
-                buf.extend_from_slice(&(len as u16).to_le_bytes());
+                buf.extend_from_slice(&len.to_le_bytes()[..2]);
             } else {
-                buf.push(Marker::Array32.into());
-                buf.extend_from_slice(&(len as u32).to_le_bytes());
+                buf.push(Marker::Array24.into());
+                buf.extend_from_slice(&len.to_le_bytes()[..3]);
             }
         }
         Map(len) => {
-            assert!(len <= (u32::MAX as usize));
+            assert!(len <= MAX_DOC_SIZE/2);
             // Write marker
             if len <= 15 {
                 buf.push(Marker::FixMap(len as u8).into());
@@ -207,10 +207,10 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
                 buf.push(len as u8);
             } else if len <= u16::MAX as usize {
                 buf.push(Marker::Map16.into());
-                buf.extend_from_slice(&(len as u16).to_le_bytes());
+                buf.extend_from_slice(&len.to_le_bytes()[..2]);
             } else {
-                buf.push(Marker::Map32.into());
-                buf.extend_from_slice(&(len as u32).to_le_bytes());
+                buf.push(Marker::Map24.into());
+                buf.extend_from_slice(&len.to_le_bytes()[..3]);
             }
         }
         Timestamp(v) => {
@@ -644,24 +644,24 @@ impl<'a> Parser<'a> {
                     self.data = data;
                     Element::Bin(bytes)
                 }
-                Bin32 => {
+                Bin24 => {
                     let len =
                         self.data
-                            .read_u32::<LittleEndian>()
+                            .read_u24::<LittleEndian>()
                             .map_err(|_| Error::LengthTooShort {
-                                step: "decode Bin32 length",
+                                step: "decode Bin24 length",
                                 actual: self.data.len(),
-                                expected: 4,
+                                expected: 3,
                             })? as usize;
                     if len <= (u16::MAX as usize) {
                         return Err(Error::BadEncode(format!(
-                            "Got Bin32 with length = {}. This is not the shortest encoding.",
+                            "Got Bin24 with length = {}. This is not the shortest encoding.",
                             len
                         )));
                     }
                     if len > self.data.len() {
                         return Err(Error::LengthTooShort {
-                            step: "get Bin32 content",
+                            step: "get Bin24 content",
                             actual: self.data.len(),
                             expected: len,
                         });
@@ -758,24 +758,24 @@ impl<'a> Parser<'a> {
                         .map_err(|e| Error::BadEncode(format!("{}", e)))?;
                     Element::Str(string)
                 }
-                Str32 => {
+                Str24 => {
                     let len =
                         self.data
-                            .read_u32::<LittleEndian>()
+                            .read_u24::<LittleEndian>()
                             .map_err(|_| Error::LengthTooShort {
-                                step: "decode Str32 length",
+                                step: "decode Str24 length",
                                 actual: self.data.len(),
-                                expected: 4,
+                                expected: 3,
                             })? as usize;
                     if len <= (u16::MAX as usize) {
                         return Err(Error::BadEncode(format!(
-                            "Got Str32 with length = {}. This is not the shortest encoding.",
+                            "Got Str24 with length = {}. This is not the shortest encoding.",
                             len
                         )));
                     }
                     if len > self.data.len() {
                         return Err(Error::LengthTooShort {
-                            step: "get Str32 content",
+                            step: "get Str24 content",
                             actual: self.data.len(),
                             expected: len,
                         });
@@ -824,24 +824,24 @@ impl<'a> Parser<'a> {
                     }
                     Element::Array(len)
                 }
-                Array32 => {
+                Array24 => {
                     let len =
                         self.data
-                            .read_u32::<LittleEndian>()
+                            .read_u24::<LittleEndian>()
                             .map_err(|_| Error::LengthTooShort {
-                                step: "decode Array32 length",
+                                step: "decode Array24 length",
                                 actual: self.data.len(),
-                                expected: 4,
+                                expected: 3,
                             })? as usize;
                     if len <= u16::MAX as usize {
                         return Err(Error::BadEncode(format!(
-                        "Got Array32 marker with length = {}. This is not the shortest encoding.",
+                        "Got Array24 marker with length = {}. This is not the shortest encoding.",
                         len
                     )));
                     }
                     if len > self.data.len() {
                         return Err(Error::BadEncode(format!(
-                        "Got Array32 marker with length = {}, but there are only {} bytes left.",
+                        "Got Array24 marker with length = {}, but there are only {} bytes left.",
                         len, self.data.len()
                     )));
                     }
@@ -886,24 +886,24 @@ impl<'a> Parser<'a> {
                     }
                     Element::Map(len)
                 }
-                Map32 => {
+                Map24 => {
                     let len =
                         self.data
-                            .read_u32::<LittleEndian>()
+                            .read_u24::<LittleEndian>()
                             .map_err(|_| Error::LengthTooShort {
-                                step: "decode Map32 length",
+                                step: "decode Map24 length",
                                 actual: self.data.len(),
-                                expected: 4,
+                                expected: 3,
                             })? as usize;
                     if len <= u16::MAX as usize {
                         return Err(Error::BadEncode(format!(
-                            "Got Map32 marker with length = {}. This is not the shortest encoding.",
+                            "Got Map24 marker with length = {}. This is not the shortest encoding.",
                             len
                         )));
                     }
                     if 2 * len > self.data.len() {
                         return Err(Error::BadEncode(format!(
-                            "Got Map32 marker with length = {}, but there are only {} bytes left.",
+                            "Got Map24 marker with length = {}, but there are only {} bytes left.",
                             len,
                             self.data.len()
                         )));
@@ -935,18 +935,18 @@ impl<'a> Parser<'a> {
                     }
                     self.parse_ext(len)?
                 }
-                Ext32 => {
+                Ext24 => {
                     let len =
                         self.data
-                            .read_u32::<LittleEndian>()
+                            .read_u24::<LittleEndian>()
                             .map_err(|_| Error::LengthTooShort {
-                                step: "decode Ext32 length",
+                                step: "decode Ext24 length",
                                 actual: self.data.len(),
-                                expected: 4,
+                                expected: 3,
                             })? as usize;
                     if len <= u16::MAX as usize {
                         return Err(Error::BadEncode(format!(
-                            "Got Ext32 marker with length = {}. This is not the shortest encoding.",
+                            "Got Ext24 marker with length = {}. This is not the shortest encoding.",
                             len
                         )));
                     }
@@ -1548,9 +1548,6 @@ mod test {
         }
 
         #[test]
-        fn non_canonical() {}
-
-        #[test]
         fn not_enough_bytes() {
             // Run through the boundary cases
             let mut test_cases: Vec<Vec<u8>> = Vec::new();
@@ -1561,7 +1558,7 @@ mod test {
             let mut case = vec![0xc5, 0xff, 0xff];
             case.resize(65537, 0u8);
             test_cases.push(case);
-            let mut case = vec![0xc6, 0xff, 0xff, 0xff, 0xff];
+            let mut case = vec![0xc6, 0xff, 0xff, 0xff];
             case.resize(80000, 0u8);
             test_cases.push(case);
 
@@ -1593,8 +1590,8 @@ mod test {
             let mut case = vec![0xc5, 0xff, 0xff];
             case.resize(65535 + 3, 0u8);
             test_cases.push((65535, case));
-            let mut case = vec![0xc6, 0x00, 0x00, 0x01, 0x00];
-            case.resize(65536 + 5, 0u8);
+            let mut case = vec![0xc6, 0x00, 0x00, 0x01];
+            case.resize(65536 + 4, 0u8);
             test_cases.push((65536, case));
 
             for (index, case) in test_cases.iter().enumerate() {
@@ -1664,7 +1661,7 @@ mod test {
             let mut case = vec![0xd5, 0xff, 0xff];
             case.resize(65537, 0u8);
             test_cases.push(case);
-            let mut case = vec![0xd6, 0xff, 0xff, 0xff, 0xff];
+            let mut case = vec![0xd6, 0xff, 0xff, 0xff];
             case.resize(80000, 0u8);
             test_cases.push(case);
 
@@ -1699,8 +1696,8 @@ mod test {
             let mut case = vec![0xd5, 0xff, 0xff];
             case.resize(65535 + 3, 0u8);
             test_cases.push((65535, case));
-            let mut case = vec![0xd6, 0x00, 0x00, 0x01, 0x00];
-            case.resize(65536 + 5, 0u8);
+            let mut case = vec![0xd6, 0x00, 0x00, 0x01];
+            case.resize(65536 + 4, 0u8);
             test_cases.push((65536, case));
 
             for (index, case) in test_cases.iter().enumerate() {
@@ -1711,8 +1708,8 @@ mod test {
                 println!("String raw len is {}", test_vec.len());
                 let elem = Element::Str(&test_vec[..]);
                 let mut enc = Vec::new();
-                println!("Encoded len is {}", enc.len());
                 serialize_elem(&mut enc, elem);
+                println!("Encoded len is {}", enc.len());
                 assert_eq!(
                     enc,
                     case.1,
@@ -1747,8 +1744,8 @@ mod test {
             test_cases.push((0x0000ff, vec![0xd7, 0xff]));
             test_cases.push((0x000100, vec![0xd8, 0x00, 0x01]));
             test_cases.push((0x00ffff, vec![0xd8, 0xff, 0xff]));
-            test_cases.push((0x010000, vec![0xd9, 0x00, 0x00, 0x01, 0x00]));
-            test_cases.push((0x020000, vec![0xd9, 0x00, 0x00, 0x02, 0x00]));
+            test_cases.push((0x010000, vec![0xd9, 0x00, 0x00, 0x01]));
+            test_cases.push((0x020000, vec![0xd9, 0x00, 0x00, 0x02]));
             test_cases
         }
 
@@ -1811,12 +1808,12 @@ mod test {
             test_cases.push((0x000f, vec![0xd8, 0x0f, 0x00]));
             test_cases.push((0x0010, vec![0xd8, 0x10, 0x00]));
             test_cases.push((0x00ff, vec![0xd8, 0xff, 0x00]));
-            test_cases.push((0x000f, vec![0xd9, 0x0f, 0x00, 0x00, 0x00]));
-            test_cases.push((0x0010, vec![0xd9, 0x10, 0x00, 0x00, 0x00]));
-            test_cases.push((0x00ff, vec![0xd9, 0xff, 0x00, 0x00, 0x00]));
-            test_cases.push((0x0100, vec![0xd9, 0x00, 0x01, 0x00, 0x00]));
-            test_cases.push((0x1000, vec![0xd9, 0x00, 0x10, 0x00, 0x00]));
-            test_cases.push((0xffff, vec![0xd9, 0xff, 0xff, 0x00, 0x00]));
+            test_cases.push((0x000f, vec![0xd9, 0x0f, 0x00, 0x00]));
+            test_cases.push((0x0010, vec![0xd9, 0x10, 0x00, 0x00]));
+            test_cases.push((0x00ff, vec![0xd9, 0xff, 0x00, 0x00]));
+            test_cases.push((0x0100, vec![0xd9, 0x00, 0x01, 0x00]));
+            test_cases.push((0x1000, vec![0xd9, 0x00, 0x10, 0x00]));
+            test_cases.push((0xffff, vec![0xd9, 0xff, 0xff, 0x00]));
             for (len, enc) in test_cases.iter_mut() {
                 enc.resize(enc.len() + *len, 0xa0);
             }
@@ -1889,8 +1886,8 @@ mod test {
             test_cases.push((0x0000ff, vec![0xda, 0xff]));
             test_cases.push((0x000100, vec![0xdb, 0x00, 0x01]));
             test_cases.push((0x00ffff, vec![0xdb, 0xff, 0xff]));
-            test_cases.push((0x010000, vec![0xdc, 0x00, 0x00, 0x01, 0x00]));
-            test_cases.push((0x020000, vec![0xdc, 0x00, 0x00, 0x02, 0x00]));
+            test_cases.push((0x010000, vec![0xdc, 0x00, 0x00, 0x01]));
+            test_cases.push((0x020000, vec![0xdc, 0x00, 0x00, 0x02]));
             test_cases
         }
 
@@ -1954,12 +1951,12 @@ mod test {
             test_cases.push((0x000f, vec![0xdb, 0x0f, 0x00]));
             test_cases.push((0x0010, vec![0xdb, 0x10, 0x00]));
             test_cases.push((0x00ff, vec![0xdb, 0xff, 0x00]));
-            test_cases.push((0x000f, vec![0xdc, 0x0f, 0x00, 0x00, 0x00]));
-            test_cases.push((0x0010, vec![0xdc, 0x10, 0x00, 0x00, 0x00]));
-            test_cases.push((0x00ff, vec![0xdc, 0xff, 0x00, 0x00, 0x00]));
-            test_cases.push((0x0100, vec![0xdc, 0x00, 0x01, 0x00, 0x00]));
-            test_cases.push((0x1000, vec![0xdc, 0x00, 0x10, 0x00, 0x00]));
-            test_cases.push((0xffff, vec![0xdc, 0xff, 0xff, 0x00, 0x00]));
+            test_cases.push((0x000f, vec![0xdc, 0x0f, 0x00, 0x00]));
+            test_cases.push((0x0010, vec![0xdc, 0x10, 0x00, 0x00]));
+            test_cases.push((0x00ff, vec![0xdc, 0xff, 0x00, 0x00]));
+            test_cases.push((0x0100, vec![0xdc, 0x00, 0x01, 0x00]));
+            test_cases.push((0x1000, vec![0xdc, 0x00, 0x10, 0x00]));
+            test_cases.push((0xffff, vec![0xdc, 0xff, 0xff, 0x00]));
             for (len, enc) in test_cases.iter_mut() {
                 enc.resize(enc.len() + (*len * 2), 0xa0);
             }
@@ -2034,12 +2031,12 @@ mod test {
             let time_len = timestamp.size();
             let mut test_cases = Vec::new();
             let mut case = vec![0xc8];
-            case.extend_from_slice(&(time_len as u16).to_le_bytes());
+            case.extend_from_slice(&time_len.to_le_bytes()[..2]);
             case.push(0xff);
             timestamp.encode_vec(&mut case);
             test_cases.push(case);
             let mut case = vec![0xc9];
-            case.extend_from_slice(&(time_len as u32).to_le_bytes());
+            case.extend_from_slice(&time_len.to_le_bytes()[..3]);
             case.push(0xff);
             timestamp.encode_vec(&mut case);
             test_cases.push(case);

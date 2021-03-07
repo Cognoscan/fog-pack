@@ -29,7 +29,7 @@ fn time_is_max(v: &Timestamp) -> bool {
     *v == MAX_TIME
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct TimeValidator {
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -142,3 +142,74 @@ impl TimeValidator {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{de::FogDeserializer, ser::FogSerializer};
+
+
+    #[test]
+    fn default_ser() {
+        // Should be an empty map if we use the defaults
+        let schema = TimeValidator::default();
+        let mut ser = FogSerializer::default();
+        schema.serialize(&mut ser).unwrap();
+        let expected: Vec<u8> = vec![0x80];
+        let actual = ser.finish();
+        println!("expected: {:x?}", expected);
+        println!("actual:   {:x?}", actual);
+        assert_eq!(expected, actual);
+
+        let mut de = FogDeserializer::new(&actual);
+        let decoded = TimeValidator::deserialize(&mut de).unwrap();
+        assert_eq!(schema, decoded);
+    }
+
+    #[test]
+    fn example_ser() {
+        let schema = TimeValidator {
+            comment: "The year 2020".to_string(),
+            default: Timestamp::from_utc(1577854800, 0).unwrap(),
+            min: Timestamp::from_utc(1577854800, 0).unwrap(),
+            max: Timestamp::from_utc(1609477200, 0).unwrap(),
+            ex_min: false,
+            ex_max: true,
+            in_list: Vec::new(),
+            nin_list: Vec::new(),
+            query: true,
+            ord: true,
+        };
+        let mut ser = FogSerializer::default();
+        schema.serialize(&mut ser).unwrap();
+        let mut expected: Vec<u8> = vec![0x87];
+        serialize_elem(&mut expected, Element::Str("comment"));
+        serialize_elem(&mut expected, Element::Str("The year 2020"));
+        serialize_elem(&mut expected, Element::Str("default"));
+        serialize_elem(&mut expected, Element::Timestamp(Timestamp::from_utc(1577854800, 0).unwrap()));
+        serialize_elem(&mut expected, Element::Str("ex_max"));
+        serialize_elem(&mut expected, Element::Bool(true));
+        serialize_elem(&mut expected, Element::Str("max"));
+        serialize_elem(&mut expected, Element::Timestamp(Timestamp::from_utc(1609477200, 0).unwrap()));
+        serialize_elem(&mut expected, Element::Str("min"));
+        serialize_elem(&mut expected, Element::Timestamp(Timestamp::from_utc(1577854800, 0).unwrap()));
+        serialize_elem(&mut expected, Element::Str("ord"));
+        serialize_elem(&mut expected, Element::Bool(true));
+        serialize_elem(&mut expected, Element::Str("query"));
+        serialize_elem(&mut expected, Element::Bool(true));
+        let actual = ser.finish();
+        println!("expected: {:x?}", expected);
+        println!("actual:   {:x?}", actual);
+        assert_eq!(expected, actual);
+
+        let mut de = FogDeserializer::with_debug(&actual, "    ".to_string());
+        match TimeValidator::deserialize(&mut de) {
+            Ok(decoded) => assert_eq!(schema, decoded),
+            Err(e) => {
+                println!("{}", de.get_debug().unwrap());
+                println!("Error: {}", e);
+                panic!("Couldn't decode");
+            }
+        }
+    }
+
+}

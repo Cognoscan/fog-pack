@@ -20,9 +20,9 @@ pub enum Error {
     /// Occurs when serde serialization or deserialization fails
     SerdeFail(String),
     /// Occurs when the header (compression marker and optional schema) failed to parse correctly.
-    BadHeader,
+    BadHeader(String),
     /// Occurs when zstd compression fails, possibly due to a dictionary not being present in a
-    /// schema, a checksum failing, or and of the other zstd failure modes.
+    /// schema, a checksum failing, or any of the other zstd failure modes.
     FailDecompress(String),
     /// Document/Entry/Query was greater than maximum allowed size on decode
     LengthTooLong { max: usize, actual: usize },
@@ -71,7 +71,7 @@ impl fmt::Display for Error {
                 ),
             },
             Error::SerdeFail(ref msg) => f.write_str(msg),
-            Error::BadHeader => f.write_str("Data has bad header format"),
+            Error::BadHeader(ref err) => write!(f, "Data has bad header format: {}", err),
             Error::FailDecompress(ref err) => write!(f, "Failed decompression step: {}", err),
             Error::LengthTooLong { max, actual } => write!(
                 f,

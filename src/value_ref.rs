@@ -3,7 +3,7 @@ use crate::value::Value;
 use std::ops::Index;
 use std::{collections::BTreeMap, fmt::Debug};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ValueRef<'a> {
     Null,
     Bool(bool),
@@ -353,6 +353,34 @@ impl<'a> Index<&str> for ValueRef<'a> {
 
     fn index(&self, index: &str) -> &Self::Output {
         self.as_map().and_then(|v| v.get(index)).unwrap_or(&NULL_REF)
+    }
+}
+
+impl<'a> PartialEq<Value> for ValueRef<'a> {
+    fn eq(&self, other: &Value) -> bool {
+        use std::ops::Deref;
+        match self {
+            ValueRef::Null => other == &Value::Null,
+            ValueRef::Bool(s) => if let Value::Bool(o) = other { s == o } else { false },
+            ValueRef::Int(s) => if let Value::Int(o) = other { s == o } else { false },
+            ValueRef::Str(s) => if let Value::Str(o) = other { s == o } else { false },
+            ValueRef::F32(s) => if let Value::F32(o) = other { s == o } else { false },
+            ValueRef::F64(s) => if let Value::F64(o) = other { s == o } else { false },
+            ValueRef::Bin(s) => if let Value::Bin(o) = other { s == o } else { false },
+            ValueRef::Array(s) => if let Value::Array(o) = other { s == o } else { false },
+            ValueRef::Map(s) => if let Value::Map(o) = other {
+                s.len() == o.len() && s.iter().zip(o).all(|((ks,vs),(ko,vo))| (ks==ko) && (vs==vo))
+            } else { false },
+            ValueRef::Hash(s) => if let Value::Hash(o) = other { s == o } else { false },
+            ValueRef::Identity(s) => if let Value::Identity(o) = other { s == o } else { false },
+            ValueRef::StreamId(s) => if let Value::StreamId(o) = other { s == o } else { false },
+            ValueRef::LockId(s) => if let Value::LockId(o) = other { s == o } else { false },
+            ValueRef::Timestamp(s) => if let Value::Timestamp(o) = other { s == o } else { false },
+            ValueRef::DataLockbox(s) => if let Value::DataLockbox(o) = other { s == &o.deref() } else { false },
+            ValueRef::IdentityLockbox(s) => if let Value::IdentityLockbox(o) = other { s == &o.deref() } else { false },
+            ValueRef::StreamLockbox(s) => if let Value::StreamLockbox(o) = other { s == &o.deref() } else { false },
+            ValueRef::LockLockbox(s) => if let Value::LockLockbox(o) = other { s == &o.deref() } else { false },
+        }
     }
 }
 

@@ -16,7 +16,7 @@ fn is_nan(v: &f32) -> bool {
     v.is_nan()
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct F32Validator {
     #[serde(skip_serializing_if = "String::is_empty")]

@@ -25,7 +25,7 @@ fn usize_is_max(v: &usize) -> bool {
     *v == usize::MAX
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct BinValidator {
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -45,9 +45,9 @@ pub struct BinValidator {
     #[serde(skip_serializing_if = "bytes_empty")]
     pub min: ByteBuf,
     #[serde(skip_serializing_if = "usize_is_max")]
-    max_len: usize,
+    pub max_len: usize,
     #[serde(skip_serializing_if = "usize_is_zero")]
-    min_len: usize,
+    pub min_len: usize,
     #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
     pub in_list: Vec<ByteBuf>,
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]

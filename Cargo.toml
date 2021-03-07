@@ -20,7 +20,7 @@ byteorder = "1"
 num-traits = "0.2"
 regex = "1"
 ieee754 = "0.2.6"
-zstd-safe = "2.0"
+zstd-safe = "3.0"
 bytecount = "0.6.0"
 unicode-normalization = "0.1.12"
 serde = { version = "1.0", features = ["derive"] }

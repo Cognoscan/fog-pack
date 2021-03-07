@@ -5,7 +5,7 @@ use std::ops;
 
 use num_traits::NumCast;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum IntPriv {
     /// Always non-less than zero.
     PosInt(u64),
@@ -16,7 +16,7 @@ pub(crate) enum IntPriv {
 /// Represents a fog-pack integer, whether signed or unsigned.
 ///
 /// A `Value` or `ValueRef` that contains integer can be constructed using `From` trait.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Integer {
     n: IntPriv,
 }

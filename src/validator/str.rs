@@ -27,42 +27,65 @@ fn normalize_is_none(v: &Normalize) -> bool {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Normalize {
     None,
     NFC,
     NFKC,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct StrValidator {
     #[serde(skip_serializing_if = "String::is_empty")]
-    comment: String,
+    pub comment: String,
     #[serde(skip_serializing_if = "String::is_empty")]
-    default: String,
+    pub default: String,
     #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
-    in_list: Vec<String>,
+    pub in_list: Vec<String>,
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
-    nin_list: Vec<String>,
+    pub nin_list: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none", with = "serde_regex")]
-    matches: Option<Regex>,
+    pub matches: Option<Regex>,
     #[serde(skip_serializing_if = "usize_is_max")]
-    max_len: usize,
+    pub max_len: usize,
     #[serde(skip_serializing_if = "usize_is_zero")]
-    min_len: usize,
+    pub min_len: usize,
     #[serde(skip_serializing_if = "usize_is_max")]
-    max_char: usize,
+    pub max_char: usize,
     #[serde(skip_serializing_if = "usize_is_zero")]
-    min_char: usize,
+    pub min_char: usize,
     #[serde(skip_serializing_if = "normalize_is_none")]
-    normalize: Normalize,
+    pub normalize: Normalize,
     #[serde(skip_serializing_if = "is_false")]
-    query: bool,
+    pub query: bool,
     #[serde(skip_serializing_if = "is_false")]
-    regex: bool,
+    pub regex: bool,
     #[serde(skip_serializing_if = "is_false")]
-    size: bool,
+    pub size: bool,
+}
+
+impl PartialEq for StrValidator {
+    fn eq(&self, rhs: &Self) -> bool {
+        (self.comment == rhs.comment)
+            && (self.default == rhs.default)
+            && (self.in_list == rhs.in_list)
+            && (self.nin_list == rhs.nin_list)
+            && (self.max_len == rhs.max_len)
+            && (self.min_len == rhs.min_len)
+            && (self.max_char == rhs.max_char)
+            && (self.min_char == rhs.min_char)
+            && (self.normalize == rhs.normalize)
+            && (self.query == rhs.query)
+            && (self.regex == rhs.regex)
+            && (self.size == rhs.size)
+            && match (&self.matches, &rhs.matches) {
+                (None, None) => true,
+                (Some(_), None) => false,
+                (None, Some(_)) => false,
+                (Some(lhs), Some(rhs)) => lhs.as_str() == rhs.as_str(),
+            }
+    }
 }
 
 impl std::default::Default for StrValidator {
@@ -212,34 +235,6 @@ impl StrValidator {
             Validator::Any => true,
             _ => false,
         }
-    }
-}
-
-pub(super) mod serde_regex {
-    use super::*;
-    use serde::{Serializer, Deserializer};
-
-    pub(super) fn serialize<S: Serializer>(value: &Option<Regex>, serializer: S) -> Result<S::Ok, S::Error> {
-        match value {
-            None => {
-                serializer.serialize_none() // This should never actually happen, it should be skipped
-            },
-            Some(regex) => {
-                serializer.serialize_str(regex.as_str())
-            },
-        }
-    }
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Regex>, D::Error>
-        where D: Deserializer<'de>
-    {
-        use serde::de::Error;
-        // Note that this will not accept a null value - it *must* be a string, even though this is 
-        // ends up as an Option. This is because we chose to have validators where the field is 
-        // either defined, or it is absent.
-        let regex: String = String::deserialize(deserializer)?;
-        let regex = Regex::new(&regex).map_err(|e| D::Error::custom(e.to_string()))?;
-        Ok(Some(regex))
     }
 }
 

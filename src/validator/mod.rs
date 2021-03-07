@@ -1,10 +1,19 @@
+mod serde_regex;
 mod bool;
 mod float32;
 mod float64;
 mod integer;
 mod str;
 mod bin;
+mod array;
+mod map;
 mod time;
+mod hash;
+mod identity;
+mod stream_id;
+mod lock_id;
+mod lockbox;
+mod checklist;
 
 pub use self::bool::*;
 pub use self::float32::*;
@@ -12,11 +21,22 @@ pub use self::float64::*;
 pub use self::integer::*;
 pub use self::str::*;
 pub use self::bin::*;
+pub use self::array::*;
+pub use self::map::*;
 pub use self::time::*;
-use std::collections::BTreeMap;
+pub use self::hash::*;
+pub use self::identity::*;
+pub use self::stream_id::*;
+pub use self::lock_id::*;
+pub use self::lockbox::*;
+pub use self::checklist::*;
 use crate::error::{Error, Result};
 use crate::element::*;
 
+use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Validator {
     Null,
     Bool(BoolValidator),
@@ -25,15 +45,17 @@ pub enum Validator {
     F64(F64Validator),
     Bin(BinValidator),
     Str(StrValidator),
+    Array(ArrayValidator),
+    Map(MapValidator),
     Time(TimeValidator),
-    Hash,
-    Identity,
-    StreamId,
-    LockId,
-    DataLockbox,
-    IdentityLockbox,
-    StreamLockbox,
-    LockLockbox,
+    Hash(HashValidator),
+    Identity(IdentityValidator),
+    StreamId(StreamIdValidator),
+    LockId(LockIdValidator),
+    DataLockbox(DataLockboxValidator),
+    IdentityLockbox(IdentityLockboxValidator),
+    StreamLockbox(StreamLockboxValidator),
+    LockLockbox(LockLockboxValidator),
     Ref(String),
     Multi(Vec<Validator>),
     Enum(BTreeMap<String, Option<Validator>>),
@@ -44,70 +66,108 @@ pub struct ValidatorContext<'c> {
     types: &'c BTreeMap<String, Validator>
 }
 
+impl<'c> ValidatorContext<'c> {
+    pub fn new(types: &'c BTreeMap<String, Validator>) -> Self {
+        Self { types }
+    }
+}
+
 impl Validator {
-    pub fn validate<'a>(
-        &self,
-        context: &ValidatorContext,
-        mut parser: Parser<'a>
-    ) -> Result<Parser<'a>> {
+    pub fn validate<'de, 'c>(
+        &'c self,
+        context: &'c ValidatorContext,
+        mut parser: Parser<'de>,
+        mut checklist: Checklist<'c>
+    ) -> Result<(Parser<'de>, Checklist<'c>)> {
         match self {
             Validator::Null => {
                 let elem = parser
                     .next()
                     .ok_or(Error::FailValidate("expected null".to_string()))??;
-                if let Element::Null = elem { Ok(parser) }
+                if let Element::Null = elem { Ok((parser, checklist)) }
                 else {
                     Err(Error::FailValidate("expected null".to_string()))
                 }
             },
             Validator::Bool(validator) => {
                 validator.validate(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
             },
             Validator::Int(validator) => {
                 validator.validate(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
             },
             Validator::F32(validator) => {
                 validator.validate(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
             },
             Validator::F64(validator) => {
                 validator.validate(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
             },
             Validator::Bin(validator) => {
                 validator.validate(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
             },
             Validator::Str(validator) => {
                 validator.validate(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
+            },
+            Validator::Array(validator) => {
+                validator.validate(context, parser, checklist)
+            },
+            Validator::Map(validator) => {
+                validator.validate(context, parser, checklist)
             },
             Validator::Time(validator) => {
                 validator.validate(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
             },
-            Validator::Hash => Ok(parser),
-            Validator::Identity => Ok(parser),
-            Validator::StreamId => Ok(parser),
-            Validator::LockId => Ok(parser),
-            Validator::DataLockbox => Ok(parser),
-            Validator::IdentityLockbox => Ok(parser),
-            Validator::StreamLockbox => Ok(parser),
-            Validator::LockLockbox => Ok(parser),
+            Validator::Hash(validator) => {
+                validator.validate(&mut parser, &mut checklist)?;
+                Ok((parser, checklist))
+            },
+            Validator::Identity(validator) => {
+                validator.validate(&mut parser)?;
+                Ok((parser, checklist))
+            },
+            Validator::StreamId(validator) => {
+                validator.validate(&mut parser)?;
+                Ok((parser, checklist))
+            },
+            Validator::LockId(validator) => {
+                validator.validate(&mut parser)?;
+                Ok((parser, checklist))
+            },
+            Validator::DataLockbox(validator) => {
+                validator.validate(&mut parser)?;
+                Ok((parser, checklist))
+            },
+            Validator::IdentityLockbox(validator) => {
+                validator.validate(&mut parser)?;
+                Ok((parser, checklist))
+            },
+            Validator::StreamLockbox(validator) => {
+                validator.validate(&mut parser)?;
+                Ok((parser, checklist))
+            },
+            Validator::LockLockbox(validator) => {
+                validator.validate(&mut parser)?;
+                Ok((parser, checklist))
+            },
             Validator::Ref(ref_name) => {
                 let validator = context.types.get(ref_name)
                     .ok_or(Error::FailValidate(format!("validator Ref({}) not in list of types", ref_name)))?;
-                validator.validate(context, parser)
+                validator.validate(context, parser, checklist)
             },
             Validator::Multi(multi) => {
                 for validator in multi.iter() {
                     // We clone the parser each time because the validator modifies its state while 
                     // processing. On a pass, we return the parser state that passed
                     let new_parser = parser.clone();
-                    if let Ok(new_parser) = validator.validate(context, new_parser) {
-                        return Ok(new_parser);
+                    let new_checklist = checklist.clone();
+                    if let Ok(new_result) = validator.validate(context, new_parser, new_checklist) {
+                        return Ok(new_result);
                     }
                 }
                 Err(Error::FailValidate("validator Multi had no passing validators".to_string()))
@@ -133,15 +193,15 @@ impl Validator {
                 let validator = enum_map.get(key)
                     .ok_or(Error::FailValidate(format!("{} is not in enum list", key)))?;
                 match (validator, has_value) {
-                    (None, false) => Ok(parser),
+                    (None, false) => Ok((parser, checklist)),
                     (None, true) => Err(Error::FailValidate(format!("enum {} shouldn't have any associated value", key))),
                     (Some(_), false) => Err(Error::FailValidate(format!("enum {} should have an associated value", key))),
-                    (Some(validator), true) => validator.validate(context, parser),
+                    (Some(validator), true) => validator.validate(context, parser, checklist),
                 }
             },
             Validator::Any => {
                 read_any(&mut parser)?;
-                Ok(parser)
+                Ok((parser, checklist))
             },
         }
     }
@@ -166,14 +226,16 @@ impl Validator {
             Validator::Bin(validator) => validator.query_check(other),
             Validator::Str(validator) => validator.query_check(other),
             Validator::Time(validator) => validator.query_check(other),
-            Validator::Hash => false,
-            Validator::Identity => false,
-            Validator::StreamId => false,
-            Validator::LockId => false,
-            Validator::DataLockbox => false,
-            Validator::IdentityLockbox => false,
-            Validator::StreamLockbox => false,
-            Validator::LockLockbox => false,
+            Validator::Array(validator) => validator.query_check(context, other),
+            Validator::Map(validator) => validator.query_check(context, other),
+            Validator::Hash(validator) => validator.query_check(other),
+            Validator::Identity(validator) => validator.query_check(other),
+            Validator::StreamId(validator) => validator.query_check(other),
+            Validator::LockId(validator) => validator.query_check(other),
+            Validator::DataLockbox(validator) => validator.query_check(other),
+            Validator::IdentityLockbox(validator) => validator.query_check(other),
+            Validator::StreamLockbox(validator) => validator.query_check(other),
+            Validator::LockLockbox(validator) => validator.query_check(other),
             Validator::Ref(ref_name) => {
                 match context.types.get(ref_name) {
                     None => false,

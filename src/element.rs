@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::{convert::TryFrom, fmt::Debug};
 
 use crate::{depth_tracking::DepthTracker, marker::*};
 use crate::{
@@ -266,24 +266,202 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum TrackType {
+    FirstArray(usize),
+    FirstMap(usize),
+    Array(usize),
+    Map(usize),
+}
+
+#[derive(Clone, Debug)]
+struct DebugFormatter {
+    debug: String,
+    tracker: Vec<TrackType>,
+    indent: String,
+}
+
+impl DebugFormatter {
+    fn new(indent: String) -> Self {
+        Self {
+            debug: String::new(),
+            tracker: Vec::new(),
+            indent,
+        }
+    }
+
+    fn get_str(&self) -> &str {
+        &self.debug
+    }
+
+    fn indent(&mut self) {
+        for _ in 0..self.tracker.len() { self.debug.push_str(&self.indent) }
+    }
+
+    fn update(&mut self, elem: &Element) {
+        use std::fmt::Write;
+
+        self.indent();
+        match elem {
+            Element::Null => self.debug.push_str("null"),
+            Element::Bool(v) => self.debug.push_str(if *v { "true" } else { "false" }),
+            Element::Int(v) => write!(self.debug, "{}", v).unwrap(),
+            Element::Str(v) => write!(self.debug, "\"{}\"", v.escape_debug()).unwrap(),
+            Element::F32(v) => write!(self.debug, "{}", v).unwrap(),
+            Element::F64(v) => write!(self.debug, "{}", v).unwrap(),
+            Element::Bin(v) => {
+                self.debug.push('"');
+                for byte in *v {
+                    write!(self.debug, "{:X}", byte).unwrap();
+                }
+                self.debug.push('"');
+            },
+            Element::Array(v) => {
+                self.tracker.push(TrackType::FirstArray(*v));
+                self.debug.push('[');
+            },
+            Element::Map(v) => {
+                self.tracker.push(TrackType::FirstMap(*v * 2));
+                self.debug.push('{');
+            },
+            Element::Timestamp(v) => write!(self.debug, "\"{}\"", v).unwrap(),
+            Element::Hash(v) => write!(self.debug, "\"{}\"", v).unwrap(),
+            Element::Identity(v) => write!(self.debug, "\"{}\"", v).unwrap(),
+            Element::LockId(v) => write!(self.debug, "\"{}\"", v).unwrap(),
+            Element::StreamId(v) => write!(self.debug, "\"{}\"", v).unwrap(),
+            Element::DataLockbox(v) => write!(self.debug, "\"<DataLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
+            Element::IdentityLockbox(v) => write!(self.debug, "\"<IdentityLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
+            Element::StreamLockbox(v) => write!(self.debug, "\"<StreamLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
+            Element::LockLockbox(v) => write!(self.debug, "\"<LockLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
+        }
+
+        while let Some(track) = self.tracker.pop() {
+            match track {
+                TrackType::FirstArray(size) => {
+                    if size == 0 {
+                        self.debug.push_str(" ]");
+                    }
+                    else if size == 1 {
+                        self.debug.push(' ');
+                        self.tracker.push(TrackType::FirstArray(size-1));
+                        break;
+                    }
+                    else {
+                        self.debug.push('\n');
+                        self.tracker.push(TrackType::Array(size-1));
+                        break;
+                    }
+                },
+                TrackType::Array(size) => {
+                    if size == 0 {
+                        self.debug.push('\n');
+                        self.indent();
+                        self.debug.push(']');
+                    }
+                    else {
+                        self.debug.push_str(",\n");
+                        self.tracker.push(TrackType::Array(size-1));
+                        break;
+                    }
+                },
+                TrackType::FirstMap(size) => {
+                    if size == 0 {
+                        self.debug.push_str(" }");
+                    }
+                    else if size == 1 {
+                        self.debug.push_str(": ");
+                        self.tracker.push(TrackType::FirstMap(size-1));
+                        break;
+                    }
+                    else if size == 2 {
+                        self.debug.push(' ');
+                        self.tracker.push(TrackType::FirstMap(size-1));
+                        break;
+                    }
+                    else {
+                        self.debug.push('\n');
+                        self.tracker.push(TrackType::Map(size-1));
+                        break;
+                    }
+                },
+                TrackType::Map(size) => {
+                    if size == 0 {
+                        self.debug.push('\n');
+                        self.indent();
+                        self.debug.push('}');
+                    }
+                    else if (size & 0x1) == 1 {
+                        self.debug.push_str(": ");
+                        self.tracker.push(TrackType::Map(size-1));
+                        break;
+                    }
+                    else {
+                        self.debug.push_str(",\n");
+                        self.tracker.push(TrackType::Map(size-1));
+                        break;
+                    }
+                },
+            }
+        }
+    }
+}
+
+/// Fog-pack element parser. Return individual elements of a fog-pack sequence, and checks for 
+/// nesting depth limits.
+///
+/// Users of the parser *must* verify that map keys are strings, and that they are in lexicographic 
+/// order.
 #[derive(Clone, Debug)]
 pub struct Parser<'a> {
+    debug: Option<DebugFormatter>,
     data: &'a [u8],
     depth_tracking: DepthTracker,
     errored: bool,
 }
 
 impl<'a> Parser<'a> {
+    /// Turn a byte slice into a new parser.
     pub fn new(data: &'a [u8]) -> Parser<'a> {
         Self {
+            debug: None,
             data,
             depth_tracking: DepthTracker::new(),
             errored: false,
         }
     }
 
+    /// Turn a byte slice into a new parser, with a debugging pretty-printer that will run as 
+    /// elements are parsed.
+    pub fn with_debug(data: &'a [u8], indent: String) -> Parser<'a> {
+        Self {
+            debug: Some(DebugFormatter::new(indent)),
+            data,
+            depth_tracking: DepthTracker::new(),
+            errored: false,
+        }
+    }
+
+    /// Look at what the next marker byte to be parsed will be.
     pub fn peek_marker(&self) -> Option<Marker> {
         self.data.first().and_then(|n| Some(Marker::from_u8(*n)))
+    }
+
+    /// Call when parsing is expected to be complete. Fails if there are any bytes left inside the 
+    /// parser.
+    pub fn finish(self) -> Result<()> {
+        if self.data.is_empty() {
+            Ok(())
+        }
+        else {
+            Err(Error::BadEncode(format!("Parsing still had {} bytes left", self.data.len())))
+        }
+    }
+
+    pub fn get_debug(&self) -> Option<&str> {
+        match self.debug {
+            None => None,
+            Some(ref dbg) => Some(dbg.get_str()),
+        }
     }
 
     // Given a retrieved marker, try to turn it into the next element, which may move through the
@@ -775,6 +953,7 @@ impl<'a> Parser<'a> {
                     self.parse_ext(len)?
                 }
             };
+        if let Some(ref mut debug) = self.debug { debug.update(&elem); }
         self.depth_tracking.update_elem(&elem)?;
         Ok(elem)
     }
@@ -815,6 +994,7 @@ impl<'a> Parser<'a> {
             ExtType::LockLockbox => Element::LockLockbox(LockLockboxRef::from_bytes(bytes)?),
         })
     }
+
 }
 
 impl<'a> std::iter::Iterator for Parser<'a> {

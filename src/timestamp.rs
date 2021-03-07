@@ -14,14 +14,14 @@ use serde::{
     de::{Deserialize, Deserializer, EnumAccess, Error, Unexpected, VariantAccess},
     ser::{Serialize, SerializeStructVariant, Serializer},
 };
-use serde_bytes::{ByteBuf, Bytes};
+use serde_bytes::ByteBuf;
 
 const MAX_NANOSEC: u32 = 1_999_999_999;
 
 /// Structure for holding a raw fog-pack timestamp.
 /// This stores time in some consistent internal format, which may or may not be UTC. UTC time
 /// can always be extracted from it.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Timestamp {
     sec: i64,
     nano: u32,
@@ -375,7 +375,7 @@ impl<'de> Deserialize<'de> for Timestamp {
                     }
                     variant.struct_variant(&["std", "secs", "nanos"], TimeStructVisitor)
                 } else {
-                    let bytes: &Bytes = variant.newtype_variant()?;
+                    let bytes: ByteBuf = variant.newtype_variant()?;
                     Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))
                 }
             }

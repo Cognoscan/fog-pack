@@ -11,13 +11,13 @@
         "doc": { "Ref": "Validator" },
         "entries": {
           "Map": {
-            "field_type": { "Ref": "Validator" }
+            "values": { "Ref": "Validator" }
           }
         },
         "entries_compress": { "Ref": "Compress" },
         "types": {
           "Map": {
-            "field_type": { "Ref": "Validator" }
+            "values": { "Ref": "Validator" }
           }
         }
       }
@@ -29,13 +29,14 @@
         "None": null,
         "General": {
           "Map": {
-            "algorithm": { "Int": { "min": 0, "max": 31 } },
+            "algorithm": { "Int": { "min": 0 } },
             "level": { "Int": { "min": 0, "max": 255 } }
           }
         },
         "Dict": {
           "Map": {
-            "algorithm": { "Int": { "min": 0, "max": 31 } },
+            "algorithm": { "Int": { "min": 0 } },
+            "level": { "Int": { "min": 0, "max": 255 } },
             "dict": { "Bin": {} }
           }
         }
@@ -46,11 +47,12 @@
         "Null": null,
         "Bool": {
           "Map": {
+            "comment": "The Boolean type validator",
             "opt": {
               "comment": { "Str": {} },
               "default": { "Bool": {} },
-              "in": { "Array": { "item_type": { "Bool": {} } } },
-              "nin": { "Array": { "item_type": { "Bool": {} } } },
+              "in": { "Array": { "items": { "Bool": {} } } },
+              "nin": { "Array": { "items": { "Bool": {} } } },
               "query": { "Bool": {} }
             }
           }
@@ -67,8 +69,8 @@
               "min": { "Int": {} },
               "ex_max": { "Bool": {} },
               "ex_min": { "Bool": {} },
-              "in": { "Array": { "item_type": { "Int": {} } } },
-              "nin": { "Array": { "item_type": { "Int": {} } } },
+              "in": { "Array": { "items": { "Int": {} } } },
+              "nin": { "Array": { "items": { "Int": {} } } },
               "query": { "Bool": {} },
               "bit": { "Bool": {} },
               "ord": { "Bool": {} }
@@ -81,8 +83,8 @@
             "opt": {
               "comment": { "Str": {} },
               "default": { "Str": {} },
-              "in": { "Array": { "item_type": { "Str": {} } } },
-              "nin": { "Array": { "item_type": { "Str": {} } } },
+              "in": { "Array": { "items": { "Str": {} } } },
+              "nin": { "Array": { "items": { "Str": {} } } },
               "matches": { "Str": {} },
               "max_len": { "Int": { "min": 0 } },
               "min_len": { "Int": { "min": 0 } },
@@ -111,8 +113,8 @@
               "min": { "F32": { } },
               "ex_max": { "Bool": {} },
               "ex_min": { "Bool": {} },
-              "in": { "Array": { "item_type": { "F32": {} } } },
-              "nin": { "Array": { "item_type": { "F32": {} } } },
+              "in": { "Array": { "items": { "F32": {} } } },
+              "nin": { "Array": { "items": { "F32": {} } } },
               "query": { "Bool": {} },
               "ord": { "Bool": {} }
             }
@@ -128,8 +130,8 @@
               "min": { "F64": { } },
               "ex_max": { "Bool": {} },
               "ex_min": { "Bool": {} },
-              "in": { "Array": { "item_type": { "F64": {} } } },
-              "nin": { "Array": { "item_type": { "F64": {} } } },
+              "in": { "Array": { "items": { "F64": {} } } },
+              "nin": { "Array": { "items": { "F64": {} } } },
               "query": { "Bool": {} },
               "ord": { "Bool": {} }
             }
@@ -149,8 +151,8 @@
               "min": { "Bin": {} },
               "max_len": { "Int": { "min": 0 } },
               "min_len": { "Int": { "min": 0 } },
-              "in": { "Array": { "item_type": { "Bin": {} } } },
-              "nin": { "Array": { "item_type": { "Bin": {} } } },
+              "in": { "Array": { "items": { "Bin": {} } } },
+              "nin": { "Array": { "items": { "Bin": {} } } },
               "query": { "Bool": {} },
               "bit": { "Bool": {} },
               "ord": { "Bool": {} },
@@ -164,13 +166,13 @@
             "opt": {
               "comment": { "Str": {} },
               "default": { "Array": {} },
-              "contains": { "Array": { "item_type": { "Ref": "Validator" } } },
-              "item_type": { "Ref": "Validator" },
-              "items": { "Array": { "item_type": { "Ref": "Validator" } } },
+              "contains": { "Array": { "items": { "Ref": "Validator" } } },
+              "items": { "Ref": "Validator" },
+              "prefix": { "Array": { "items": { "Ref": "Validator" } } },
               "max_len": { "Int": { "min": 0 } },
               "min_len": { "Int": { "min": 0 } },
-              "in": { "Array": { "item_type": { "Array": {} } } },
-              "nin": { "Array": { "item_type": { "Array": {} } } },
+              "in": { "Array": { "items": { "Array": {} } } },
+              "nin": { "Array": { "items": { "Array": {} } } },
               "unique": { "Bool": {} },
               "query": { "Bool": {} },
               "array": { "Bool": {} },
@@ -185,22 +187,39 @@
             "comment": "The Map type validator",
             "opt": {
               "comment": { "Str": {} },
-              "default": { "Map": { "field_type": "Any" } },
-              "max_fields": { "Int": { "min": 0 } },
-              "min_fields": { "Int": { "min": 0 } },
-              "field_type": { "Ref": "Validator" },
-              "req": { "Map": { "field_type": { "Ref": "Validator" } } },
-              "opt": { "Map": { "field_type": { "Ref": "Validator" } } },
-              "ban": { "Array": { "item_type": { "Str": {} } } },
+              "default": { "Map": { "values": "Any" } },
+              "max_len": { "Int": { "min": 0 } },
+              "min_len": { "Int": { "min": 0 } },
+              "keys": { "Map": {
+                "comment": "Allowed key strings",
+                "opt": {
+                  "matches": { "Str": {} },
+                  "max_len": { "Int": { "min": 0 } },
+                  "min_len": { "Int": { "min": 0 } },
+                  "normalize": {
+                    "Enum": {
+                      "None": null,
+                      "NFC": null,
+                      "NFKC": null
+                    }
+                  }
+                }
+              },
+              "values": { "Ref": "Validator" },
+              "req": { "Map": { "values": { "Ref": "Validator" } } },
+              "opt": { "Map": { "values": { "Ref": "Validator" } } },
+              "ban": { "Array": { "items": { "Str": {} } } },
               "in": {
-                "Array": { "item_type": { "Map": { "field_type": "Any" } } }
+                "Array": { "items": { "Map": { "values": "Any" } } }
               },
               "nin": {
-                "Array": { "item_type": { "Map": { "field_type": "Any" } } }
+                "Array": { "items": { "Map": { "values": "Any" } } }
               },
               "query": { "Bool": {} },
               "size": { "Bool": {} },
-              "map_ok": { "Bool": {} }
+              "map_ok": { "Bool": {} },
+              "match_keys": { "Bool": {} },
+              "len_keys": { "Bool": {} }
             }
           }
         },
@@ -214,8 +233,8 @@
               "min": { "Time": {} },
               "ex_max": { "Bool": {} },
               "ex_min": { "Bool": {} },
-              "in": { "Array": { "item_type": { "Time": {} } } },
-              "nin": { "Array": { "item_type": { "Time": {} } } },
+              "in": { "Array": { "items": { "Time": {} } } },
+              "nin": { "Array": { "items": { "Time": {} } } },
               "query": { "Bool": {} },
               "ord": { "Bool": {} }
             }
@@ -228,9 +247,9 @@
               "comment": { "Str": {} },
               "default": { "Hash": {} },
               "link": { "Ref": "Validator" },
-              "schema": { "Array": { "item_type": { "Hash": {} } } },
-              "in": { "Array": { "item_type": { "Hash": {} } } },
-              "nin": { "Array": { "item_type": { "Hash": {} } } },
+              "schema": { "Array": { "items": { "Multi": [ { "Hash": {}}, "Null" ] } } },
+              "in": { "Array": { "items": { "Hash": {} } } },
+              "nin": { "Array": { "items": { "Hash": {} } } },
               "query": { "Bool": {} },
               "link_ok": { "Bool": {} },
               "schema_ok": { "Bool": {} }
@@ -242,9 +261,8 @@
             "comment": "The Identity type validator",
             "opt": {
               "comment": { "Str": {} },
-              "default": { "Identity": {} },
-              "in": { "Array": { "item_type": { "Identity": {} } } },
-              "nin": { "Array": { "item_type": { "Identity": {} } } },
+              "in": { "Array": { "items": { "Identity": {} } } },
+              "nin": { "Array": { "items": { "Identity": {} } } },
               "query": { "Bool": {} }
             }
           }
@@ -254,9 +272,8 @@
             "comment": "The StreamId type validator",
             "opt": {
               "comment": { "Str": {} },
-              "default": { "Identity": {} },
-              "in": { "Array": { "item_type": { "StreamId": {} } } },
-              "nin": { "Array": { "item_type": { "StreamId": {} } } },
+              "in": { "Array": { "items": { "StreamId": {} } } },
+              "nin": { "Array": { "items": { "StreamId": {} } } },
               "query": { "Bool": {} }
             }
           }
@@ -266,9 +283,8 @@
             "comment": "The LockId type validator",
             "opt": {
               "comment": { "Str": {} },
-              "default": { "Identity": {} },
-              "in": { "Array": { "item_type": { "LockId": {} } } },
-              "nin": { "Array": { "item_type": { "LockId": {} } } },
+              "in": { "Array": { "items": { "LockId": {} } } },
+              "nin": { "Array": { "items": { "LockId": {} } } },
               "query": { "Bool": {} }
             }
           }
@@ -317,13 +333,13 @@
         "Ref": { "Str": {} },
         "Enum": {
           "Map": {
-            "field_type": { "Multi": ["Null", { "Ref": "Validator" }] }
+            "values": { "Multi": ["Null", { "Ref": "Validator" }] }
           }
         },
         "Multi": {
           "Array": {
             "comment": "An array of validators. Matching any will validate.",
-            "item_type": { "Ref": "Validator" }
+            "items": { "Ref": "Validator" }
           }
         }
       }

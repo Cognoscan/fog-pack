@@ -18,10 +18,10 @@ use crate::error::{Error, Result};
 
 use crate::depth_tracking::DepthTracker;
 
-struct FogSerializer {
+pub(crate) struct FogSerializer {
     must_be_ordered: bool,
     depth_tracking: DepthTracker,
-    buf: Vec<u8>,
+    pub buf: Vec<u8>,
 }
 
 impl Default for FogSerializer {
@@ -31,7 +31,15 @@ impl Default for FogSerializer {
 }
 
 impl FogSerializer {
-    fn with_params(must_be_ordered: bool) -> Self {
+    pub(crate) fn from_vec(buf: Vec<u8>, must_be_ordered: bool) -> Self {
+        Self {
+            must_be_ordered,
+            depth_tracking: DepthTracker::new(),
+            buf,
+        }
+    }
+
+    pub(crate) fn with_params(must_be_ordered: bool) -> Self {
         FogSerializer {
             must_be_ordered,
             depth_tracking: DepthTracker::new(),
@@ -39,10 +47,14 @@ impl FogSerializer {
         }
     }
 
-    fn encode_element(&mut self, elem: Element) -> Result<()> {
+    pub(crate) fn encode_element(&mut self, elem: Element) -> Result<()> {
         self.depth_tracking.update_elem(&elem)?;
         serialize_elem(&mut self.buf, elem);
         Ok(())
+    }
+
+    pub(crate) fn finish(self) -> Vec<u8> {
+        self.buf
     }
 }
 
@@ -364,7 +376,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
 ///
 /// This is about the best we can do for unknown length sequences, unless you can call collect_seq
 /// instead, in which case we can avoid temporarily encoding to a buffer.
-struct SeqSerializer<'a> {
+pub(crate) struct SeqSerializer<'a> {
     se: &'a mut FogSerializer,
     unknown_len: Option<(usize, Vec<u8>)>,
 }
@@ -413,7 +425,7 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
     }
 }
 
-struct TupleSerializer<'a> {
+pub(crate) struct TupleSerializer<'a> {
     se: &'a mut FogSerializer,
 }
 
@@ -462,7 +474,7 @@ impl<'a> SerializeTupleVariant for TupleSerializer<'a> {
     }
 }
 
-enum MapSerializer<'a> {
+pub(crate) enum MapSerializer<'a> {
     SizedOrdered {
         se: &'a mut FogSerializer,
         last_key: Option<String>,
@@ -667,7 +679,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
     }
 }
 
-enum StructSerializer<'a> {
+pub(crate) enum StructSerializer<'a> {
     Ordered {
         se: &'a mut FogSerializer,
         last_key: Option<&'static str>,
@@ -772,7 +784,7 @@ impl<'a> SerializeStructVariant for StructSerializer<'a> {
     }
 }
 
-struct ExtSerializer<'a> {
+pub(crate) struct ExtSerializer<'a> {
     ext: ExtType,
     received: bool,
     se: &'a mut FogSerializer,
@@ -1787,6 +1799,35 @@ mod test {
         expected.extend_from_slice(&[0xa1, 'b' as u8]);
         expected.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
         assert_eq!(ser.buf, expected);
+    }
+
+    #[test]
+    fn ser_time() {
+        use crate::Timestamp;
+        let mut test_cases = Vec::new();
+        // Zero
+        let mut expected = vec![0xc7, 0x05, 0x00, 0x00];
+        expected.extend_from_slice(&0u32.to_le_bytes());
+        test_cases.push((Timestamp::zero(), expected));
+        // Min
+        let mut expected = vec![0xc7, 0x09, 0x00, 0x00];
+        expected.extend_from_slice(&i64::MIN.to_le_bytes());
+        test_cases.push((Timestamp::min_value(), expected));
+        // Max
+        let mut expected = vec![0xc7, 0x0d, 0x00, 0x00];
+        expected.extend_from_slice(&i64::MAX.to_le_bytes());
+        expected.extend_from_slice(&1_999_999_999u32.to_le_bytes());
+        test_cases.push((Timestamp::max_value(), expected));
+        // Start of year 2020
+        let mut expected = vec![0xc7, 0x05, 0x00, 0x00];
+        expected.extend_from_slice(&1577854800u32.to_le_bytes());
+        test_cases.push((Timestamp::from_sec(1577854800), expected));
+
+        for (time, enc) in test_cases {
+            let mut ser = FogSerializer::default();
+            time.serialize(&mut ser).expect("Should serialize");
+            assert_eq!(ser.buf, enc);
+        }
     }
 
 }

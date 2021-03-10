@@ -62,7 +62,7 @@ impl F64Validator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a f64".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected a f64".to_string()))??;
         let elem = if let Element::F64(v) = elem {
             v
         } else {
@@ -72,43 +72,21 @@ impl F64Validator {
             )));
         };
         let bytes = elem.to_ne_bytes();
-        if self.in_list.len() > 0 {
-            if !self.in_list.iter().any(|v| v.to_ne_bytes() == bytes) {
-                return Err(Error::FailValidate("F64 is not on `in` list".to_string()));
-            }
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| v.to_ne_bytes() == bytes) {
+            return Err(Error::FailValidate("F64 is not on `in` list".to_string()));
         }
         if self.nin_list.iter().any(|v| v.to_ne_bytes() == bytes) {
             return Err(Error::FailValidate("F64 is on `nin` list".to_string()));
         }
-        if !self.max.is_nan() {
-            if self.ex_max {
-                if elem >= self.max {
-                    return Err(Error::FailValidate(
-                        "F64 greater than maximum allowed".to_string(),
-                    ));
-                }
-            } else {
-                if elem > self.max {
-                    return Err(Error::FailValidate(
-                        "F64 greater than maximum allowed".to_string(),
-                    ));
-                }
-            }
+        if !self.max.is_nan() && ((self.ex_max && elem >= self.max) || (elem > self.max)) {
+            return Err(Error::FailValidate(
+                "F64 greater than maximum allowed".to_string(),
+            ));
         }
-        if !self.min.is_nan() {
-            if self.ex_min {
-                if elem <= self.min {
-                    return Err(Error::FailValidate(
-                        "F64 less than maximum allowed".to_string(),
-                    ));
-                }
-            } else {
-                if elem < self.min {
-                    return Err(Error::FailValidate(
-                        "F64 less than maximum allowed".to_string(),
-                    ));
-                }
-            }
+        if !self.min.is_nan() && ((self.ex_min && elem <= self.min) || (elem < self.min)) {
+            return Err(Error::FailValidate(
+                "F64 less than maximum allowed".to_string(),
+            ));
         }
         Ok(())
     }

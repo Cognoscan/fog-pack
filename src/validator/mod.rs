@@ -73,7 +73,7 @@ impl Validator {
             Validator::Null => {
                 let elem = parser
                     .next()
-                    .ok_or(Error::FailValidate("expected null".to_string()))??;
+                    .ok_or_else(|| Error::FailValidate("expected null".to_string()))??;
                 if let Element::Null = elem {
                     Ok((parser, checklist))
                 } else {
@@ -147,10 +147,9 @@ impl Validator {
                 // Ref->Multi->... checks are in the Multi validator code further down.
                 // All other validators pull at least one element, ensuring infinite
                 // recursion/cycling is impossible.
-                let validator = types.get(ref_name).ok_or(Error::FailValidate(format!(
-                    "validator Ref({}) not in list of types",
-                    ref_name
-                )))?;
+                let validator = types.get(ref_name).ok_or_else(|| {
+                    Error::FailValidate(format!("validator Ref({}) not in list of types", ref_name))
+                })?;
                 match validator {
                     Validator::Ref(_) => Err(Error::FailValidate(format!(
                         "validator Ref({}) is itself a Ref",
@@ -193,13 +192,13 @@ impl Validator {
                 // Get the enum itself, which should be a map with 1 key-value pair or a string.
                 let elem = parser
                     .next()
-                    .ok_or(Error::FailValidate("expected a enum".to_string()))??;
+                    .ok_or_else(|| Error::FailValidate("expected a enum".to_string()))??;
                 let (key, has_value) = match elem {
                     Element::Str(v) => (v, false),
                     Element::Map(1) => {
-                        let key = parser
-                            .next()
-                            .ok_or(Error::FailValidate("expected a string".to_string()))??;
+                        let key = parser.next().ok_or_else(|| {
+                            Error::FailValidate("expected a string".to_string())
+                        })??;
                         if let Element::Str(key) = key {
                             (key, true)
                         } else {
@@ -211,7 +210,7 @@ impl Validator {
                 // Find the matching validator and verify the (possible) content against it
                 let validator = enum_map
                     .get(key)
-                    .ok_or(Error::FailValidate(format!("{} is not in enum list", key)))?;
+                    .ok_or_else(|| Error::FailValidate(format!("{} is not in enum list", key)))?;
                 match (validator, has_value) {
                     (None, false) => Ok((parser, checklist)),
                     (None, true) => Err(Error::FailValidate(format!(
@@ -234,11 +233,7 @@ impl Validator {
 
     pub fn query_check(&self, types: &BTreeMap<String, Validator>, other: &Validator) -> bool {
         match self {
-            Validator::Null => match other {
-                Validator::Null => true,
-                Validator::Any => true,
-                _ => false,
-            },
+            Validator::Null => matches!(other, Validator::Null | Validator::Any),
             Validator::Bool(validator) => validator.query_check(other),
             Validator::Int(validator) => validator.query_check(other),
             Validator::F32(validator) => validator.query_check(other),
@@ -309,7 +304,7 @@ fn read_any(parser: &mut Parser) -> Result<()> {
     fn get_elem<'a>(parser: &mut Parser<'a>) -> Result<Element<'a>> {
         parser
             .next()
-            .ok_or(Error::FailValidate("expected another value".to_string()))?
+            .ok_or_else(|| Error::FailValidate("expected another value".to_string()))?
     }
     let elem = get_elem(parser)?;
     match elem {

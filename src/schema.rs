@@ -26,7 +26,7 @@ fn compress_is_default(val: &Compress) -> bool {
 
 #[inline]
 fn int_is_zero(v: &Integer) -> bool {
-    v.as_u64().and_then(|v| Some(v == 0)).unwrap_or(false)
+    v.as_u64().map(|v| v == 0).unwrap_or(false)
 }
 
 #[inline]
@@ -387,7 +387,7 @@ impl Schema {
     /// Encode a [`NewDocument`], returning the resulting Document's hash and fully encoded format.  
     /// Fails if the document doesn't use this schema, or if it doesn't meet this schema's
     /// requirements.
-    pub fn encode_new_doc<'a>(&'a self, doc: NewDocument) -> Result<(Hash, Vec<u8>)> {
+    pub fn encode_new_doc(&self, doc: NewDocument) -> Result<(Hash, Vec<u8>)> {
         // Check that the document uses this schema
         match doc.schema_hash() {
             Some(hash) if hash == &self.hash => (),

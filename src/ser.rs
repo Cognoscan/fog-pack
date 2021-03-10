@@ -319,7 +319,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                     let mut key = String::new();
                     k.serialize(KeySerializer::new(&mut key))?;
                     if map.insert(key, v).is_some() {
-                        return Err(Error::SerdeFail(format!("map has repeated keys")));
+                        return Err(Error::SerdeFail("map has repeated keys".into()));
                     }
                 }
                 // Serialize in order
@@ -328,45 +328,43 @@ impl<'a> Serializer for &'a mut FogSerializer {
                     v.serialize(&mut *self)?;
                 }
             }
+        } else if self.must_be_ordered {
+            // Unsized & Ordered
+            let mut map = Vec::with_capacity(iter.size_hint().0);
+            for (k, v) in iter {
+                let mut key = String::new();
+                k.serialize(KeySerializer::new(&mut key))?;
+                if let Some((last_key, _)) = map.last() {
+                    if key <= *last_key {
+                        return Err(Error::SerdeFail(format!(
+                            "map keys are unordered: {} follows {}",
+                            key, last_key
+                        )));
+                    }
+                }
+                map.push((key, v));
+            }
+            self.encode_element(Element::Map(map.len()))?;
+            for (k, v) in map.iter() {
+                self.encode_element(Element::Str(k))?;
+                v.serialize(&mut *self)?;
+            }
         } else {
-            if self.must_be_ordered {
-                // Unsized & Ordered
-                let mut map = Vec::with_capacity(iter.size_hint().0);
-                for (k, v) in iter {
-                    let mut key = String::new();
-                    k.serialize(KeySerializer::new(&mut key))?;
-                    if let Some((last_key, _)) = map.last() {
-                        if key <= *last_key {
-                            return Err(Error::SerdeFail(format!(
-                                "map keys are unordered: {} follows {}",
-                                key, last_key
-                            )));
-                        }
-                    }
-                    map.push((key, v));
+            // Unsized & Unordered
+            let mut map = BTreeMap::new();
+            // Collect into ordered map
+            for (k, v) in iter {
+                let mut key = String::new();
+                k.serialize(KeySerializer::new(&mut key))?;
+                if map.insert(key, v).is_some() {
+                    return Err(Error::SerdeFail("map has repeated keys".into()));
                 }
-                self.encode_element(Element::Map(map.len()))?;
-                for (k, v) in map.iter() {
-                    self.encode_element(Element::Str(k))?;
-                    v.serialize(&mut *self)?;
-                }
-            } else {
-                // Unsized & Unordered
-                let mut map = BTreeMap::new();
-                // Collect into ordered map
-                for (k, v) in iter {
-                    let mut key = String::new();
-                    k.serialize(KeySerializer::new(&mut key))?;
-                    if map.insert(key, v).is_some() {
-                        return Err(Error::SerdeFail(format!("map has repeated keys")));
-                    }
-                }
-                // Serialize in order
-                self.encode_element(Element::Map(map.len()))?;
-                for (k, v) in map.iter() {
-                    self.encode_element(Element::Str(k))?;
-                    v.serialize(&mut *self)?;
-                }
+            }
+            // Serialize in order
+            self.encode_element(Element::Map(map.len()))?;
+            for (k, v) in map.iter() {
+                self.encode_element(Element::Str(k))?;
+                v.serialize(&mut *self)?;
             }
         }
         Ok(())
@@ -643,7 +641,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::replace(pending_key, String::new());
                 if map.insert(key, buf).is_some() {
-                    return Err(Error::SerdeFail(format!("map has repeated keys")));
+                    return Err(Error::SerdeFail("map has repeated keys".into()));
                 }
             }
             MapSerializer::UnsizedOrdered { se, .. } => {
@@ -663,7 +661,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::replace(pending_key, String::new());
                 if map.insert(key, buf).is_some() {
-                    return Err(Error::SerdeFail(format!("map has repeated keys")));
+                    return Err(Error::SerdeFail("map has repeated keys".into()));
                 }
                 if map.len() > (MAX_DOC_SIZE >> 1) {
                     return Err(Error::SerdeFail(format!(
@@ -765,7 +763,7 @@ impl<'a> StructSerializer<'a> {
         Ok(())
     }
 
-    fn end_inner(self) -> Result<()> {
+    fn end_inner(self) {
         match self {
             StructSerializer::Ordered { .. } => (),
             StructSerializer::Unordered { se, map } => {
@@ -774,7 +772,6 @@ impl<'a> StructSerializer<'a> {
                 }
             }
         }
-        Ok(())
     }
 }
 
@@ -791,7 +788,8 @@ impl<'a> SerializeStruct for StructSerializer<'a> {
     }
 
     fn end(self) -> Result<()> {
-        self.end_inner()
+        self.end_inner();
+        Ok(())
     }
 }
 
@@ -808,7 +806,8 @@ impl<'a> SerializeStructVariant for StructSerializer<'a> {
     }
 
     fn end(self) -> Result<()> {
-        self.end_inner()
+        self.end_inner();
+        Ok(())
     }
 }
 

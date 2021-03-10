@@ -9,9 +9,9 @@ use crate::{
     ser::FogSerializer,
     validator::{Checklist, DataChecklist},
     value_ref::ValueRef,
-    MAX_ENTRY_SIZE, MAX_QUERY_SIZE,
+    MAX_QUERY_SIZE,
 };
-use fog_crypto::hash::{Hash, HashState};
+use fog_crypto::hash::Hash;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,20 +83,16 @@ impl Query {
                         };
                         let req_matches = val["req"]
                             .as_map()
-                            .and_then(|map| {
-                                Some(
-                                    map.iter()
-                                        .fold(0, |acc, (_, val)| acc + parse_validator(val)),
-                                )
+                            .map(|map| {
+                                map.iter()
+                                    .fold(0, |acc, (_, val)| acc + parse_validator(val))
                             })
                             .unwrap_or(0);
                         let opt_matches = val["opt"]
                             .as_map()
-                            .and_then(|map| {
-                                Some(
-                                    map.iter()
-                                        .fold(0, |acc, (_, val)| acc + parse_validator(val)),
-                                )
+                            .map(|map| {
+                                map.iter()
+                                    .fold(0, |acc, (_, val)| acc + parse_validator(val))
                             })
                             .unwrap_or(0);
                         let values_matches = parse_validator(&val["values"]);
@@ -109,15 +105,15 @@ impl Query {
                         }
                         let contains_matches = val["contains"]
                             .as_array()
-                            .and_then(|array| {
-                                Some(array.iter().fold(0, |acc, val| acc + parse_validator(val)))
+                            .map(|array| {
+                                array.iter().fold(0, |acc, val| acc + parse_validator(val))
                             })
                             .unwrap_or(0);
                         let items_matches = parse_validator(&val["items"]);
                         let prefix_matches = val["contains"]
                             .as_array()
-                            .and_then(|array| {
-                                Some(array.iter().fold(0, |acc, val| acc + parse_validator(val)))
+                            .map(|array| {
+                                array.iter().fold(0, |acc, val| acc + parse_validator(val))
                             })
                             .unwrap_or(0);
                         contains_matches + items_matches + prefix_matches
@@ -132,19 +128,15 @@ impl Query {
                     // Enum validator
                     Some((&"Enum", val)) => val
                         .as_map()
-                        .and_then(|map| {
-                            Some(
-                                map.iter()
-                                    .fold(0, |acc, (_, val)| acc + parse_validator(val)),
-                            )
+                        .map(|map| {
+                            map.iter()
+                                .fold(0, |acc, (_, val)| acc + parse_validator(val))
                         })
                         .unwrap_or(0),
                     // Multi validator
                     Some((&"Multi", val)) => val
                         .as_array()
-                        .and_then(|array| {
-                            Some(array.iter().fold(0, |acc, val| acc + parse_validator(val)))
-                        })
+                        .map(|array| array.iter().fold(0, |acc, val| acc + parse_validator(val)))
                         .unwrap_or(0),
                     _ => 0,
                 }

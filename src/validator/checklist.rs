@@ -136,10 +136,7 @@ impl<'a> Checklist<'a> {
         schema: Option<&'a [Option<Hash>]>,
         link: Option<&'a Validator>,
     ) {
-        let entry = self
-            .list
-            .entry(hash)
-            .or_insert_with(|| InnerListItem::new());
+        let entry = self.list.entry(hash).or_insert_with(InnerListItem::new);
         if let Some(schema) = schema {
             entry.schema.push(schema)
         }

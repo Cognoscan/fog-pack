@@ -8,25 +8,25 @@ use serde::{Deserialize, Serialize};
 fn is_false(v: &bool) -> bool {
     !v
 }
+
 #[inline]
 fn u64_is_zero(v: &u64) -> bool {
     *v == 0
 }
+
 #[inline]
 fn int_is_zero(v: &Integer) -> bool {
-    v.as_u64().and_then(|v| Some(v == 0)).unwrap_or(false)
+    v.as_u64().map(|v| v == 0).unwrap_or(false)
 }
+
 #[inline]
 fn int_is_max(v: &Integer) -> bool {
-    v.as_u64()
-        .and_then(|v| Some(v == u64::MAX))
-        .unwrap_or(false)
+    v.as_u64().map(|v| v == u64::MAX).unwrap_or(false)
 }
+
 #[inline]
 fn int_is_min(v: &Integer) -> bool {
-    v.as_i64()
-        .and_then(|v| Some(v == i64::MIN))
-        .unwrap_or(false)
+    v.as_i64().map(|v| v == i64::MIN).unwrap_or(false)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -84,7 +84,7 @@ impl IntValidator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a integer".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected a integer".to_string()))??;
         let int = if let Element::Int(v) = elem {
             v
         } else {
@@ -94,12 +94,10 @@ impl IntValidator {
             )));
         };
         let bits = int.as_bits();
-        if self.in_list.len() > 0 {
-            if !self.in_list.iter().any(|v| *v == int) {
-                return Err(Error::FailValidate(
-                    "Integer is not on `in` list".to_string(),
-                ));
-            }
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == int) {
+            return Err(Error::FailValidate(
+                "Integer is not on `in` list".to_string(),
+            ));
         }
         if self.nin_list.iter().any(|v| *v == int) {
             return Err(Error::FailValidate("Integer is on `nin` list".to_string()));

@@ -451,7 +451,7 @@ impl<'a> Parser<'a> {
 
     /// Look at what the next marker byte to be parsed will be.
     pub fn peek_marker(&self) -> Option<Marker> {
-        self.data.first().and_then(|n| Some(Marker::from_u8(*n)))
+        self.data.first().map(|n| Marker::from_u8(*n))
     }
 
     /// Call when parsing is expected to be complete. Fails if there are any bytes left inside the
@@ -688,7 +688,7 @@ impl<'a> Parser<'a> {
                             expected: 4,
                         }
                     })?;
-                    Element::F32(v.into())
+                    Element::F32(v)
                 }
                 F64 => {
                     let v = self.data.read_f64::<LittleEndian>().map_err(|_| {
@@ -698,7 +698,7 @@ impl<'a> Parser<'a> {
                             expected: 8,
                         }
                     })?;
-                    Element::F64(v.into())
+                    Element::F64(v)
                 }
                 FixStr(len) => {
                     let len = len as usize;
@@ -976,10 +976,8 @@ impl<'a> Parser<'a> {
             actual: self.data.len(),
             expected: 1,
         })?;
-        let ext_type = ExtType::from_u8(ext_type).ok_or(Error::BadEncode(format!(
-            "Got unrecognized Ext type {}.",
-            ext_type
-        )))?;
+        let ext_type = ExtType::from_u8(ext_type)
+            .ok_or_else(|| Error::BadEncode(format!("Got unrecognized Ext type {}.", ext_type)))?;
         if len > self.data.len() {
             return Err(Error::LengthTooShort {
                 step: "get Ext content",
@@ -991,7 +989,7 @@ impl<'a> Parser<'a> {
         self.data = data;
         Ok(match ext_type {
             ExtType::Timestamp => {
-                Element::Timestamp(Timestamp::try_from(bytes).map_err(|e| Error::BadEncode(e))?)
+                Element::Timestamp(Timestamp::try_from(bytes).map_err(Error::BadEncode)?)
             }
             ExtType::Hash => Element::Hash(Hash::try_from(bytes)?),
             ExtType::Identity => Element::Identity(Identity::try_from(bytes)?),
@@ -1392,7 +1390,7 @@ mod test {
                 let val = result.unwrap();
                 assert!(parser.next().is_none());
                 if let Element::F32(val) = val {
-                    assert_eq!(val, *case);
+                    assert_eq!(val.to_ne_bytes(), case.to_ne_bytes());
                 } else {
                     panic!("Element wasn't F32");
                 }
@@ -1464,7 +1462,7 @@ mod test {
                 let val = result.unwrap();
                 assert!(parser.next().is_none());
                 if let Element::F64(val) = val {
-                    assert_eq!(val, *case);
+                    assert_eq!(val.to_ne_bytes(), case.to_ne_bytes());
                 } else {
                     panic!("Element wasn't F64");
                 }
@@ -1515,7 +1513,7 @@ mod test {
             for (index, case) in test_cases.iter().enumerate() {
                 println!("Test #{}: {}", index, case.0);
                 // Make element
-                let elem = Element::F64(case.0.into());
+                let elem = Element::F64(case.0);
                 let mut enc = Vec::new();
                 serialize_elem(&mut enc, elem);
                 assert_eq!(enc, case.1);
@@ -2084,7 +2082,7 @@ mod test {
             test_cases.push((5, Timestamp::from_utc(1, 0).unwrap()));
             test_cases.push((13, Timestamp::from_utc(1, 1).unwrap()));
             test_cases.push((5, Timestamp::from_utc(u32::MAX as i64 - 1, 0).unwrap()));
-            test_cases.push((5, Timestamp::from_utc(u32::MAX as i64 - 0, 0).unwrap()));
+            test_cases.push((5, Timestamp::from_utc(u32::MAX as i64, 0).unwrap()));
             test_cases.push((9, Timestamp::from_utc(u32::MAX as i64 + 1, 0).unwrap()));
             test_cases.push((9, Timestamp::from_utc(i64::MIN, 0).unwrap()));
             test_cases.push((13, Timestamp::from_utc(i64::MIN, 1).unwrap()));

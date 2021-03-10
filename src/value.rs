@@ -56,19 +56,15 @@ impl Value {
     }
 
     pub fn is_nil(&self) -> bool {
-        if let Value::Null = *self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Value::Null)
     }
 
     pub fn is_bool(&self) -> bool {
-        self.as_bool().is_some()
+        matches!(self, Value::Bool(_))
     }
 
     pub fn is_int(&self) -> bool {
-        self.as_int().is_some()
+        matches!(self, Value::Int(_))
     }
 
     pub fn is_i64(&self) -> bool {
@@ -88,93 +84,73 @@ impl Value {
     }
 
     pub fn is_f32(&self) -> bool {
-        if let Value::F32(..) = *self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Value::F32(_))
     }
 
     pub fn is_f64(&self) -> bool {
-        if let Value::F64(..) = *self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Value::F64(_))
     }
 
     pub fn is_str(&self) -> bool {
-        self.as_str().is_some()
+        matches!(self, Value::Str(_))
     }
 
     pub fn is_bin(&self) -> bool {
-        self.as_slice().is_some()
+        matches!(self, Value::Bin(_))
     }
 
     pub fn is_array(&self) -> bool {
-        self.as_array().is_some()
+        matches!(self, Value::Array(_))
     }
 
     pub fn is_map(&self) -> bool {
-        self.as_map().is_some()
+        matches!(self, Value::Map(_))
     }
 
     pub fn is_timestamp(&self) -> bool {
-        self.as_timestamp().is_some()
+        matches!(self, Value::Timestamp(_))
     }
 
     pub fn is_hash(&self) -> bool {
-        self.as_hash().is_some()
+        matches!(self, Value::Hash(_))
     }
 
     pub fn is_identity(&self) -> bool {
-        self.as_identity().is_some()
+        matches!(self, Value::Identity(_))
     }
 
     pub fn is_stream_id(&self) -> bool {
-        self.as_stream_id().is_some()
+        matches!(self, Value::StreamId(_))
     }
 
     pub fn is_lock_id(&self) -> bool {
-        self.as_lock_id().is_some()
+        matches!(self, Value::LockId(_))
     }
 
     pub fn is_lockbox(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Value::DataLockbox(_)
-            | Value::IdentityLockbox(_)
-            | Value::StreamLockbox(_)
-            | Value::LockLockbox(_) => true,
-            _ => false,
-        }
+                | Value::IdentityLockbox(_)
+                | Value::StreamLockbox(_)
+                | Value::LockLockbox(_)
+        )
     }
 
     pub fn is_data_lockbox(&self) -> bool {
-        match self {
-            Value::DataLockbox(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::DataLockbox(_))
     }
 
     pub fn is_identity_lockbox(&self) -> bool {
-        match self {
-            Value::IdentityLockbox(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::IdentityLockbox(_))
     }
 
     pub fn is_stream_lockbox(&self) -> bool {
-        match self {
-            Value::StreamLockbox(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::StreamLockbox(_))
     }
 
     pub fn is_lock_lockbox(&self) -> bool {
-        match self {
-            Value::LockLockbox(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::LockLockbox(_))
     }
 
     pub fn as_bool(&self) -> Option<bool> {
@@ -772,8 +748,7 @@ impl<'de> serde::Deserialize<'de> for Value {
                 let bytes: &Bytes = access.newtype_variant()?;
                 match variant {
                     FOG_TYPE_ENUM_TIME_INDEX => {
-                        let val =
-                            Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))?;
+                        let val = Timestamp::try_from(bytes.as_ref()).map_err(A::Error::custom)?;
                         Ok(Value::Timestamp(val))
                     }
                     FOG_TYPE_ENUM_HASH_INDEX => {

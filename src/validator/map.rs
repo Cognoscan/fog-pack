@@ -22,10 +22,7 @@ fn usize_is_max(v: &usize) -> bool {
 
 #[inline]
 fn normalize_is_none(v: &Normalize) -> bool {
-    match *v {
-        Normalize::None => true,
-        _ => false,
-    }
+    matches!(v, Normalize::None)
 }
 
 #[inline]
@@ -61,7 +58,7 @@ impl KeyValidator {
         // Get element
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("expected a key string".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("expected a key string".to_string()))??;
         let val = if let Element::Str(v) = elem {
             v
         } else {
@@ -238,7 +235,7 @@ impl MapValidator {
         let val_parser = parser.clone();
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a map".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected a map".to_string()))??;
         let len = if let Element::Map(len) = elem {
             len
         } else {
@@ -267,22 +264,24 @@ impl MapValidator {
             let map = BTreeMap::<&str, ValueRef>::deserialize(&mut de)?;
 
             if !self.in_list.is_empty() {
-                if !self.in_list.iter().any(|v| {
+                let in_pass = self.in_list.iter().any(|v| {
                     v.len() == map.len()
                         && v.iter()
                             .zip(map.iter())
                             .all(|((ks, vs), (ko, vo))| (ks == ko) && (vs == vo))
-                }) {
+                });
+                if !in_pass {
                     return Err(Error::FailValidate("Map is not on `in` list".to_string()));
                 }
             }
 
-            if self.nin_list.iter().any(|v| {
+            let nin_pass = !self.nin_list.iter().any(|v| {
                 v.len() == map.len()
                     && v.iter()
                         .zip(map.iter())
                         .all(|((ks, vs), (ko, vo))| (ks == ko) && (vs == vo))
-            }) {
+            });
+            if !nin_pass {
                 return Err(Error::FailValidate("Map is on `nin` list".to_string()));
             }
         }
@@ -300,9 +299,9 @@ impl MapValidator {
             let (p, c) = if let Some(validator) = self
                 .req
                 .get(key)
-                .and_then(|v| {
+                .map(|v| {
                     reqs_found += 1;
-                    Some(v)
+                    v
                 })
                 .or_else(|| self.opt.get(key))
                 .or_else(|| self.values.as_deref())
@@ -358,7 +357,7 @@ impl MapValidator {
                     .get(ko)
                     .or_else(|| self.opt.get(ko))
                     .or_else(|| self.values.as_deref())
-                    .and_then(|v| Some(v.query_check(types, kv)))
+                    .map(|v| v.query_check(types, kv))
                     .unwrap_or(false)
             });
             if !req_ok {
@@ -369,7 +368,7 @@ impl MapValidator {
                     .get(ko)
                     .or_else(|| self.opt.get(ko))
                     .or_else(|| self.values.as_deref())
-                    .and_then(|v| Some(v.query_check(types, kv)))
+                    .map(|v| v.query_check(types, kv))
                     .unwrap_or(false)
             });
             opt_ok

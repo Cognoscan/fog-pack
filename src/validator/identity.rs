@@ -37,7 +37,7 @@ impl IdentityValidator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected an Identity".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected an Identity".to_string()))??;
         let elem = if let Element::Identity(v) = elem {
             v
         } else {
@@ -46,12 +46,10 @@ impl IdentityValidator {
                 elem.name()
             )));
         };
-        if self.in_list.len() > 0 {
-            if !self.in_list.iter().any(|v| *v == elem) {
-                return Err(Error::FailValidate(
-                    "Identity is not on `in` list".to_string(),
-                ));
-            }
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == elem) {
+            return Err(Error::FailValidate(
+                "Identity is not on `in` list".to_string(),
+            ));
         }
         if self.nin_list.iter().any(|v| *v == elem) {
             return Err(Error::FailValidate("Identity is on `nin` list".to_string()));

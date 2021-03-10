@@ -21,10 +21,7 @@ fn usize_is_max(v: &usize) -> bool {
 
 #[inline]
 fn normalize_is_none(v: &Normalize) -> bool {
-    match *v {
-        Normalize::None => true,
-        _ => false,
-    }
+    matches!(v, Normalize::None)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -113,7 +110,7 @@ impl StrValidator {
         // Get element
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("expected a string".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("expected a string".to_string()))??;
         let val = if let Element::Str(v) = elem {
             v
         } else {
@@ -154,12 +151,10 @@ impl StrValidator {
         };
         match self.normalize {
             Normalize::None => {
-                if self.in_list.len() > 0 {
-                    if !self.in_list.iter().any(|v| *v == val) {
-                        return Err(Error::FailValidate(
-                            "String is not on `in` list".to_string(),
-                        ));
-                    }
+                if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == val) {
+                    return Err(Error::FailValidate(
+                        "String is not on `in` list".to_string(),
+                    ));
                 }
                 if self.nin_list.iter().any(|v| *v == val) {
                     return Err(Error::FailValidate("String is on `nin` list".to_string()));
@@ -182,12 +177,11 @@ impl StrValidator {
                     }
                 };
 
-                if self.in_list.len() > 0 {
-                    if !self.in_list.iter().any(|v| v.nfc().eq(val.chars())) {
-                        return Err(Error::FailValidate(
-                            "String is not on `in` list".to_string(),
-                        ));
-                    }
+                if !self.in_list.is_empty() && !self.in_list.iter().any(|v| v.nfc().eq(val.chars()))
+                {
+                    return Err(Error::FailValidate(
+                        "String is not on `in` list".to_string(),
+                    ));
                 }
                 if self.nin_list.iter().any(|v| v.nfc().eq(val.chars())) {
                     return Err(Error::FailValidate("String is on `nin` list".to_string()));
@@ -210,12 +204,12 @@ impl StrValidator {
                     }
                 };
 
-                if self.in_list.len() > 0 {
-                    if !self.in_list.iter().any(|v| v.nfkc().eq(val.chars())) {
-                        return Err(Error::FailValidate(
-                            "String is not on `in` list".to_string(),
-                        ));
-                    }
+                if !self.in_list.is_empty()
+                    && !self.in_list.iter().any(|v| v.nfkc().eq(val.chars()))
+                {
+                    return Err(Error::FailValidate(
+                        "String is not on `in` list".to_string(),
+                    ));
                 }
                 if self.nin_list.iter().any(|v| v.nfkc().eq(val.chars())) {
                     return Err(Error::FailValidate("String is on `nin` list".to_string()));

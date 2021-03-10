@@ -37,7 +37,7 @@ impl StreamIdValidator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a StreamId".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected a StreamId".to_string()))??;
         let elem = if let Element::StreamId(v) = elem {
             v
         } else {
@@ -46,12 +46,10 @@ impl StreamIdValidator {
                 elem.name()
             )));
         };
-        if self.in_list.len() > 0 {
-            if !self.in_list.iter().any(|v| *v == elem) {
-                return Err(Error::FailValidate(
-                    "StreamId is not on `in` list".to_string(),
-                ));
-            }
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == elem) {
+            return Err(Error::FailValidate(
+                "StreamId is not on `in` list".to_string(),
+            ));
         }
         if self.nin_list.iter().any(|v| *v == elem) {
             return Err(Error::FailValidate("StreamId is on `nin` list".to_string()));

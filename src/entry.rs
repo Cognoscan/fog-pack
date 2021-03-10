@@ -25,7 +25,7 @@ pub(crate) struct SplitEntry<'a> {
 impl<'a> SplitEntry<'a> {
     pub(crate) fn split(buf: &'a [u8]) -> Result<SplitEntry> {
         // Compression marker
-        let (&compress_raw, mut buf) = buf.split_first().ok_or_else(|| Error::LengthTooShort {
+        let (&compress_raw, mut buf) = buf.split_first().ok_or(Error::LengthTooShort {
             step: "get compress type",
             actual: 0,
             expected: 1,
@@ -207,7 +207,7 @@ impl Entry {
         let entry_hash = hash_state.hash();
         hash_state.update(split.signature_raw);
 
-        let signer = if split.signature_raw.len() > 0 {
+        let signer = if !split.signature_raw.is_empty() {
             let unverified =
                 fog_crypto::identity::UnverifiedSignature::try_from(split.signature_raw)?;
             let verified = unverified.verify(&entry_hash)?;

@@ -28,12 +28,12 @@ pub(crate) struct SplitDoc<'a> {
 
 impl<'a> SplitDoc<'a> {
     pub(crate) fn split(buf: &'a [u8]) -> Result<SplitDoc> {
-        let (&compress_raw, buf) = buf.split_first().ok_or_else(|| Error::LengthTooShort {
+        let (&compress_raw, buf) = buf.split_first().ok_or(Error::LengthTooShort {
             step: "get compress type",
             actual: 0,
             expected: 1,
         })?;
-        let (hash_len, buf) = buf.split_first().ok_or_else(|| Error::LengthTooShort {
+        let (hash_len, buf) = buf.split_first().ok_or(Error::LengthTooShort {
             step: "get hash length",
             actual: 0,
             expected: 1,
@@ -224,7 +224,7 @@ impl Document {
         }
 
         let split = SplitDoc::split(&buf)?;
-        let schema_hash = if split.hash_raw.len() > 0 {
+        let schema_hash = if !split.hash_raw.is_empty() {
             Some(Hash::try_from(split.hash_raw)?)
         } else {
             None
@@ -239,7 +239,7 @@ impl Document {
         let doc_hash = hash_state.hash();
         hash_state.update(split.signature_raw);
 
-        let signer = if split.signature_raw.len() > 0 {
+        let signer = if !split.signature_raw.is_empty() {
             let unverified =
                 fog_crypto::identity::UnverifiedSignature::try_from(split.signature_raw)?;
             let verified = unverified.verify(&doc_hash)?;

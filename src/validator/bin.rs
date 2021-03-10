@@ -92,7 +92,7 @@ impl BinValidator {
         // Get element
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("expected binary data".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("expected binary data".to_string()))??;
         let val = if let Element::Bin(v) = elem {
             v
         } else {
@@ -144,7 +144,7 @@ impl BinValidator {
                 other => other,
             }
         }
-        fn trim<'a>(val: &'a [u8]) -> &'a [u8] {
+        fn trim(val: &[u8]) -> &[u8] {
             let trim_amount = val.iter().rev().take_while(|v| **v == 0).count();
             &val[0..(val.len() - trim_amount)]
         }
@@ -178,10 +178,8 @@ impl BinValidator {
         }
 
         // in/nin checks
-        if self.in_list.len() > 0 {
-            if !self.in_list.iter().any(|v| *v == val) {
-                return Err(Error::FailValidate("Bin is not on `in` list".to_string()));
-            }
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == val) {
+            return Err(Error::FailValidate("Bin is not on `in` list".to_string()));
         }
         if self.nin_list.iter().any(|v| *v == val) {
             return Err(Error::FailValidate("Bin is on `nin` list".to_string()));

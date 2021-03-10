@@ -90,7 +90,7 @@ impl ArrayValidator {
         let val_parser = parser.clone();
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected an array".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected an array".to_string()))??;
         let len = if let Element::Array(len) = elem {
             len
         } else {
@@ -118,26 +118,23 @@ impl ArrayValidator {
             let mut de = FogDeserializer::from_parser(val_parser);
             let array = Vec::<ValueRef>::deserialize(&mut de)?;
 
-            if !self.in_list.is_empty() {
-                if !self.in_list.iter().any(|v| *v == array) {
-                    return Err(Error::FailValidate("Array is not on `in` list".to_string()));
-                }
+            if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == array) {
+                return Err(Error::FailValidate("Array is not on `in` list".to_string()));
             }
 
             if self.nin_list.iter().any(|v| *v == array) {
                 return Err(Error::FailValidate("Array is on `nin` list".to_string()));
             }
 
-            if self.unique {
-                if array
+            if self.unique
+                && array
                     .iter()
                     .enumerate()
                     .any(|(index, lhs)| array.iter().skip(index).any(|rhs| lhs == rhs))
-                {
-                    return Err(Error::FailValidate(
-                        "Array does not contain unique elements".to_string(),
-                    ));
-                }
+            {
+                return Err(Error::FailValidate(
+                    "Array does not contain unique elements".to_string(),
+                ));
             }
         }
 

@@ -75,7 +75,7 @@ impl TimeValidator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a timestamp".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected a timestamp".to_string()))??;
         let val = if let Element::Timestamp(v) = elem {
             v
         } else {
@@ -108,12 +108,10 @@ impl TimeValidator {
         }
 
         // in/nin checks
-        if self.in_list.len() > 0 {
-            if !self.in_list.iter().any(|v| *v == val) {
-                return Err(Error::FailValidate(
-                    "Timestamp is not on `in` list".to_string(),
-                ));
-            }
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == val) {
+            return Err(Error::FailValidate(
+                "Timestamp is not on `in` list".to_string(),
+            ));
         }
         if self.nin_list.iter().any(|v| *v == val) {
             return Err(Error::FailValidate(

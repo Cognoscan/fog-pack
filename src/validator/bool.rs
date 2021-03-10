@@ -53,7 +53,7 @@ impl BoolValidator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
-            .ok_or(Error::FailValidate("Expected a boolean".to_string()))??;
+            .ok_or_else(|| Error::FailValidate("Expected a boolean".to_string()))??;
         let elem = if let Element::Bool(v) = elem {
             v
         } else {
@@ -62,12 +62,10 @@ impl BoolValidator {
                 elem.name()
             )));
         };
-        if self.in_list.len() > 0 {
-            if !self.in_list.iter().any(|v| *v == elem) {
-                return Err(Error::FailValidate(
-                    "Boolean is not on `in` list".to_string(),
-                ));
-            }
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == elem) {
+            return Err(Error::FailValidate(
+                "Boolean is not on `in` list".to_string(),
+            ));
         }
         if self.nin_list.iter().any(|v| *v == elem) {
             return Err(Error::FailValidate("Boolean is on `nin` list".to_string()));

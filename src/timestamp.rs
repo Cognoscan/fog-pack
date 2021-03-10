@@ -368,15 +368,15 @@ impl<'de> Deserialize<'de> for Timestamp {
                                     }
                                 }
                             }
-                            let secs = secs.ok_or(A::Error::missing_field("secs"))?;
+                            let secs = secs.ok_or_else(|| A::Error::missing_field("secs"))?;
                             Timestamp::from_utc(secs, nanos)
-                                .ok_or(A::Error::custom("Invalid timestamp"))
+                                .ok_or_else(|| A::Error::custom("Invalid timestamp"))
                         }
                     }
                     variant.struct_variant(&["std", "secs", "nanos"], TimeStructVisitor)
                 } else {
                     let bytes: ByteBuf = variant.newtype_variant()?;
-                    Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))
+                    Timestamp::try_from(bytes.as_ref()).map_err(A::Error::custom)
                 }
             }
         }

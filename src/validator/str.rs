@@ -46,7 +46,7 @@ pub struct StrValidator {
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none", with = "serde_regex")]
-    pub matches: Option<Regex>,
+    pub matches: Option<Box<Regex>>,
     #[serde(skip_serializing_if = "usize_is_max")]
     pub max_len: usize,
     #[serde(skip_serializing_if = "usize_is_zero")]
@@ -110,12 +110,13 @@ impl std::default::Default for StrValidator {
 
 impl StrValidator {
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
-
         // Get element
         let elem = parser
             .next()
             .ok_or(Error::FailValidate("expected a string".to_string()))??;
-        let val = if let Element::Str(v) = elem { v } else {
+        let val = if let Element::Str(v) = elem {
+            v
+        } else {
             return Err(Error::FailValidate(format!(
                 "expected Str, got {}",
                 elem.name()
@@ -124,23 +125,33 @@ impl StrValidator {
 
         // Length Checks
         if val.len() > self.max_len {
-            return Err(Error::FailValidate("String is longer than max_len".to_string()));
+            return Err(Error::FailValidate(
+                "String is longer than max_len".to_string(),
+            ));
         }
         if val.len() < self.min_len {
-            return Err(Error::FailValidate("String is shorter than min_len".to_string()));
+            return Err(Error::FailValidate(
+                "String is shorter than min_len".to_string(),
+            ));
         }
         if self.max_char < usize::MAX || self.min_char > 0 {
             let len_char = bytecount::num_chars(val.as_bytes());
             if len_char > self.max_char {
-                return Err(Error::FailValidate("String is longer than max_len".to_string()));
+                return Err(Error::FailValidate(
+                    "String is longer than max_len".to_string(),
+                ));
             }
             if len_char < self.min_char {
-                return Err(Error::FailValidate("String is shorter than min_len".to_string()));
+                return Err(Error::FailValidate(
+                    "String is shorter than min_len".to_string(),
+                ));
             }
         }
 
         // Content checks
-        use unicode_normalization::{UnicodeNormalization, IsNormalized, is_nfc_quick, is_nfkc_quick};
+        use unicode_normalization::{
+            is_nfc_quick, is_nfkc_quick, IsNormalized, UnicodeNormalization,
+        };
         match self.normalize {
             Normalize::None => {
                 if self.in_list.len() > 0 {
@@ -155,10 +166,12 @@ impl StrValidator {
                 }
                 if let Some(ref regex) = self.matches {
                     if !regex.is_match(val) {
-                        return Err(Error::FailValidate("String doesn't match regular expression".to_string()));
+                        return Err(Error::FailValidate(
+                            "String doesn't match regular expression".to_string(),
+                        ));
                     }
                 }
-            },
+            }
             Normalize::NFC => {
                 let temp_string: String;
                 let val = match is_nfc_quick(val.chars()) {
@@ -181,10 +194,12 @@ impl StrValidator {
                 }
                 if let Some(ref regex) = self.matches {
                     if !regex.is_match(val) {
-                        return Err(Error::FailValidate("String doesn't match regular expression".to_string()));
+                        return Err(Error::FailValidate(
+                            "String doesn't match regular expression".to_string(),
+                        ));
                     }
                 }
-            },
+            }
             Normalize::NFKC => {
                 let temp_string: String;
                 let val = match is_nfkc_quick(val.chars()) {
@@ -207,10 +222,12 @@ impl StrValidator {
                 }
                 if let Some(ref regex) = self.matches {
                     if !regex.is_match(val) {
-                        return Err(Error::FailValidate("String doesn't match regular expression".to_string()));
+                        return Err(Error::FailValidate(
+                            "String doesn't match regular expression".to_string(),
+                        ));
                     }
                 }
-            },
+            }
         }
         Ok(())
     }
@@ -237,4 +254,3 @@ impl StrValidator {
         }
     }
 }
-

@@ -1,5 +1,5 @@
-use crate::*;
 use crate::value_ref::ValueRef;
+use crate::*;
 use std::borrow::Cow;
 use std::ops::Index;
 use std::{collections::BTreeMap, fmt::Debug};
@@ -372,25 +372,128 @@ impl<'a> PartialEq<ValueRef<'a>> for Value {
         use std::ops::Deref;
         match self {
             Value::Null => other == &ValueRef::Null,
-            Value::Bool(s) => if let ValueRef::Bool(o) = other { s == o } else { false },
-            Value::Int(s) => if let ValueRef::Int(o) = other { s == o } else { false },
-            Value::Str(s) => if let ValueRef::Str(o) = other { s == o } else { false },
-            Value::F32(s) => if let ValueRef::F32(o) = other { s == o } else { false },
-            Value::F64(s) => if let ValueRef::F64(o) = other { s == o } else { false },
-            Value::Bin(s) => if let ValueRef::Bin(o) = other { s == o } else { false },
-            Value::Array(s) => if let ValueRef::Array(o) = other { s == o } else { false },
-            Value::Map(s) => if let ValueRef::Map(o) = other {
-                s.len() == o.len() && s.iter().zip(o).all(|((ks,vs),(ko,vo))| (ks==ko) && (vs==vo))
-            } else { false },
-            Value::Hash(s) => if let ValueRef::Hash(o) = other { s == o } else { false },
-            Value::Identity(s) => if let ValueRef::Identity(o) = other { s == o } else { false },
-            Value::StreamId(s) => if let ValueRef::StreamId(o) = other { s == o } else { false },
-            Value::LockId(s) => if let ValueRef::LockId(o) = other { s == o } else { false },
-            Value::Timestamp(s) => if let ValueRef::Timestamp(o) = other { s == o } else { false },
-            Value::DataLockbox(s) => if let ValueRef::DataLockbox(o) = other { o == &s.deref() } else { false },
-            Value::IdentityLockbox(s) => if let ValueRef::IdentityLockbox(o) = other { o == &s.deref() } else { false },
-            Value::StreamLockbox(s) => if let ValueRef::StreamLockbox(o) = other { o == &s.deref() } else { false },
-            Value::LockLockbox(s) => if let ValueRef::LockLockbox(o) = other { o == &s.deref() } else { false },
+            Value::Bool(s) => {
+                if let ValueRef::Bool(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::Int(s) => {
+                if let ValueRef::Int(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::Str(s) => {
+                if let ValueRef::Str(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::F32(s) => {
+                if let ValueRef::F32(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::F64(s) => {
+                if let ValueRef::F64(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::Bin(s) => {
+                if let ValueRef::Bin(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::Array(s) => {
+                if let ValueRef::Array(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::Map(s) => {
+                if let ValueRef::Map(o) = other {
+                    s.len() == o.len()
+                        && s.iter()
+                            .zip(o)
+                            .all(|((ks, vs), (ko, vo))| (ks == ko) && (vs == vo))
+                } else {
+                    false
+                }
+            }
+            Value::Hash(s) => {
+                if let ValueRef::Hash(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::Identity(s) => {
+                if let ValueRef::Identity(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::StreamId(s) => {
+                if let ValueRef::StreamId(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::LockId(s) => {
+                if let ValueRef::LockId(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::Timestamp(s) => {
+                if let ValueRef::Timestamp(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            Value::DataLockbox(s) => {
+                if let ValueRef::DataLockbox(o) = other {
+                    o == &s.deref()
+                } else {
+                    false
+                }
+            }
+            Value::IdentityLockbox(s) => {
+                if let ValueRef::IdentityLockbox(o) = other {
+                    o == &s.deref()
+                } else {
+                    false
+                }
+            }
+            Value::StreamLockbox(s) => {
+                if let ValueRef::StreamLockbox(o) = other {
+                    o == &s.deref()
+                } else {
+                    false
+                }
+            }
+            Value::LockLockbox(s) => {
+                if let ValueRef::LockLockbox(o) = other {
+                    o == &s.deref()
+                } else {
+                    false
+                }
+            }
         }
     }
 }
@@ -640,7 +743,7 @@ impl<'de> serde::Deserialize<'de> for Value {
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
-                // Allocate with the size hint, but be conservative. 4096 is what serde uses 
+                // Allocate with the size hint, but be conservative. 4096 is what serde uses
                 // internally for collections, so we'll do likewise.
                 let mut seq = match access.size_hint() {
                     Some(size) => Vec::with_capacity(size.min(4096)),
@@ -669,49 +772,54 @@ impl<'de> serde::Deserialize<'de> for Value {
                 let bytes: &Bytes = access.newtype_variant()?;
                 match variant {
                     FOG_TYPE_ENUM_TIME_INDEX => {
-                        let val = Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))?;
+                        let val =
+                            Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))?;
                         Ok(Value::Timestamp(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_HASH_INDEX => {
-                        let val = Hash::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = Hash::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::Hash(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_IDENTITY_INDEX => {
-                        let val = Identity::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = Identity::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::Identity(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_LOCK_ID_INDEX => {
-                        let val = LockId::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = LockId::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::LockId(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_STREAM_ID_INDEX => {
-                        let val = StreamId::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = StreamId::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::StreamId(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_DATA_LOCKBOX_INDEX => {
                         let val = DataLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::DataLockbox(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_IDENTITY_LOCKBOX_INDEX => {
                         let val = IdentityLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::IdentityLockbox(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_STREAM_LOCKBOX_INDEX => {
                         let val = StreamLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::StreamLockbox(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_LOCK_LOCKBOX_INDEX => {
                         let val = LockLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::LockLockbox(val))
-                    },
+                    }
                     _ => Err(A::Error::custom("unrecognized fogpack extension type")),
                 }
             }
@@ -720,4 +828,3 @@ impl<'de> serde::Deserialize<'de> for Value {
         deserializer.deserialize_any(ValueVisitor)
     }
 }
-

@@ -1,6 +1,6 @@
 use std::{convert::TryFrom, fmt::Debug};
 
-use crate::{MAX_DOC_SIZE, depth_tracking::DepthTracker, marker::*};
+use crate::{depth_tracking::DepthTracker, marker::*, MAX_DOC_SIZE};
 use crate::{
     error::{Error, Result},
     get_int_internal, integer, Integer, Timestamp,
@@ -198,7 +198,7 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
             }
         }
         Map(len) => {
-            assert!(len <= MAX_DOC_SIZE/2);
+            assert!(len <= MAX_DOC_SIZE / 2);
             // Write marker
             if len <= 15 {
                 buf.push(Marker::FixMap(len as u8).into());
@@ -295,7 +295,9 @@ impl DebugFormatter {
     }
 
     fn indent(&mut self) {
-        for _ in 0..self.tracker.len() { self.debug.push_str(&self.indent) }
+        for _ in 0..self.tracker.len() {
+            self.debug.push_str(&self.indent)
+        }
     }
 
     fn update(&mut self, elem: &Element) {
@@ -315,24 +317,38 @@ impl DebugFormatter {
                     write!(self.debug, "{:X}", byte).unwrap();
                 }
                 self.debug.push('"');
-            },
+            }
             Element::Array(v) => {
                 self.tracker.push(TrackType::FirstArray(*v));
                 self.debug.push('[');
-            },
+            }
             Element::Map(v) => {
                 self.tracker.push(TrackType::FirstMap(*v * 2));
                 self.debug.push('{');
-            },
+            }
             Element::Timestamp(v) => write!(self.debug, "\"{}\"", v).unwrap(),
             Element::Hash(v) => write!(self.debug, "\"{}\"", v).unwrap(),
             Element::Identity(v) => write!(self.debug, "\"{}\"", v).unwrap(),
             Element::LockId(v) => write!(self.debug, "\"{}\"", v).unwrap(),
             Element::StreamId(v) => write!(self.debug, "\"{}\"", v).unwrap(),
-            Element::DataLockbox(v) => write!(self.debug, "\"<DataLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
-            Element::IdentityLockbox(v) => write!(self.debug, "\"<IdentityLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
-            Element::StreamLockbox(v) => write!(self.debug, "\"<StreamLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
-            Element::LockLockbox(v) => write!(self.debug, "\"<LockLockbox(len={})>\"", v.as_bytes().len()).unwrap(),
+            Element::DataLockbox(v) => {
+                write!(self.debug, "\"<DataLockbox(len={})>\"", v.as_bytes().len()).unwrap()
+            }
+            Element::IdentityLockbox(v) => write!(
+                self.debug,
+                "\"<IdentityLockbox(len={})>\"",
+                v.as_bytes().len()
+            )
+            .unwrap(),
+            Element::StreamLockbox(v) => write!(
+                self.debug,
+                "\"<StreamLockbox(len={})>\"",
+                v.as_bytes().len()
+            )
+            .unwrap(),
+            Element::LockLockbox(v) => {
+                write!(self.debug, "\"<LockLockbox(len={})>\"", v.as_bytes().len()).unwrap()
+            }
         }
 
         while let Some(track) = self.tracker.pop() {
@@ -340,76 +356,68 @@ impl DebugFormatter {
                 TrackType::FirstArray(size) => {
                     if size == 0 {
                         self.debug.push_str(" ]");
-                    }
-                    else if size == 1 {
+                    } else if size == 1 {
                         self.debug.push(' ');
-                        self.tracker.push(TrackType::FirstArray(size-1));
+                        self.tracker.push(TrackType::FirstArray(size - 1));
                         break;
-                    }
-                    else {
+                    } else {
                         self.debug.push('\n');
-                        self.tracker.push(TrackType::Array(size-1));
+                        self.tracker.push(TrackType::Array(size - 1));
                         break;
                     }
-                },
+                }
                 TrackType::Array(size) => {
                     if size == 0 {
                         self.debug.push('\n');
                         self.indent();
                         self.debug.push(']');
-                    }
-                    else {
+                    } else {
                         self.debug.push_str(",\n");
-                        self.tracker.push(TrackType::Array(size-1));
+                        self.tracker.push(TrackType::Array(size - 1));
                         break;
                     }
-                },
+                }
                 TrackType::FirstMap(size) => {
                     if size == 0 {
                         self.debug.push_str(" }");
-                    }
-                    else if size == 1 {
+                    } else if size == 1 {
                         self.debug.push_str(": ");
-                        self.tracker.push(TrackType::FirstMap(size-1));
+                        self.tracker.push(TrackType::FirstMap(size - 1));
                         break;
-                    }
-                    else if size == 2 {
+                    } else if size == 2 {
                         self.debug.push(' ');
-                        self.tracker.push(TrackType::FirstMap(size-1));
+                        self.tracker.push(TrackType::FirstMap(size - 1));
                         break;
-                    }
-                    else {
+                    } else {
                         self.debug.push('\n');
-                        self.tracker.push(TrackType::Map(size-1));
+                        self.tracker.push(TrackType::Map(size - 1));
                         break;
                     }
-                },
+                }
                 TrackType::Map(size) => {
                     if size == 0 {
                         self.debug.push('\n');
                         self.indent();
                         self.debug.push('}');
-                    }
-                    else if (size & 0x1) == 1 {
+                    } else if (size & 0x1) == 1 {
                         self.debug.push_str(": ");
-                        self.tracker.push(TrackType::Map(size-1));
+                        self.tracker.push(TrackType::Map(size - 1));
                         break;
-                    }
-                    else {
+                    } else {
                         self.debug.push_str(",\n");
-                        self.tracker.push(TrackType::Map(size-1));
+                        self.tracker.push(TrackType::Map(size - 1));
                         break;
                     }
-                },
+                }
             }
         }
     }
 }
 
-/// Fog-pack element parser. Return individual elements of a fog-pack sequence, and checks for 
+/// Fog-pack element parser. Return individual elements of a fog-pack sequence, and checks for
 /// nesting depth limits.
 ///
-/// Users of the parser *must* verify that map keys are strings, and that they are in lexicographic 
+/// Users of the parser *must* verify that map keys are strings, and that they are in lexicographic
 /// order.
 #[derive(Clone, Debug)]
 pub struct Parser<'a> {
@@ -430,7 +438,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Turn a byte slice into a new parser, with a debugging pretty-printer that will run as 
+    /// Turn a byte slice into a new parser, with a debugging pretty-printer that will run as
     /// elements are parsed.
     pub fn with_debug(data: &'a [u8], indent: String) -> Parser<'a> {
         Self {
@@ -446,14 +454,16 @@ impl<'a> Parser<'a> {
         self.data.first().and_then(|n| Some(Marker::from_u8(*n)))
     }
 
-    /// Call when parsing is expected to be complete. Fails if there are any bytes left inside the 
+    /// Call when parsing is expected to be complete. Fails if there are any bytes left inside the
     /// parser.
     pub fn finish(self) -> Result<()> {
         if self.data.is_empty() {
             Ok(())
-        }
-        else {
-            Err(Error::BadEncode(format!("Parsing still had {} bytes left", self.data.len())))
+        } else {
+            Err(Error::BadEncode(format!(
+                "Parsing still had {} bytes left",
+                self.data.len()
+            )))
         }
     }
 
@@ -953,13 +963,14 @@ impl<'a> Parser<'a> {
                     self.parse_ext(len)?
                 }
             };
-        if let Some(ref mut debug) = self.debug { debug.update(&elem); }
+        if let Some(ref mut debug) = self.debug {
+            debug.update(&elem);
+        }
         self.depth_tracking.update_elem(&elem)?;
         Ok(elem)
     }
 
     fn parse_ext(&mut self, len: usize) -> Result<Element<'a>> {
-
         let ext_type = self.data.read_u8().map_err(|_| Error::LengthTooShort {
             step: "decode Ext type",
             actual: self.data.len(),
@@ -994,7 +1005,6 @@ impl<'a> Parser<'a> {
             ExtType::LockLockbox => Element::LockLockbox(LockLockboxRef::from_bytes(bytes)?),
         })
     }
-
 }
 
 impl<'a> std::iter::Iterator for Parser<'a> {
@@ -1824,8 +1834,14 @@ mod test {
                     len
                 );
                 let mut parser = Parser::new(&enc);
-                assert!(parser.next().unwrap().is_err(), "Not shortest should cause failure");
-                assert!(parser.next().is_none(), "Should always return None after failure");
+                assert!(
+                    parser.next().unwrap().is_err(),
+                    "Not shortest should cause failure"
+                );
+                assert!(
+                    parser.next().is_none(),
+                    "Should always return None after failure"
+                );
             }
         }
 
@@ -1899,7 +1915,7 @@ mod test {
                 let mut enc = Vec::new();
                 serialize_elem(&mut enc, elem);
                 println!("{:x?}", &enc);
-                enc.resize(enc.len() + 2*case, 0xa0);
+                enc.resize(enc.len() + 2 * case, 0xa0);
                 let mut parser = Parser::new(&enc);
                 let val = parser
                     .next()
@@ -1967,8 +1983,14 @@ mod test {
                     len
                 );
                 let mut parser = Parser::new(&enc);
-                assert!(parser.next().unwrap().is_err(), "Not shortest should cause failure");
-                assert!(parser.next().is_none(), "Should always return None after failure");
+                assert!(
+                    parser.next().unwrap().is_err(),
+                    "Not shortest should cause failure"
+                );
+                assert!(
+                    parser.next().is_none(),
+                    "Should always return None after failure"
+                );
             }
         }
 

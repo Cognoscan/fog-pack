@@ -116,10 +116,7 @@ impl F64Validator {
     fn query_check_f64(&self, other: &Self) -> bool {
         (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
             && (self.ord
-                || (!other.ex_min
-                    && !other.ex_max
-                    && other.min.is_nan()
-                    && other.max.is_nan()))
+                || (!other.ex_min && !other.ex_max && other.min.is_nan() && other.max.is_nan()))
     }
 
     pub(crate) fn query_check(&self, other: &Validator) -> bool {

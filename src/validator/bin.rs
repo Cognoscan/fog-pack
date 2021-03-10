@@ -93,7 +93,9 @@ impl BinValidator {
         let elem = parser
             .next()
             .ok_or(Error::FailValidate("expected binary data".to_string()))??;
-        let val = if let Element::Bin(v) = elem { v } else {
+        let val = if let Element::Bin(v) = elem {
+            v
+        } else {
             return Err(Error::FailValidate(format!(
                 "expected Bin, got {}",
                 elem.name()
@@ -102,24 +104,36 @@ impl BinValidator {
 
         // Length checks
         if val.len() > self.max_len {
-            return Err(Error::FailValidate("Bin is longer than max_len".to_string()));
+            return Err(Error::FailValidate(
+                "Bin is longer than max_len".to_string(),
+            ));
         }
         if val.len() < self.min_len {
-            return Err(Error::FailValidate("Bin is shorter than min_len".to_string()));
+            return Err(Error::FailValidate(
+                "Bin is shorter than min_len".to_string(),
+            ));
         }
-        
+
         // Bit checks
-        if self.bits_set.iter()
+        if self
+            .bits_set
+            .iter()
             .zip(val.iter().chain(repeat(&0u8)))
             .any(|(bit, val)| (bit & val) != *bit)
         {
-            return Err(Error::FailValidate("Bin does not have all required bits set".to_string()));
+            return Err(Error::FailValidate(
+                "Bin does not have all required bits set".to_string(),
+            ));
         }
-        if self.bits_clr.iter()
+        if self
+            .bits_clr
+            .iter()
             .zip(val.iter().chain(repeat(&0u8)))
             .any(|(bit, val)| (bit & val) != 0)
         {
-            return Err(Error::FailValidate("Bin does not have all required bits cleared".to_string()));
+            return Err(Error::FailValidate(
+                "Bin does not have all required bits cleared".to_string(),
+            ));
         }
 
         // Assist functions for comparison
@@ -131,11 +145,8 @@ impl BinValidator {
             }
         }
         fn trim<'a>(val: &'a [u8]) -> &'a [u8] {
-            let trim_amount = val.iter()
-                .rev()
-                .take_while(|v| **v == 0)
-                .count();
-            &val[0..(val.len()-trim_amount)]
+            let trim_amount = val.iter().rev().take_while(|v| **v == 0).count();
+            &val[0..(val.len() - trim_amount)]
         }
 
         // Range checks
@@ -149,25 +160,27 @@ impl BinValidator {
 
             let min_pass = match (self.min.is_empty(), self.ex_min) {
                 (true, true) => !trimmed_val.is_empty(), // at least zero
-                (true, false) => true, // Can be anything, 0 on up
+                (true, false) => true,                   // Can be anything, 0 on up
                 (false, true) => compare(trimmed_val, trim(&self.min)) == Ordering::Greater,
                 (false, false) => compare(trimmed_val, trim(&self.min)) != Ordering::Less,
             };
 
             if !max_pass {
-                return Err(Error::FailValidate("Bin greater than maximum allowed".to_string()));
+                return Err(Error::FailValidate(
+                    "Bin greater than maximum allowed".to_string(),
+                ));
             }
             if !min_pass {
-                return Err(Error::FailValidate("Bin less than minimum allowed".to_string()));
+                return Err(Error::FailValidate(
+                    "Bin less than minimum allowed".to_string(),
+                ));
             }
         }
 
         // in/nin checks
         if self.in_list.len() > 0 {
             if !self.in_list.iter().any(|v| *v == val) {
-                return Err(Error::FailValidate(
-                        "Bin is not on `in` list".to_string()
-                ));
+                return Err(Error::FailValidate("Bin is not on `in` list".to_string()));
             }
         }
         if self.nin_list.iter().any(|v| *v == val) {
@@ -180,7 +193,8 @@ impl BinValidator {
     fn query_check_self(&self, other: &Self) -> bool {
         (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
             && (self.bit || (other.bits_set.is_empty() && other.bits_clr.is_empty()))
-            && (self.ord || (!other.ex_min && !other.ex_max && other.min.is_empty() && other.max.is_empty()))
+            && (self.ord
+                || (!other.ex_min && !other.ex_max && other.min.is_empty() && other.max.is_empty()))
             && (self.size || (usize_is_max(&other.max_len) && usize_is_zero(&other.min_len)))
     }
 
@@ -196,4 +210,3 @@ impl BinValidator {
         }
     }
 }
-

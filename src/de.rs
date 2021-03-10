@@ -27,9 +27,7 @@ impl<'a> FogDeserializer<'a> {
     }
 
     pub(crate) fn from_parser(parser: Parser<'a>) -> Self {
-        Self {
-            parser
-        }
+        Self { parser }
     }
 
     pub(crate) fn with_debug(buf: &'a [u8], indent: String) -> Self {
@@ -53,7 +51,6 @@ impl<'a> FogDeserializer<'a> {
             .ok_or_else(|| Error::SerdeFail("missing next value".to_string()))??;
         Ok(elem)
     }
-
 }
 
 impl<'de, 'a> serde::Deserializer<'de> for &'a mut FogDeserializer<'de> {
@@ -523,7 +520,7 @@ mod test {
         test_cases.push((0x7f, vec![0x7f]));
         test_cases.push((0x80, vec![0xcc, 0x80]));
         test_cases.push((0xff, vec![0xcc, 0xff]));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u8::deserialize(&mut de).unwrap();
@@ -542,7 +539,7 @@ mod test {
         test_cases.push((0x00ff, vec![0xcc, 0xff]));
         test_cases.push((0x0100, vec![0xcd, 0x00, 0x01]));
         test_cases.push((0xffff, vec![0xcd, 0xff, 0xff]));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u16::deserialize(&mut de).unwrap();
@@ -563,7 +560,7 @@ mod test {
         test_cases.push((0x0000_ffff, vec![0xcd, 0xff, 0xff]));
         test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
         test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u32::deserialize(&mut de).unwrap();
@@ -585,14 +582,14 @@ mod test {
         test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
         test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
         test_cases.push((
-                u32::MAX as u64 + 1,
-                vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
+            u32::MAX as u64 + 1,
+            vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
         ));
         test_cases.push((
-                u64::MAX,
-                vec![0xcf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+            u64::MAX,
+            vec![0xcf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
         ));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u64::deserialize(&mut de).unwrap();
@@ -612,7 +609,7 @@ mod test {
         test_cases.push((-32, vec![0xe0]));
         test_cases.push((-33, vec![0xd0, 0xdf]));
         test_cases.push((i8::MIN as i8, vec![0xd0, 0x80]));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i8::deserialize(&mut de).unwrap();
@@ -637,7 +634,7 @@ mod test {
         test_cases.push((i8::MIN as i16, vec![0xd0, 0x80]));
         test_cases.push((i8::MIN as i16 - 1, vec![0xd1, 0x7f, 0xff]));
         test_cases.push((i16::MIN as i16, vec![0xd1, 0x00, 0x80]));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i16::deserialize(&mut de).unwrap();
@@ -666,7 +663,7 @@ mod test {
         test_cases.push((i16::MIN as i32, vec![0xd1, 0x00, 0x80]));
         test_cases.push((i16::MIN as i32 - 1, vec![0xd2, 0xff, 0x7f, 0xff, 0xff]));
         test_cases.push((i32::MIN as i32, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i32::deserialize(&mut de).unwrap();
@@ -688,8 +685,8 @@ mod test {
         test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
         test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
         test_cases.push((
-                u32::MAX as i64 + 1,
-                vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
+            u32::MAX as i64 + 1,
+            vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
         ));
         test_cases.push((-1, vec![0xff]));
         test_cases.push((-2, vec![0xfe]));
@@ -701,14 +698,14 @@ mod test {
         test_cases.push((i16::MIN as i64 - 1, vec![0xd2, 0xff, 0x7f, 0xff, 0xff]));
         test_cases.push((i32::MIN as i64, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
         test_cases.push((
-                i32::MIN as i64 - 1,
-                vec![0xd3, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff],
+            i32::MIN as i64 - 1,
+            vec![0xd3, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff],
         ));
         test_cases.push((
-                i64::MIN,
-                vec![0xd3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80],
+            i64::MIN,
+            vec![0xd3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80],
         ));
-        
+
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i64::deserialize(&mut de).unwrap();
@@ -737,24 +734,24 @@ mod test {
     fn de_f64() {
         let mut test_cases: Vec<(f64, Vec<u8>)> = Vec::new();
         test_cases.push((
-                0.0,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            0.0,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
         ));
         test_cases.push((
-                1.0,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f],
+            1.0,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f],
         ));
         test_cases.push((
-                -1.0,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xbf],
+            -1.0,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xbf],
         ));
         test_cases.push((
-                f64::NEG_INFINITY,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff],
+            f64::NEG_INFINITY,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff],
         ));
         test_cases.push((
-                f64::INFINITY,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f],
+            f64::INFINITY,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f],
         ));
         for (float, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
@@ -868,12 +865,8 @@ mod test {
         let mut enc = vec![0xc7, 0x21, 0x01];
         enc.extend_from_slice(hash.as_ref());
         let mut de = FogDeserializer::new(&enc);
-        let dec= Hash::deserialize(&mut de).unwrap();
+        let dec = Hash::deserialize(&mut de).unwrap();
         de.finish().unwrap();
         assert_eq!(dec, hash);
     }
-
 }
-
-
-

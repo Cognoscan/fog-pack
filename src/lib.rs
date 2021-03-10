@@ -3,20 +3,21 @@ mod marker;
 
 pub mod compress;
 mod depth_tracking;
+mod document;
+mod entry;
+mod integer;
+pub mod query;
 mod schema;
+mod timestamp;
 pub mod validator;
 pub mod value;
 pub mod value_ref;
-mod document;
-mod entry;
-mod timestamp;
-mod integer;
 
-pub use schema::*;
-pub use entry::*;
 pub use document::*;
-pub use timestamp::*;
+pub use entry::*;
 pub use integer::*;
+pub use schema::*;
+pub use timestamp::*;
 
 mod error;
 
@@ -37,10 +38,12 @@ mod ser;
 /// The maximum nesting depth allowed for any fog-pack value. No encoded document will ever nest
 /// Map/Array markers deeper than this.
 pub const MAX_DEPTH: usize = 100;
-/// The exclusive maximum allowed size of a raw document, including signatures, is 1 MiB. No
-/// encoded document will ever be equal to or larger than this size.
+/// The maximum allowed size of a raw document, including signatures, is 1 MiB. No encoded document
+/// will ever be larger than this size.
 pub const MAX_DOC_SIZE: usize = (1usize << 20) - 1; // 1 MiB
-/// The exclusive maximum allowed size of a raw entry, including signatures, is 64 kiB. No encoded
-/// entry will ever be equal to or larger than this size. This does not include the size of the
-/// parent hash or the field for the entry.
+/// The maximum allowed size of a raw entry, including signatures, is 64 kiB. No encoded entry will
+/// ever be larger than this size.
 pub const MAX_ENTRY_SIZE: usize = (1usize << 16) - 1; // 64 kiB
+/// The maximum allowed size of a raw query, is 64 kiB. No encoded query will ever be larger than
+/// this size.
+pub const MAX_QUERY_SIZE: usize = (1usize << 16) - 1; // 64 kiB

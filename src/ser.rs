@@ -11,8 +11,8 @@ use fog_crypto::serde::FOG_TYPE_ENUM;
 use serde::ser::*;
 use std::{collections::BTreeMap, convert::TryFrom, mem};
 
-use crate::{MAX_DOC_SIZE, element::*};
 use crate::marker::ExtType;
+use crate::{element::*, MAX_DOC_SIZE};
 
 use crate::error::{Error, Result};
 
@@ -52,11 +52,14 @@ impl FogSerializer {
             Element::Str(v) if v.len() > MAX_DOC_SIZE => Some(v.len()),
             Element::Bin(v) if v.len() > MAX_DOC_SIZE => Some(v.len()),
             Element::Array(v) if *v > MAX_DOC_SIZE => Some(*v),
-            Element::Map(v) if *v > (MAX_DOC_SIZE/2) => Some(*v),
-            _ => None
+            Element::Map(v) if *v > (MAX_DOC_SIZE / 2) => Some(*v),
+            _ => None,
         };
         if let Some(len) = len_too_long {
-            return Err(Error::SerdeFail(format!("Value too large: {} elements/bytes", len)));
+            return Err(Error::SerdeFail(format!(
+                "Value too large: {} elements/bytes",
+                len
+            )));
         }
         self.depth_tracking.update_elem(&elem)?;
         serialize_elem(&mut self.buf, elem);
@@ -419,7 +422,10 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
         if let Some((ref mut len, _)) = self.unknown_len {
             *len += 1;
             if *len > MAX_DOC_SIZE {
-                return Err(Error::SerdeFail(format!("array too large: {} elements", len)));
+                return Err(Error::SerdeFail(format!(
+                    "array too large: {} elements",
+                    len
+                )));
             }
         }
         value.serialize(&mut *self.se)
@@ -593,7 +599,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 ..
             } => {
                 *len += 1;
-                if *len > (MAX_DOC_SIZE>>1) {
+                if *len > (MAX_DOC_SIZE >> 1) {
                     return Err(Error::SerdeFail(format!("map too large: {} pairs", len)));
                 }
                 value.serialize(KeySerializer::new(new_key))?;
@@ -659,8 +665,11 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 if map.insert(key, buf).is_some() {
                     return Err(Error::SerdeFail(format!("map has repeated keys")));
                 }
-                if map.len() > (MAX_DOC_SIZE>>1) {
-                    return Err(Error::SerdeFail(format!("map too large: {} pairs", map.len())));
+                if map.len() > (MAX_DOC_SIZE >> 1) {
+                    return Err(Error::SerdeFail(format!(
+                        "map too large: {} pairs",
+                        map.len()
+                    )));
                 }
             }
         }
@@ -830,7 +839,10 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
         if v.len() > MAX_DOC_SIZE {
-            return Err(Error::SerdeFail(format!("Value too large: {} bytes", v.len())));
+            return Err(Error::SerdeFail(format!(
+                "Value too large: {} bytes",
+                v.len()
+            )));
         }
         if !self.received {
             self.received = true;
@@ -1230,7 +1242,6 @@ impl<'a> Serializer for KeySerializer<'a> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use crate::MAX_DOC_SIZE;
@@ -1274,7 +1285,7 @@ mod test {
         test_cases.push((0x7f, vec![0x7f]));
         test_cases.push((0x80, vec![0xcc, 0x80]));
         test_cases.push((0xff, vec![0xcc, 0xff]));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1293,7 +1304,7 @@ mod test {
         test_cases.push((0x00ff, vec![0xcc, 0xff]));
         test_cases.push((0x0100, vec![0xcd, 0x00, 0x01]));
         test_cases.push((0xffff, vec![0xcd, 0xff, 0xff]));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1314,7 +1325,7 @@ mod test {
         test_cases.push((0x0000_ffff, vec![0xcd, 0xff, 0xff]));
         test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
         test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1336,14 +1347,14 @@ mod test {
         test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
         test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
         test_cases.push((
-                u32::MAX as u64 + 1,
-                vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
+            u32::MAX as u64 + 1,
+            vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
         ));
         test_cases.push((
-                u64::MAX,
-                vec![0xcf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+            u64::MAX,
+            vec![0xcf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
         ));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1363,7 +1374,7 @@ mod test {
         test_cases.push((-32, vec![0xe0]));
         test_cases.push((-33, vec![0xd0, 0xdf]));
         test_cases.push((i8::MIN as i8, vec![0xd0, 0x80]));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1388,7 +1399,7 @@ mod test {
         test_cases.push((i8::MIN as i16, vec![0xd0, 0x80]));
         test_cases.push((i8::MIN as i16 - 1, vec![0xd1, 0x7f, 0xff]));
         test_cases.push((i16::MIN as i16, vec![0xd1, 0x00, 0x80]));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1417,7 +1428,7 @@ mod test {
         test_cases.push((i16::MIN as i32, vec![0xd1, 0x00, 0x80]));
         test_cases.push((i16::MIN as i32 - 1, vec![0xd2, 0xff, 0x7f, 0xff, 0xff]));
         test_cases.push((i32::MIN as i32, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1439,8 +1450,8 @@ mod test {
         test_cases.push((0x0001_0000, vec![0xce, 0x00, 0x00, 0x01, 0x00]));
         test_cases.push((0xffff_ffff, vec![0xce, 0xff, 0xff, 0xff, 0xff]));
         test_cases.push((
-                u32::MAX as i64 + 1,
-                vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
+            u32::MAX as i64 + 1,
+            vec![0xcf, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
         ));
         test_cases.push((-1, vec![0xff]));
         test_cases.push((-2, vec![0xfe]));
@@ -1452,14 +1463,14 @@ mod test {
         test_cases.push((i16::MIN as i64 - 1, vec![0xd2, 0xff, 0x7f, 0xff, 0xff]));
         test_cases.push((i32::MIN as i64, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
         test_cases.push((
-                i32::MIN as i64 - 1,
-                vec![0xd3, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff],
+            i32::MIN as i64 - 1,
+            vec![0xd3, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xff],
         ));
         test_cases.push((
-                i64::MIN,
-                vec![0xd3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80],
+            i64::MIN,
+            vec![0xd3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80],
         ));
-        
+
         for (int, enc) in test_cases {
             let to_ser = int;
             let mut ser = FogSerializer::default();
@@ -1487,24 +1498,24 @@ mod test {
     fn ser_f64() {
         let mut test_cases: Vec<(f64, Vec<u8>)> = Vec::new();
         test_cases.push((
-                0.0,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            0.0,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
         ));
         test_cases.push((
-                1.0,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f],
+            1.0,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f],
         ));
         test_cases.push((
-                -1.0,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xbf],
+            -1.0,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xbf],
         ));
         test_cases.push((
-                f64::NEG_INFINITY,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff],
+            f64::NEG_INFINITY,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff],
         ));
         test_cases.push((
-                f64::INFINITY,
-                vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f],
+            f64::INFINITY,
+            vec![0xcb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x7f],
         ));
         for (float, enc) in test_cases {
             let mut ser = FogSerializer::default();
@@ -1541,9 +1552,10 @@ mod test {
     #[test]
     fn ser_bin_too_big() {
         let mut ser = FogSerializer::default();
-        let test_vec = vec![0u8; (1<<20)+3];
+        let test_vec = vec![0u8; (1 << 20) + 3];
         let bin = serde_bytes::ByteBuf::from(test_vec);
-        bin.serialize(&mut ser).expect_err("Should fail due to being too big");
+        bin.serialize(&mut ser)
+            .expect_err("Should fail due to being too big");
     }
 
     #[test]
@@ -1575,8 +1587,10 @@ mod test {
     #[test]
     fn ser_str_too_big() {
         let mut ser = FogSerializer::default();
-        let test_vec = String::from_utf8(vec![0u8; (1<<20)+3]).unwrap();
-        test_vec.serialize(&mut ser).expect_err("Should fail due to being too big");
+        let test_vec = String::from_utf8(vec![0u8; (1 << 20) + 3]).unwrap();
+        test_vec
+            .serialize(&mut ser)
+            .expect_err("Should fail due to being too big");
     }
 
     #[test]
@@ -1624,7 +1638,9 @@ mod test {
     fn ser_seq_too_big() {
         let mut ser = FogSerializer::default();
         let to_ser: Vec<u8> = (0..17000000).map(|x| (x & 0xff) as u8).collect();
-        to_ser.serialize(&mut ser).expect_err("Should fail because the sequence is too long");
+        to_ser
+            .serialize(&mut ser)
+            .expect_err("Should fail because the sequence is too long");
     }
 
     #[test]
@@ -1653,7 +1669,10 @@ mod test {
             bitty: char,
         }
         let mut ser = FogSerializer::default();
-        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        let to_ser = IttyBittyStruct {
+            itty: 0u8,
+            bitty: 'c',
+        };
         to_ser.serialize(&mut ser).expect("Should serialize");
         let mut expected = vec![0x82];
         expected.push(0xa5);
@@ -1666,7 +1685,10 @@ mod test {
         assert_eq!(ser.buf, expected);
 
         let mut ser = FogSerializer::with_params(true);
-        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        let to_ser = IttyBittyStruct {
+            itty: 0u8,
+            bitty: 'c',
+        };
         to_ser.serialize(&mut ser).unwrap_err();
     }
 
@@ -1678,7 +1700,10 @@ mod test {
             itty: u8,
         }
         let mut ser = FogSerializer::default();
-        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        let to_ser = IttyBittyStruct {
+            itty: 0u8,
+            bitty: 'c',
+        };
         to_ser.serialize(&mut ser).expect("Should serialize");
         let mut expected = vec![0x82];
         expected.push(0xa5);
@@ -1691,7 +1716,10 @@ mod test {
         assert_eq!(ser.buf, expected);
 
         let mut ser = FogSerializer::with_params(true);
-        let to_ser = IttyBittyStruct { itty: 0u8, bitty: 'c' };
+        let to_ser = IttyBittyStruct {
+            itty: 0u8,
+            bitty: 'c',
+        };
         to_ser.serialize(&mut ser).expect("Should serialize");
         assert_eq!(ser.buf, expected);
     }
@@ -1725,12 +1753,15 @@ mod test {
     #[test]
     fn ser_map_too_big() {
         let mut ser = FogSerializer::default();
-        assert!(ser.serialize_map(Some(MAX_DOC_SIZE/2+1)).is_err(), "Map should have failed due to being too big");
+        assert!(
+            ser.serialize_map(Some(MAX_DOC_SIZE / 2 + 1)).is_err(),
+            "Map should have failed due to being too big"
+        );
 
         let mut ser = FogSerializer::default();
         let mut ser_map = ser.serialize_map(None).unwrap();
         let mut err = false;
-        for x in 0..(MAX_DOC_SIZE/2+1) {
+        for x in 0..(MAX_DOC_SIZE / 2 + 1) {
             if ser_map.serialize_entry(&format!("{}", x), &x).is_err() {
                 err = true;
                 break;
@@ -1827,7 +1858,8 @@ mod test {
         let to_ser = EnumerateThis::Null;
         to_ser.serialize(&mut ser).unwrap();
         let mut expected = Vec::new();
-        expected.push(0xa4); expected.extend_from_slice("Null".as_bytes());
+        expected.push(0xa4);
+        expected.extend_from_slice("Null".as_bytes());
         assert_eq!(ser.buf, expected);
 
         let mut ser = FogSerializer::default();
@@ -1835,7 +1867,8 @@ mod test {
         to_ser.serialize(&mut ser).unwrap();
         let mut expected = Vec::new();
         expected.push(0x81);
-        expected.push(0xa7); expected.extend_from_slice("Newtype".as_bytes());
+        expected.push(0xa7);
+        expected.extend_from_slice("Newtype".as_bytes());
         expected.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
         assert_eq!(ser.buf, expected);
 
@@ -1844,7 +1877,8 @@ mod test {
         to_ser.serialize(&mut ser).unwrap();
         let mut expected = Vec::new();
         expected.push(0x81);
-        expected.push(0xa5); expected.extend_from_slice("Tuple".as_bytes());
+        expected.push(0xa5);
+        expected.extend_from_slice("Tuple".as_bytes());
         expected.extend_from_slice(&[0x92, 0xa4, 0xf0, 0x9f, 0x99, 0x83, 0x04]);
         assert_eq!(ser.buf, expected);
 
@@ -1853,7 +1887,8 @@ mod test {
         to_ser.serialize(&mut ser).unwrap();
         let mut expected = Vec::new();
         expected.push(0x81);
-        expected.push(0xa6); expected.extend_from_slice("Struct".as_bytes());
+        expected.push(0xa6);
+        expected.extend_from_slice("Struct".as_bytes());
         expected.push(0x82);
         // map a
         expected.extend_from_slice(&[0xa1, 'a' as u8]);
@@ -1892,5 +1927,4 @@ mod test {
             assert_eq!(ser.buf, enc);
         }
     }
-
 }

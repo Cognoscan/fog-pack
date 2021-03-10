@@ -36,6 +36,20 @@ impl std::default::Default for BoolValidator {
 }
 
 impl BoolValidator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn comment(&mut self, comment: &str) -> &mut Self {
+        self.comment = comment.to_owned();
+        self
+    }
+
+    pub fn set_default(&mut self, default: bool) -> &mut Self {
+        self.default = default;
+        self
+    }
+
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()

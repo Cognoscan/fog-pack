@@ -1,7 +1,7 @@
 use super::*;
 use crate::element::*;
-use crate::Timestamp;
 use crate::error::{Error, Result};
+use crate::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 
@@ -88,33 +88,37 @@ impl TimeValidator {
         // Range checks
         let max_pass = if self.ex_max {
             val < self.max
-        }
-        else {
+        } else {
             val <= self.max
         };
         let min_pass = if self.ex_min {
             val > self.min
-        }
-        else {
+        } else {
             val >= self.min
         };
         if !max_pass {
-            return Err(Error::FailValidate("Timestamp greater than maximum allowed".to_string()));
+            return Err(Error::FailValidate(
+                "Timestamp greater than maximum allowed".to_string(),
+            ));
         }
         if !min_pass {
-            return Err(Error::FailValidate("Timestamp less than minimum allowed".to_string()));
+            return Err(Error::FailValidate(
+                "Timestamp less than minimum allowed".to_string(),
+            ));
         }
 
         // in/nin checks
         if self.in_list.len() > 0 {
             if !self.in_list.iter().any(|v| *v == val) {
                 return Err(Error::FailValidate(
-                        "Timestamp is not on `in` list".to_string()
+                    "Timestamp is not on `in` list".to_string(),
                 ));
             }
         }
         if self.nin_list.iter().any(|v| *v == val) {
-            return Err(Error::FailValidate("Timestamp is on `nin` list".to_string()));
+            return Err(Error::FailValidate(
+                "Timestamp is on `nin` list".to_string(),
+            ));
         }
 
         Ok(())
@@ -146,7 +150,6 @@ impl TimeValidator {
 mod test {
     use super::*;
     use crate::{de::FogDeserializer, ser::FogSerializer};
-
 
     #[test]
     fn default_ser() {
@@ -185,13 +188,22 @@ mod test {
         serialize_elem(&mut expected, Element::Str("comment"));
         serialize_elem(&mut expected, Element::Str("The year 2020"));
         serialize_elem(&mut expected, Element::Str("default"));
-        serialize_elem(&mut expected, Element::Timestamp(Timestamp::from_utc(1577854800, 0).unwrap()));
+        serialize_elem(
+            &mut expected,
+            Element::Timestamp(Timestamp::from_utc(1577854800, 0).unwrap()),
+        );
         serialize_elem(&mut expected, Element::Str("ex_max"));
         serialize_elem(&mut expected, Element::Bool(true));
         serialize_elem(&mut expected, Element::Str("max"));
-        serialize_elem(&mut expected, Element::Timestamp(Timestamp::from_utc(1609477200, 0).unwrap()));
+        serialize_elem(
+            &mut expected,
+            Element::Timestamp(Timestamp::from_utc(1609477200, 0).unwrap()),
+        );
         serialize_elem(&mut expected, Element::Str("min"));
-        serialize_elem(&mut expected, Element::Timestamp(Timestamp::from_utc(1577854800, 0).unwrap()));
+        serialize_elem(
+            &mut expected,
+            Element::Timestamp(Timestamp::from_utc(1577854800, 0).unwrap()),
+        );
         serialize_elem(&mut expected, Element::Str("ord"));
         serialize_elem(&mut expected, Element::Bool(true));
         serialize_elem(&mut expected, Element::Str("query"));
@@ -211,5 +223,4 @@ mod test {
             }
         }
     }
-
 }

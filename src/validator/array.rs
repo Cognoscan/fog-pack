@@ -1,6 +1,6 @@
 use super::*;
-use crate::{de::FogDeserializer, element::*, value_ref::ValueRef, value::Value};
 use crate::error::{Error, Result};
+use crate::{de::FogDeserializer, element::*, value::Value, value_ref::ValueRef};
 use serde::{Deserialize, Serialize};
 use std::{default::Default, iter::repeat};
 
@@ -22,7 +22,6 @@ fn usize_is_zero(v: &usize) -> bool {
 fn usize_is_max(v: &usize) -> bool {
     *v == usize::MAX
 }
-
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -84,10 +83,10 @@ impl Default for ArrayValidator {
 impl ArrayValidator {
     pub(crate) fn validate<'de, 'c>(
         &'c self,
-        context: &'c ValidatorContext,
+        types: &'c BTreeMap<String, Validator>,
         mut parser: Parser<'de>,
-        mut checklist: Checklist<'c>
-    ) -> Result<(Parser<'de>, Checklist<'c>)> {
+        mut checklist: Option<Checklist<'c>>,
+    ) -> Result<(Parser<'de>, Option<Checklist<'c>>)> {
         let val_parser = parser.clone();
         let elem = parser
             .next()
@@ -103,11 +102,15 @@ impl ArrayValidator {
 
         if len > self.max_len {
             return Err(Error::FailValidate(format!(
-                "Array is {} elements, longer than maximum allowed of {}", len, self.max_len)));
+                "Array is {} elements, longer than maximum allowed of {}",
+                len, self.max_len
+            )));
         }
         if len < self.min_len {
             return Err(Error::FailValidate(format!(
-                "Array is {} elements, shorter than minimum allowed of {}", len, self.min_len)));
+                "Array is {} elements, shorter than minimum allowed of {}",
+                len, self.min_len
+            )));
         }
 
         // Check all the requirements that require parsing the entire array
@@ -117,26 +120,23 @@ impl ArrayValidator {
 
             if !self.in_list.is_empty() {
                 if !self.in_list.iter().any(|v| *v == array) {
-                    return Err(Error::FailValidate(
-                        "Array is not on `in` list".to_string(),
-                    ));
+                    return Err(Error::FailValidate("Array is not on `in` list".to_string()));
                 }
             }
 
             if self.nin_list.iter().any(|v| *v == array) {
-                return Err(Error::FailValidate(
-                        "Array is on `nin` list".to_string(),
-                ));
+                return Err(Error::FailValidate("Array is on `nin` list".to_string()));
             }
 
             if self.unique {
-                if array.iter()
+                if array
+                    .iter()
                     .enumerate()
-                    .any(|(index, lhs)| array.iter().skip(index).any(|rhs| lhs==rhs))
+                    .any(|(index, lhs)| array.iter().skip(index).any(|rhs| lhs == rhs))
                 {
-                return Err(Error::FailValidate(
+                    return Err(Error::FailValidate(
                         "Array does not contain unique elements".to_string(),
-                ));
+                    ));
                 }
             }
         }
@@ -147,11 +147,13 @@ impl ArrayValidator {
         for _ in 0..len {
             // If we have a "contains", check
             if !self.contains.is_empty() {
-                self.contains.iter()
+                self.contains
+                    .iter()
                     .zip(contains_result.iter_mut())
                     .for_each(|(validator, passed)| {
                         if !*passed {
-                            let result = validator.validate(context, parser.clone(), checklist.clone());
+                            let result =
+                                validator.validate(types, parser.clone(), checklist.clone());
                             if let Ok((_, c)) = result {
                                 *passed = true;
                                 checklist = c;
@@ -159,14 +161,18 @@ impl ArrayValidator {
                         }
                     });
             }
-            let (p, c) = validators.next().unwrap().validate(context, parser, checklist)?;
+            let (p, c) = validators
+                .next()
+                .unwrap()
+                .validate(types, parser, checklist)?;
             parser = p;
             checklist = c;
         }
 
         if !contains_result.iter().all(|x| *x) {
             let mut err_str = String::from("Array was missing items satisfying `contains` list:");
-            let iter = contains_result.iter()
+            let iter = contains_result
+                .iter()
                 .enumerate()
                 .filter(|(_, pass)| !**pass)
                 .map(|(index, _)| format!(" {},", index));
@@ -178,8 +184,8 @@ impl ArrayValidator {
     }
 
     fn query_check_self(
-        &self, 
-        context: &ValidatorContext,
+        &self,
+        types: &BTreeMap<String, Validator>,
         other: &ArrayValidator,
     ) -> bool {
         let initial_check = (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
@@ -187,29 +193,45 @@ impl ArrayValidator {
             && (self.contains_ok || other.contains.is_empty())
             && (self.unique_ok || !other.unique)
             && (self.size || (usize_is_max(&other.max_len) && usize_is_zero(&other.min_len)));
-        if !initial_check { return false; }
+        if !initial_check {
+            return false;
+        }
+        if self.contains_ok {
+            let contains_ok = other.contains.iter().all(|other| {
+                self.items.query_check(types, other)
+                    && self
+                        .prefix
+                        .iter()
+                        .all(|mine| mine.query_check(types, other))
+            });
+            if !contains_ok {
+                return false;
+            }
+        }
         if self.array {
             // Make sure item_type is OK, then check all items against their matching validator
-            self.items.query_check(context, other.items.as_ref())
-            && self.prefix.iter().chain(repeat(self.items.as_ref()))
-                .zip(other.prefix.iter().chain(repeat(other.items.as_ref())))
-                .take(self.prefix.len().max(other.prefix.len()))
-                .all(|(mine, other)| mine.query_check(context, other))
-        }
-        else {
+            self.items.query_check(types, other.items.as_ref())
+                && self
+                    .prefix
+                    .iter()
+                    .chain(repeat(self.items.as_ref()))
+                    .zip(other.prefix.iter().chain(repeat(other.items.as_ref())))
+                    .take(self.prefix.len().max(other.prefix.len()))
+                    .all(|(mine, other)| mine.query_check(types, other))
+        } else {
             true
         }
     }
 
     pub(crate) fn query_check(
-        &self, 
-        context: &ValidatorContext,
+        &self,
+        types: &BTreeMap<String, Validator>,
         other: &Validator,
     ) -> bool {
         match other {
-            Validator::Array(other) => self.query_check_self(context, other),
+            Validator::Array(other) => self.query_check_self(types, other),
             Validator::Multi(list) => list.iter().all(|other| match other {
-                Validator::Array(other) => self.query_check_self(context, other),
+                Validator::Array(other) => self.query_check_self(types, other),
                 _ => false,
             }),
             Validator::Any => true,
@@ -217,7 +239,6 @@ impl ArrayValidator {
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -241,5 +262,4 @@ mod test {
         println!("{}", de.get_debug().unwrap());
         assert_eq!(schema, decoded);
     }
-
 }

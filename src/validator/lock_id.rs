@@ -1,7 +1,7 @@
-use crate::LockId;
 use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
+use crate::LockId;
 use serde::{Deserialize, Serialize};
 
 #[inline]

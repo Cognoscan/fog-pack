@@ -3,23 +3,30 @@
   "version": 1,
   "doc": {
     "Map": {
+      "req": {
+        "doc": { "Ref": "Validator" }
+      },
       "opt": {
         "name": { "Str": {} },
         "doc_compress": { "Ref": "Compress" },
         "description": { "Str": {} },
         "version": { "Int": {} },
-        "doc": { "Ref": "Validator" },
         "entries": {
           "Map": {
-            "values": { "Ref": "Validator" }
+            "values": {
+              "Map": {
+                "req": { "entry": { "Ref": "Validator" } },
+                "opt": { "compress": { "Ref": "Compress" } }
+              }
+            }
           }
         },
-        "entries_compress": { "Ref": "Compress" },
         "types": {
           "Map": {
             "values": { "Ref": "Validator" }
           }
-        }
+        },
+        "max_regex": { "Int": { "min": 0, "max": 255 } }
       }
     }
   },

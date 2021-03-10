@@ -1,5 +1,5 @@
-use crate::*;
 use crate::value::Value;
+use crate::*;
 use std::ops::Index;
 use std::{collections::BTreeMap, fmt::Debug};
 
@@ -344,7 +344,9 @@ impl<'a> Index<usize> for ValueRef<'a> {
     type Output = ValueRef<'a>;
 
     fn index(&self, index: usize) -> &Self::Output {
-        self.as_array().and_then(|v| v.get(index)).unwrap_or(&NULL_REF)
+        self.as_array()
+            .and_then(|v| v.get(index))
+            .unwrap_or(&NULL_REF)
     }
 }
 
@@ -352,7 +354,9 @@ impl<'a> Index<&str> for ValueRef<'a> {
     type Output = ValueRef<'a>;
 
     fn index(&self, index: &str) -> &Self::Output {
-        self.as_map().and_then(|v| v.get(index)).unwrap_or(&NULL_REF)
+        self.as_map()
+            .and_then(|v| v.get(index))
+            .unwrap_or(&NULL_REF)
     }
 }
 
@@ -361,25 +365,128 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
         use std::ops::Deref;
         match self {
             ValueRef::Null => other == &Value::Null,
-            ValueRef::Bool(s) => if let Value::Bool(o) = other { s == o } else { false },
-            ValueRef::Int(s) => if let Value::Int(o) = other { s == o } else { false },
-            ValueRef::Str(s) => if let Value::Str(o) = other { s == o } else { false },
-            ValueRef::F32(s) => if let Value::F32(o) = other { s == o } else { false },
-            ValueRef::F64(s) => if let Value::F64(o) = other { s == o } else { false },
-            ValueRef::Bin(s) => if let Value::Bin(o) = other { s == o } else { false },
-            ValueRef::Array(s) => if let Value::Array(o) = other { s == o } else { false },
-            ValueRef::Map(s) => if let Value::Map(o) = other {
-                s.len() == o.len() && s.iter().zip(o).all(|((ks,vs),(ko,vo))| (ks==ko) && (vs==vo))
-            } else { false },
-            ValueRef::Hash(s) => if let Value::Hash(o) = other { s == o } else { false },
-            ValueRef::Identity(s) => if let Value::Identity(o) = other { s == o } else { false },
-            ValueRef::StreamId(s) => if let Value::StreamId(o) = other { s == o } else { false },
-            ValueRef::LockId(s) => if let Value::LockId(o) = other { s == o } else { false },
-            ValueRef::Timestamp(s) => if let Value::Timestamp(o) = other { s == o } else { false },
-            ValueRef::DataLockbox(s) => if let Value::DataLockbox(o) = other { s == &o.deref() } else { false },
-            ValueRef::IdentityLockbox(s) => if let Value::IdentityLockbox(o) = other { s == &o.deref() } else { false },
-            ValueRef::StreamLockbox(s) => if let Value::StreamLockbox(o) = other { s == &o.deref() } else { false },
-            ValueRef::LockLockbox(s) => if let Value::LockLockbox(o) = other { s == &o.deref() } else { false },
+            ValueRef::Bool(s) => {
+                if let Value::Bool(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::Int(s) => {
+                if let Value::Int(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::Str(s) => {
+                if let Value::Str(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::F32(s) => {
+                if let Value::F32(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::F64(s) => {
+                if let Value::F64(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::Bin(s) => {
+                if let Value::Bin(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::Array(s) => {
+                if let Value::Array(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::Map(s) => {
+                if let Value::Map(o) = other {
+                    s.len() == o.len()
+                        && s.iter()
+                            .zip(o)
+                            .all(|((ks, vs), (ko, vo))| (ks == ko) && (vs == vo))
+                } else {
+                    false
+                }
+            }
+            ValueRef::Hash(s) => {
+                if let Value::Hash(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::Identity(s) => {
+                if let Value::Identity(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::StreamId(s) => {
+                if let Value::StreamId(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::LockId(s) => {
+                if let Value::LockId(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::Timestamp(s) => {
+                if let Value::Timestamp(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
+            ValueRef::DataLockbox(s) => {
+                if let Value::DataLockbox(o) = other {
+                    s == &o.deref()
+                } else {
+                    false
+                }
+            }
+            ValueRef::IdentityLockbox(s) => {
+                if let Value::IdentityLockbox(o) = other {
+                    s == &o.deref()
+                } else {
+                    false
+                }
+            }
+            ValueRef::StreamLockbox(s) => {
+                if let Value::StreamLockbox(o) = other {
+                    s == &o.deref()
+                } else {
+                    false
+                }
+            }
+            ValueRef::LockLockbox(s) => {
+                if let Value::LockLockbox(o) = other {
+                    s == &o.deref()
+                } else {
+                    false
+                }
+            }
         }
     }
 }
@@ -597,7 +704,7 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
-                // Allocate with the size hint, but be conservative. 4096 is what serde uses 
+                // Allocate with the size hint, but be conservative. 4096 is what serde uses
                 // internally for collections, so we'll do likewise.
                 let mut seq = match access.size_hint() {
                     Some(size) => Vec::with_capacity(size.min(4096)),
@@ -626,45 +733,50 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
                 let bytes: &Bytes = access.newtype_variant()?;
                 match variant {
                     FOG_TYPE_ENUM_TIME_INDEX => {
-                        let val = Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))?;
+                        let val =
+                            Timestamp::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e))?;
                         Ok(ValueRef::Timestamp(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_HASH_INDEX => {
-                        let val = Hash::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = Hash::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::Hash(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_IDENTITY_INDEX => {
-                        let val = Identity::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = Identity::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::Identity(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_LOCK_ID_INDEX => {
-                        let val = LockId::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = LockId::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::LockId(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_STREAM_ID_INDEX => {
-                        let val = StreamId::try_from(bytes.as_ref()).map_err(|e| A::Error::custom(e.serde_err()))?;
+                        let val = StreamId::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::StreamId(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_DATA_LOCKBOX_INDEX => {
                         let val = DataLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::DataLockbox(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_IDENTITY_LOCKBOX_INDEX => {
                         let val = IdentityLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::IdentityLockbox(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_STREAM_LOCKBOX_INDEX => {
                         let val = StreamLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::StreamLockbox(val))
-                    },
+                    }
                     FOG_TYPE_ENUM_LOCK_LOCKBOX_INDEX => {
                         let val = LockLockboxRef::from_bytes(&bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::LockLockbox(val))
-                    },
+                    }
                     _ => Err(A::Error::custom("unrecognized fogpack extension type")),
                 }
             }
@@ -673,4 +785,3 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
         deserializer.deserialize_any(ValueVisitor)
     }
 }
-

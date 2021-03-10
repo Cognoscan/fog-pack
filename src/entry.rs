@@ -1,20 +1,20 @@
+use crate::error::{Error, Result};
 use crate::{
-    MAX_ENTRY_SIZE,
     compress::CompressType,
+    de::FogDeserializer,
     element::{serialize_elem, Element},
     ser::FogSerializer,
-    de::FogDeserializer,
+    MAX_ENTRY_SIZE,
 };
-use byteorder::{ReadBytesExt, LittleEndian};
+use byteorder::{LittleEndian, ReadBytesExt};
 use fog_crypto::{
     hash::{Hash, HashState},
-    identity::{IdentityKey, Identity},
+    identity::{Identity, IdentityKey},
 };
-use serde::{Serialize,Deserialize};
-use crate::error::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
-const ENTRY_PREFIX_LEN: usize = 3;
+pub(crate) const ENTRY_PREFIX_LEN: usize = 3;
 
 pub(crate) struct SplitEntry<'a> {
     pub compress_raw: u8,
@@ -25,12 +25,25 @@ pub(crate) struct SplitEntry<'a> {
 impl<'a> SplitEntry<'a> {
     pub(crate) fn split(buf: &'a [u8]) -> Result<SplitEntry> {
         // Compression marker
-        let (&compress_raw, mut buf) = buf.split_first().ok_or_else(|| Error::LengthTooShort { step: "get compress type", actual: 0, expected: 1 })?;
+        let (&compress_raw, mut buf) = buf.split_first().ok_or_else(|| Error::LengthTooShort {
+            step: "get compress type",
+            actual: 0,
+            expected: 1,
+        })?;
         // Data length
-        let data_len = buf.read_u16::<LittleEndian>()
-            .map_err(|_| Error::LengthTooShort { step: "get data length", actual: buf.len(), expected: 2 })? as usize;
+        let data_len = buf
+            .read_u16::<LittleEndian>()
+            .map_err(|_| Error::LengthTooShort {
+                step: "get data length",
+                actual: buf.len(),
+                expected: 2,
+            })? as usize;
         if data_len > buf.len() {
-            return Err(Error::LengthTooShort { step: "get document data", actual: buf.len(), expected: data_len });
+            return Err(Error::LengthTooShort {
+                step: "get document data",
+                actual: buf.len(),
+                expected: data_len,
+            });
         }
         // Data & signature
         let (data, signature_raw) = buf.split_at(data_len);
@@ -53,9 +66,7 @@ pub struct NewEntry {
 }
 
 impl NewEntry {
-
     pub fn new<S: Serialize>(data: S, key: &str, parent: &Hash) -> Result<Self> {
-        
         // Serialize the data
         let buf: Vec<u8> = vec![CompressType::NoCompress.into(), 0u8, 0u8];
         let mut ser = FogSerializer::from_vec(buf, false);
@@ -64,9 +75,12 @@ impl NewEntry {
 
         // Check the total size and update the data length
         if buf.len() > MAX_ENTRY_SIZE {
-            return Err(Error::LengthTooLong { max: MAX_ENTRY_SIZE, actual: buf.len() });
+            return Err(Error::LengthTooLong {
+                max: MAX_ENTRY_SIZE,
+                actual: buf.len(),
+            });
         }
-        let data_len = (buf.len()-ENTRY_PREFIX_LEN).to_le_bytes();
+        let data_len = (buf.len() - ENTRY_PREFIX_LEN).to_le_bytes();
         buf[1] = data_len[0];
         buf[2] = data_len[1];
 
@@ -90,27 +104,28 @@ impl NewEntry {
         })
     }
 
-    /// Override the default compression settings. `None` will disable compression. `Some(level)` 
+    /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm.
     pub fn compression(&mut self, setting: Option<u8>) -> &mut Self {
         self.set_compress = Some(setting);
         self
     }
 
-    /// Sign the document, or or replace the existing signature if one exists already. Fails if the 
+    /// Sign the document, or or replace the existing signature if one exists already. Fails if the
     /// signature would grow the document size beyond the maximum allowed.
-    pub fn sign(&mut self, key: &IdentityKey) -> Result<&mut Self> {
-
+    pub fn sign(mut self, key: &IdentityKey) -> Result<Self> {
         // Sign and check for size violation
         let signature = key.sign(&self.entry_hash);
         let new_len = if self.has_signature {
             self.buf.len() - self.split().signature_raw.len() + signature.size()
-        }
-        else {
+        } else {
             self.buf.len() + signature.size()
         };
         if new_len > MAX_ENTRY_SIZE {
-            return Err(Error::LengthTooLong { max: MAX_ENTRY_SIZE, actual: self.buf.len() });
+            return Err(Error::LengthTooLong {
+                max: MAX_ENTRY_SIZE,
+                actual: self.buf.len(),
+            });
         }
 
         if self.has_signature {
@@ -139,19 +154,28 @@ impl NewEntry {
         self.hash_state.hash()
     }
 
-    pub(crate) fn data(&self) -> &[u8] {
-        self.split().data
-    }
-
     pub(crate) fn split(&self) -> SplitEntry {
         SplitEntry::split(&self.buf).unwrap()
     }
 
-    pub(crate) fn complete(self) -> (Hash, Vec<u8>) {
-        (self.hash_state.finalize(), self.buf)
+    pub(crate) fn data(&self) -> &[u8] {
+        self.split().data
+    }
+
+    /// Get the hash of the Entry's parent [`Document`].
+    pub fn parent(&self) -> &Hash {
+        &self.parent_hash
+    }
+
+    /// Get the Entry's string key.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub(crate) fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
+        (self.hash_state.finalize(), self.buf, self.set_compress)
     }
 }
-
 
 pub struct Entry {
     buf: Vec<u8>,
@@ -164,11 +188,12 @@ pub struct Entry {
 }
 
 impl Entry {
-
     pub(crate) fn new(buf: Vec<u8>, key: &str, parent: &Hash) -> Result<Self> {
-
         if buf.len() > MAX_ENTRY_SIZE {
-            return Err(Error::LengthTooLong { max: MAX_ENTRY_SIZE, actual: buf.len() });
+            return Err(Error::LengthTooLong {
+                max: MAX_ENTRY_SIZE,
+                actual: buf.len(),
+            });
         }
 
         let split = SplitEntry::split(&buf)?;
@@ -183,11 +208,11 @@ impl Entry {
         hash_state.update(split.signature_raw);
 
         let signer = if split.signature_raw.len() > 0 {
-            let unverified = fog_crypto::identity::UnverifiedSignature::try_from(split.signature_raw)?;
+            let unverified =
+                fog_crypto::identity::UnverifiedSignature::try_from(split.signature_raw)?;
             let verified = unverified.verify(&entry_hash)?;
             Some(verified.signer().clone())
-        }
-        else {
+        } else {
             None
         };
 
@@ -202,12 +227,12 @@ impl Entry {
         })
     }
 
-    pub(crate) fn data(&self) -> &[u8] {
-        self.split().data
-    }
-
     pub(crate) fn split(&self) -> SplitEntry {
         SplitEntry::split(&self.buf).unwrap()
+    }
+
+    pub(crate) fn data(&self) -> &[u8] {
+        self.split().data
     }
 
     /// Get the hash of the Entry's parent [`Document`].
@@ -220,6 +245,17 @@ impl Entry {
         &self.key
     }
 
+    /// Get the Identity of the signer of this document, if the document is signed.
+    pub fn signer(&self) -> Option<&Identity> {
+        self.signer.as_ref()
+    }
+
+    /// Get the hash of the complete entry. This can change if the entry is signed again with the
+    /// [`sign`] function.
+    pub fn hash(&self) -> Hash {
+        self.hash_state.hash()
+    }
+
     /// Deserialize the entry's contained data into a value.
     pub fn deserialize<'de, D: Deserialize<'de>>(&'de self) -> Result<D> {
         let buf = self.data();
@@ -227,28 +263,29 @@ impl Entry {
         D::deserialize(&mut de)
     }
 
-    /// Override the default compression settings. `None` will disable compression. `Some(level)` 
+    /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm.
     pub fn compression(&mut self, setting: Option<u8>) -> &mut Self {
         self.set_compress = Some(setting);
         self
     }
 
-    /// Sign the entry, or or replace the existing signature if one exists already. Fails if the 
-    /// signature would grow the entry size beyond the maximum allowed. In the event of a failure. 
+    /// Sign the entry, or or replace the existing signature if one exists already. Fails if the
+    /// signature would grow the entry size beyond the maximum allowed. In the event of a failure.
     /// the entry is unmodified.
-    pub fn sign(&mut self, key: &IdentityKey) -> Result<&mut Self> {
-
+    pub fn sign(mut self, key: &IdentityKey) -> Result<Self> {
         // Sign and check for size violation
         let signature = key.sign(&self.entry_hash);
         let new_len = if self.signer.is_some() {
             self.buf.len() - self.split().signature_raw.len() + signature.size()
-        }
-        else {
+        } else {
             self.buf.len() + signature.size()
         };
         if new_len > MAX_ENTRY_SIZE {
-            return Err(Error::LengthTooLong { max: MAX_ENTRY_SIZE, actual: self.buf.len() });
+            return Err(Error::LengthTooLong {
+                max: MAX_ENTRY_SIZE,
+                actual: self.buf.len(),
+            });
         }
 
         if self.signer.is_some() {
@@ -270,5 +307,9 @@ impl Entry {
         self.hash_state.update(&self.buf[pre_len..]);
         self.signer = Some(key.id().clone());
         Ok(self)
+    }
+
+    pub(crate) fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
+        (self.hash_state.finalize(), self.buf, self.set_compress)
     }
 }

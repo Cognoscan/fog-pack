@@ -6,12 +6,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::default::Default;
 
 const DEFAULT_HASH_RAW: &[u8] = &[
-    0x01, 0xda, 0x22, 0x3b, 0x09, 0x96, 0x7c, 0x5b,
-    0xd2, 0x11, 0x07, 0x43, 0x30, 0x7e, 0x0a, 0xf6,
-    0xd3, 0x9f, 0x61, 0x72, 0x0a, 0xa7, 0x21, 0x8a,
-    0x64, 0x0a, 0x08, 0xee, 0xd1, 0x2d, 0xd5, 0x75,
-    0xc7
-    ];
+    0x01, 0xda, 0x22, 0x3b, 0x09, 0x96, 0x7c, 0x5b, 0xd2, 0x11, 0x07, 0x43, 0x30, 0x7e, 0x0a, 0xf6,
+    0xd3, 0x9f, 0x61, 0x72, 0x0a, 0xa7, 0x21, 0x8a, 0x64, 0x0a, 0x08, 0xee, 0xd1, 0x2d, 0xd5, 0x75,
+    0xc7,
+];
 
 #[inline]
 fn is_false(v: &bool) -> bool {
@@ -23,8 +21,10 @@ fn hash_is_default(v: &Hash) -> bool {
     bytes == DEFAULT_HASH_RAW
 }
 
-fn get_validator<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Box<Validator>>, D::Error> {
-    // Decode the validator. If this function is called, there should be an actual validator 
+fn get_validator<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Box<Validator>>, D::Error> {
+    // Decode the validator. If this function is called, there should be an actual validator
     // present. Otherwise we fail. In other words, no `null` allowed.
     Ok(Some(Box::new(Validator::deserialize(deserializer)?)))
 }
@@ -36,7 +36,10 @@ pub struct HashValidator {
     pub comment: String,
     #[serde(skip_serializing_if = "hash_is_default")]
     pub default: Hash,
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "get_validator")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "get_validator"
+    )]
     pub link: Option<Box<Validator>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub schema: Vec<Option<Hash>>,
@@ -70,8 +73,11 @@ impl Default for HashValidator {
 }
 
 impl HashValidator {
-    pub(crate) fn validate<'c>(&'c self, parser: &mut Parser, checklist: &mut Checklist<'c>) -> Result<()> {
-
+    pub(crate) fn validate<'c>(
+        &'c self,
+        parser: &mut Parser,
+        checklist: &mut Option<Checklist<'c>>,
+    ) -> Result<()> {
         let elem = parser
             .next()
             .ok_or(Error::FailValidate("Expected a hash".to_string()))??;
@@ -88,21 +94,25 @@ impl HashValidator {
         if self.in_list.len() > 0 {
             if !self.in_list.iter().any(|v| *v == val) {
                 return Err(Error::FailValidate(
-                        "Timestamp is not on `in` list".to_string()
+                    "Timestamp is not on `in` list".to_string(),
                 ));
             }
         }
         if self.nin_list.iter().any(|v| *v == val) {
-            return Err(Error::FailValidate("Timestamp is on `nin` list".to_string()));
+            return Err(Error::FailValidate(
+                "Timestamp is on `nin` list".to_string(),
+            ));
         }
 
-        match (self.schema.is_empty(), self.link.as_ref()) {
-            (false, Some(link)) => checklist.insert(val, Some(&self.schema), Some(link)),
-            (false, None) => checklist.insert(val, Some(&self.schema), None),
-            (true, Some(link)) => checklist.insert(val, None, Some(link)),
-            _ => (),
+        if let Some(checklist) = checklist {
+            match (self.schema.is_empty(), self.link.as_ref()) {
+                (false, Some(link)) => checklist.insert(val, Some(&self.schema), Some(link)),
+                (false, None) => checklist.insert(val, Some(&self.schema), None),
+                (true, Some(link)) => checklist.insert(val, None, Some(link)),
+                _ => (),
+            }
         }
-        
+
         Ok(())
     }
 
@@ -152,15 +162,22 @@ mod test {
     fn verify_simple() {
         let mut schema = HashValidator::default();
         schema.link = Some(Box::new(Validator::Hash(HashValidator::default())));
-        schema.schema.push(Some(Hash::new(b"Pretend I am a real schema")));
+        schema
+            .schema
+            .push(Some(Hash::new(b"Pretend I am a real schema")));
         schema.schema.push(None);
         let mut ser = FogSerializer::default();
 
-        Hash::new(b"Data to make a hash").serialize(&mut ser).unwrap();
+        Hash::new(b"Data to make a hash")
+            .serialize(&mut ser)
+            .unwrap();
         let encoded = ser.finish();
         let mut parser = Parser::new(&encoded);
-        let mut checklist = Checklist::new();
-        schema.validate(&mut parser, &mut checklist).expect("should succeed as a validator");
+        let fake_schema = Hash::new(b"Pretend I, too, am a real schema");
+        let fake_types = BTreeMap::new();
+        let mut checklist = Some(Checklist::new(&fake_schema, &fake_types));
+        schema
+            .validate(&mut parser, &mut checklist)
+            .expect("should succeed as a validator");
     }
-
 }

@@ -10,14 +10,8 @@ fn is_false(v: &bool) -> bool {
     !v
 }
 
-const ZERO_TIME: Timestamp = Timestamp::zero();
 const MIN_TIME: Timestamp = Timestamp::min_value();
 const MAX_TIME: Timestamp = Timestamp::max_value();
-
-#[inline]
-fn time_is_zero(v: &Timestamp) -> bool {
-    *v == ZERO_TIME
-}
 
 #[inline]
 fn time_is_min(v: &Timestamp) -> bool {
@@ -29,27 +23,59 @@ fn time_is_max(v: &Timestamp) -> bool {
     *v == MAX_TIME
 }
 
+/// Validator for timestamps.
+///
+/// This validator will only pass timestamps. Validation passes if:
+///
+/// - If the `in` list is not empty, the timestamp must be among the timestamp in the list.
+/// - The timestamp must not be among the timestamp in the `nin` list.
+/// - The timestamp is less than the maximum in `max`, or equal to it if `ex_max` is not set to true.
+/// - The timestamp is greater than the minimum in `min`, or equal to it if `ex_min` is not set to true.
+///
+/// # Defaults
+///
+/// Fields that aren't specified for the validator use their defaults instead. The defaults for
+/// each field are:
+///
+/// - comment: ""
+/// - max: maximum possible timestamp
+/// - min: minimum possible timestamp
+/// - ex_max: false
+/// - ex_min: false
+/// - in_list: empty
+/// - nin_list: empty
+/// - query: false
+/// - ord: false
+///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct TimeValidator {
+    /// An optional comment explaining the validator.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
-    #[serde(skip_serializing_if = "time_is_zero")]
-    pub default: Timestamp,
+    /// The maximum allowed timestamp.
     #[serde(skip_serializing_if = "time_is_max")]
     pub max: Timestamp,
+    /// The minimum allowed timestamp.
     #[serde(skip_serializing_if = "time_is_min")]
     pub min: Timestamp,
+    /// Changes `max` into an exclusive maximum.
     #[serde(skip_serializing_if = "is_false")]
     pub ex_max: bool,
+    /// Changes `min` into an exclusive maximum.
     #[serde(skip_serializing_if = "is_false")]
     pub ex_min: bool,
+    /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
     #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
     pub in_list: Vec<Timestamp>,
+    /// A vector of specific unallowed values, stored under the `nin` field.
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<Timestamp>,
+    /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
+    /// If true, queries against matching spots may set the `max`, `min`, `ex_max`, and `ex_min`
+    /// values to non-defaults.
     #[serde(skip_serializing_if = "is_false")]
     pub ord: bool,
 }
@@ -58,7 +84,6 @@ impl Default for TimeValidator {
     fn default() -> Self {
         Self {
             comment: String::new(),
-            default: ZERO_TIME,
             max: MAX_TIME,
             min: MIN_TIME,
             ex_max: false,
@@ -72,6 +97,70 @@ impl Default for TimeValidator {
 }
 
 impl TimeValidator {
+    /// Make a new validator with the default configuration.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set a comment for the validator.
+    pub fn comment(mut self, comment: impl Into<String>) -> Self {
+        self.comment = comment.into();
+        self
+    }
+
+    /// Set the maximum allowed value.
+    pub fn max(mut self, max: impl Into<Timestamp>) -> Self {
+        self.max = max.into();
+        self
+    }
+
+    /// Set the minimum allowed value.
+    pub fn min(mut self, min: impl Into<Timestamp>) -> Self {
+        self.min = min.into();
+        self
+    }
+
+    /// Set whether or or not `max` is an exclusive maximum.
+    pub fn ex_max(mut self, ex_max: bool) -> Self {
+        self.ex_max = ex_max;
+        self
+    }
+
+    /// Set whether or or not `min` is an exclusive maximum.
+    pub fn ex_min(mut self, ex_min: bool) -> Self {
+        self.ex_min = ex_min;
+        self
+    }
+
+    /// Add a value to the `in` list.
+    pub fn in_add(mut self, add: impl Into<Timestamp>) -> Self {
+        self.in_list.push(add.into());
+        self
+    }
+
+    /// Add a value to the `nin` list.
+    pub fn nin_add(mut self, add: impl Into<Timestamp>) -> Self {
+        self.nin_list.push(add.into());
+        self
+    }
+
+    /// Set whether or not queries can use the `in` and `nin` lists.
+    pub fn query(mut self, query: bool) -> Self {
+        self.query = query;
+        self
+    }
+
+    /// Set whether or not queries can use the `max`, `min`, `ex_max`, and `ex_min` values.
+    pub fn ord(mut self, ord: bool) -> Self {
+        self.ord = ord;
+        self
+    }
+
+    /// Build this into a [`Validator`] enum.
+    pub fn build(self) -> Validator {
+        Validator::Time(self)
+    }
+
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()
@@ -170,7 +259,6 @@ mod test {
     fn example_ser() {
         let schema = TimeValidator {
             comment: "The year 2020".to_string(),
-            default: Timestamp::from_utc(1577854800, 0).unwrap(),
             min: Timestamp::from_utc(1577854800, 0).unwrap(),
             max: Timestamp::from_utc(1609477200, 0).unwrap(),
             ex_min: false,
@@ -182,14 +270,9 @@ mod test {
         };
         let mut ser = FogSerializer::default();
         schema.serialize(&mut ser).unwrap();
-        let mut expected: Vec<u8> = vec![0x87];
+        let mut expected: Vec<u8> = vec![0x86];
         serialize_elem(&mut expected, Element::Str("comment"));
         serialize_elem(&mut expected, Element::Str("The year 2020"));
-        serialize_elem(&mut expected, Element::Str("default"));
-        serialize_elem(
-            &mut expected,
-            Element::Timestamp(Timestamp::from_utc(1577854800, 0).unwrap()),
-        );
         serialize_elem(&mut expected, Element::Str("ex_max"));
         serialize_elem(&mut expected, Element::Bool(true));
         serialize_elem(&mut expected, Element::Str("max"));

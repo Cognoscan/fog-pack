@@ -295,8 +295,14 @@ impl DebugFormatter {
     }
 
     fn indent(&mut self) {
-        for _ in 0..self.tracker.len() {
-            self.debug.push_str(&self.indent)
+        match self.tracker.last() {
+            Some(TrackType::FirstArray(_)) => (),
+            Some(TrackType::FirstMap(_)) => (),
+            _ => {
+                for _ in 0..self.tracker.len() {
+                    self.debug.push_str(&self.indent)
+                }
+            }
         }
     }
 
@@ -440,9 +446,9 @@ impl<'a> Parser<'a> {
 
     /// Turn a byte slice into a new parser, with a debugging pretty-printer that will run as
     /// elements are parsed.
-    pub fn with_debug(data: &'a [u8], indent: String) -> Parser<'a> {
+    pub fn with_debug(data: &'a [u8], indent: impl Into<String>) -> Parser<'a> {
         Self {
-            debug: Some(DebugFormatter::new(indent)),
+            debug: Some(DebugFormatter::new(indent.into())),
             data,
             depth_tracking: DepthTracker::new(),
             errored: false,

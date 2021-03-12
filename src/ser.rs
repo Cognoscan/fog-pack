@@ -1596,10 +1596,10 @@ mod test {
     fn ser_char() {
         let mut ser = FogSerializer::default();
         'c'.serialize(&mut ser).expect("Should serialize");
-        assert_eq!(ser.buf, vec![0xa1, 'c' as u8]);
+        assert_eq!(ser.buf, vec![0xa1, b'c']);
         let mut ser = FogSerializer::default();
         '0'.serialize(&mut ser).expect("Should serialize");
-        assert_eq!(ser.buf, vec![0xa1, '0' as u8]);
+        assert_eq!(ser.buf, vec![0xa1, b'0']);
     }
 
     #[test]
@@ -1612,7 +1612,7 @@ mod test {
         let mut ser = FogSerializer::default();
         let opt: Option<char> = Some('0');
         opt.serialize(&mut ser).expect("Should serialize");
-        assert_eq!(ser.buf, vec![0xa1, '0' as u8]);
+        assert_eq!(ser.buf, vec![0xa1, b'0']);
     }
 
     #[test]
@@ -1622,7 +1622,7 @@ mod test {
         let mut ser = FogSerializer::default();
         let to_ser: MyChar = MyChar('0');
         to_ser.serialize(&mut ser).expect("Should serialize");
-        assert_eq!(ser.buf, vec![0xa1, '0' as u8]);
+        assert_eq!(ser.buf, vec![0xa1, b'0']);
     }
 
     #[test]
@@ -1647,7 +1647,7 @@ mod test {
         let mut ser = FogSerializer::default();
         let to_ser = (0u8, 'c', "\0\0");
         to_ser.serialize(&mut ser).expect("Should serialize");
-        assert_eq!(ser.buf, vec![0x93, 0x00, 0xa1, 'c' as u8, 0xa2, 0x00, 0x00]);
+        assert_eq!(ser.buf, vec![0x93, 0x00, 0xa1, b'c', 0xa2, 0x00, 0x00]);
     }
 
     #[test]
@@ -1657,7 +1657,7 @@ mod test {
         let mut ser = FogSerializer::default();
         let to_ser = TupleOfThings(0u8, 'c', "\0\0".to_string());
         to_ser.serialize(&mut ser).expect("Should serialize");
-        assert_eq!(ser.buf, vec![0x93, 0x00, 0xa1, 'c' as u8, 0xa2, 0x00, 0x00]);
+        assert_eq!(ser.buf, vec![0x93, 0x00, 0xa1, b'c', 0xa2, 0x00, 0x00]);
     }
 
     #[test]
@@ -1677,7 +1677,7 @@ mod test {
         expected.push(0xa5);
         expected.extend_from_slice("bitty".as_bytes());
         expected.push(0xa1);
-        expected.push('c' as u8);
+        expected.push(b'c');
         expected.push(0xa4);
         expected.extend_from_slice("itty".as_bytes());
         expected.push(0x00);
@@ -1708,7 +1708,7 @@ mod test {
         expected.push(0xa5);
         expected.extend_from_slice("bitty".as_bytes());
         expected.push(0xa1);
-        expected.push('c' as u8);
+        expected.push(b'c');
         expected.push(0xa4);
         expected.extend_from_slice("itty".as_bytes());
         expected.push(0x00);
@@ -1728,11 +1728,11 @@ mod test {
         expected.push(0xa5);
         expected.extend_from_slice("bitty".as_bytes());
         expected.push(0xa1);
-        expected.push('b' as u8);
+        expected.push(b'b');
         expected.push(0xa4);
         expected.extend_from_slice("itty".as_bytes());
         expected.push(0xa1);
-        expected.push('i' as u8);
+        expected.push(b'i');
         expected
     }
 
@@ -1890,10 +1890,10 @@ mod test {
         expected.extend_from_slice("Struct".as_bytes());
         expected.push(0x82);
         // map a
-        expected.extend_from_slice(&[0xa1, 'a' as u8]);
+        expected.extend_from_slice(&[0xa1, b'a']);
         expected.push(0x04);
         // map b
-        expected.extend_from_slice(&[0xa1, 'b' as u8]);
+        expected.extend_from_slice(&[0xa1, b'b']);
         expected.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
         assert_eq!(ser.buf, expected);
     }

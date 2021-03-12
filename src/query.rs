@@ -36,7 +36,55 @@ impl NewQuery {
         }
     }
 
-    pub(crate) fn complete(self) -> Result<Vec<u8>> {
+    pub fn validator(&self) -> &Validator {
+        &self.inner.query
+    }
+
+    pub fn key(&self) -> &str {
+        &self.inner.key
+    }
+
+    pub(crate) fn complete(self, max_regex: u8) -> Result<Vec<u8>> {
+        fn parse_validator(v: &Validator) -> usize {
+            match v {
+                Validator::Str(val) => val.matches.is_some() as usize,
+                Validator::Map(val) => {
+                    val.keys.matches.is_some() as usize
+                        + val
+                            .req
+                            .values()
+                            .fold(0, |acc, val| acc + parse_validator(val))
+                        + val
+                            .opt
+                            .values()
+                            .fold(0, |acc, val| acc + parse_validator(val))
+                        + val.values.as_ref().map_or(0, |val| parse_validator(val))
+                }
+                Validator::Array(val) => {
+                    val.contains
+                        .iter()
+                        .fold(0, |acc, val| acc + parse_validator(val))
+                        + parse_validator(val.items.as_ref())
+                        + val
+                            .prefix
+                            .iter()
+                            .fold(0, |acc, val| acc + parse_validator(val))
+                }
+                Validator::Hash(val) => val.link.as_ref().map_or(0, |val| parse_validator(val)),
+                Validator::Enum(val) => val
+                    .values()
+                    .fold(0, |acc, val| acc + val.as_ref().map_or(0, parse_validator)),
+                Validator::Multi(val) => val.iter().fold(0, |acc, val| acc + parse_validator(val)),
+                _ => 0,
+            }
+        }
+        let regexes = parse_validator(&self.inner.query);
+        if regexes > (max_regex as usize) {
+            return Err(Error::FailValidate(format!(
+                "Found {} regexes in query, only {} allowed",
+                regexes, max_regex
+            )));
+        }
         let mut ser = FogSerializer::default();
         self.inner.serialize(&mut ser)?;
         let buf = ser.finish();
@@ -81,20 +129,12 @@ impl Query {
                         } else {
                             0
                         };
-                        let req_matches = val["req"]
-                            .as_map()
-                            .map(|map| {
-                                map.iter()
-                                    .fold(0, |acc, (_, val)| acc + parse_validator(val))
-                            })
-                            .unwrap_or(0);
-                        let opt_matches = val["opt"]
-                            .as_map()
-                            .map(|map| {
-                                map.iter()
-                                    .fold(0, |acc, (_, val)| acc + parse_validator(val))
-                            })
-                            .unwrap_or(0);
+                        let req_matches = val["req"].as_map().map_or(0, |map| {
+                            map.values().fold(0, |acc, val| acc + parse_validator(val))
+                        });
+                        let opt_matches = val["opt"].as_map().map_or(0, |map| {
+                            map.values().fold(0, |acc, val| acc + parse_validator(val))
+                        });
                         let values_matches = parse_validator(&val["values"]);
                         key_matches + req_matches + opt_matches + values_matches
                     }
@@ -103,19 +143,13 @@ impl Query {
                         if !val.is_map() {
                             return 0;
                         }
-                        let contains_matches = val["contains"]
-                            .as_array()
-                            .map(|array| {
-                                array.iter().fold(0, |acc, val| acc + parse_validator(val))
-                            })
-                            .unwrap_or(0);
+                        let contains_matches = val["contains"].as_array().map_or(0, |array| {
+                            array.iter().fold(0, |acc, val| acc + parse_validator(val))
+                        });
                         let items_matches = parse_validator(&val["items"]);
-                        let prefix_matches = val["contains"]
-                            .as_array()
-                            .map(|array| {
-                                array.iter().fold(0, |acc, val| acc + parse_validator(val))
-                            })
-                            .unwrap_or(0);
+                        let prefix_matches = val["contains"].as_array().map_or(0, |array| {
+                            array.iter().fold(0, |acc, val| acc + parse_validator(val))
+                        });
                         contains_matches + items_matches + prefix_matches
                     }
                     // Hash validator
@@ -126,18 +160,13 @@ impl Query {
                         parse_validator(&val["link"])
                     }
                     // Enum validator
-                    Some((&"Enum", val)) => val
-                        .as_map()
-                        .map(|map| {
-                            map.iter()
-                                .fold(0, |acc, (_, val)| acc + parse_validator(val))
-                        })
-                        .unwrap_or(0),
+                    Some((&"Enum", val)) => val.as_map().map_or(0, |map| {
+                        map.values().fold(0, |acc, val| acc + parse_validator(val))
+                    }),
                     // Multi validator
-                    Some((&"Multi", val)) => val
-                        .as_array()
-                        .map(|array| array.iter().fold(0, |acc, val| acc + parse_validator(val)))
-                        .unwrap_or(0),
+                    Some((&"Multi", val)) => val.as_array().map_or(0, |array| {
+                        array.iter().fold(0, |acc, val| acc + parse_validator(val))
+                    }),
                     _ => 0,
                 }
             } else {
@@ -164,7 +193,7 @@ impl Query {
         })
     }
 
-    pub(crate) fn validator(&self) -> &Validator {
+    pub fn validator(&self) -> &Validator {
         &self.inner.query
     }
 
@@ -199,10 +228,13 @@ mod test {
         };
 
         let validator = Validator::Map(map);
-        let enc_query = NewQuery::new("test", validator).complete().unwrap();
+        NewQuery::new("test", validator.clone())
+            .complete(0)
+            .unwrap_err();
+        let enc_query = NewQuery::new("test", validator).complete(1).unwrap();
         assert!(Query::new(enc_query.clone(), 0).is_err());
         assert!(Query::new(enc_query.clone(), 1).is_ok());
-        assert!(Query::new(enc_query.clone(), 2).is_ok());
+        assert!(Query::new(enc_query, 2).is_ok());
     }
 
     #[test]
@@ -212,9 +244,12 @@ mod test {
             matches,
             ..Default::default()
         });
-        let enc_query = NewQuery::new("test", validator).complete().unwrap();
+        NewQuery::new("test", validator.clone())
+            .complete(0)
+            .unwrap_err();
+        let enc_query = NewQuery::new("test", validator).complete(1).unwrap();
         assert!(Query::new(enc_query.clone(), 0).is_err());
         assert!(Query::new(enc_query.clone(), 1).is_ok());
-        assert!(Query::new(enc_query.clone(), 2).is_ok());
+        assert!(Query::new(enc_query, 2).is_ok());
     }
 }

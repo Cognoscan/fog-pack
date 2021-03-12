@@ -5,7 +5,7 @@ use std::{
 
 use compress::ALGORITHM_ZSTD;
 use element::Parser;
-use query::Query;
+use query::{NewQuery, Query};
 
 use crate::error::{Error, Result};
 use crate::*;
@@ -68,7 +68,7 @@ impl NoSchema {
     /// Encode a [`NewDocument`], returning the resulting Document's hash and fully encoded format.
     /// Fails if the internal data isn't actually valid fog-pack, which can sometimes happen with a
     /// bad Serialize implementation for the data.
-    pub fn encode_new_doc(doc: NewDocument) -> Result<(Hash, Vec<u8>)> {
+    pub fn validate_new_doc(doc: NewDocument) -> Result<Document> {
         // Check that this document doesn't have a schema
         if let Some(schema) = doc.schema_hash() {
             return Err(Error::SchemaMismatch {
@@ -83,21 +83,7 @@ impl NoSchema {
         let (parser, _) = Validator::Any.validate(&types, parser, None)?;
         parser.finish()?;
 
-        // Compress the document
-        let (hash, doc, compression) = doc.complete();
-        let compression = match compression {
-            None => Compress::General {
-                algorithm: 0,
-                level: 3,
-            },
-            Some(None) => Compress::None,
-            Some(Some(level)) => Compress::General {
-                algorithm: 0,
-                level,
-            },
-        };
-
-        Ok((hash, compress_doc(doc, &compression)))
+        Ok(Document::from_new(doc))
     }
 
     /// Re-encode a validated [`Document`], returning the resulting Document's hash and fully encoded
@@ -152,7 +138,7 @@ impl NoSchema {
 
     /// Decode a Document, skipping any checks of the data. This should only be run when the raw
     /// document has definitely been passed through validation before, i.e. if it is stored in a
-    /// local database after going through [`encode_doc`] or [`encode_new_doc`].
+    /// local database after going through [`encode_doc`][Self::encode_doc].
     pub fn trusted_decode_doc(doc: Vec<u8>) -> Result<Document> {
         // Check for hash
         let split = SplitDoc::split(&doc)?;
@@ -302,24 +288,24 @@ impl SchemaBuilder {
     }
 
     /// Set the schema description. This is only used for documentation purposes.
-    pub fn description(&mut self, description: &str) -> &mut Self {
+    pub fn description(mut self, description: &str) -> Self {
         self.inner.description = description.to_owned();
         self
     }
 
     /// Set the default compression to use for documents adhering to this schema.
-    pub fn doc_compress(&mut self, doc_compress: Compress) -> &mut Self {
+    pub fn doc_compress(mut self, doc_compress: Compress) -> Self {
         self.inner.doc_compress = doc_compress;
         self
     }
 
     /// Set the schema name. This is only used for documentation purposes.
     pub fn add_entry(
-        &mut self,
+        mut self,
         entry: &str,
         validator: Validator,
         compress: Option<Compress>,
-    ) -> &mut Self {
+    ) -> Self {
         let compress = compress.unwrap_or_default();
         self.inner.entries.insert(
             entry.to_owned(),
@@ -332,19 +318,19 @@ impl SchemaBuilder {
     }
 
     /// Set the schema name. This is only used for documentation purposes.
-    pub fn name(&mut self, name: &str) -> &mut Self {
+    pub fn name(mut self, name: &str) -> Self {
         self.inner.name = name.to_owned();
         self
     }
 
     /// Add a new stored type to the schema.
-    pub fn add_type(&mut self, type_ref: &str, validator: Validator) -> &mut Self {
+    pub fn add_type(mut self, type_ref: &str, validator: Validator) -> Self {
         self.inner.types.insert(type_ref.to_owned(), validator);
         self
     }
 
     /// Set the schema version. This is only used for documentation purposes.
-    pub fn version<T: Into<Integer>>(&mut self, version: T) -> &mut Self {
+    pub fn version<T: Into<Integer>>(mut self, version: T) -> Self {
         self.inner.version = version.into();
         self
     }
@@ -352,8 +338,7 @@ impl SchemaBuilder {
     /// Build the Schema, compiling the result into a Document
     pub fn build(self) -> Result<Document> {
         let doc = NewDocument::new(self.inner, None)?;
-        let (_, doc) = NoSchema::encode_new_doc(doc)?;
-        NoSchema::trusted_decode_doc(doc)
+        NoSchema::validate_new_doc(doc)
     }
 }
 
@@ -380,14 +365,14 @@ impl Schema {
     }
 
     /// Get the hash of this schema.
-    pub fn hash(&self) -> Hash {
-        self.hash.clone()
+    pub fn hash(&self) -> &Hash {
+        &self.hash
     }
 
-    /// Encode a [`NewDocument`], returning the resulting Document's hash and fully encoded format.  
-    /// Fails if the document doesn't use this schema, or if it doesn't meet this schema's
+    /// Validate a [`NewDocument`], turning it into a [`Document`]. Fails if the document doesn't
+    /// use this schema, or if it doesn't meet this schema's
     /// requirements.
-    pub fn encode_new_doc(&self, doc: NewDocument) -> Result<(Hash, Vec<u8>)> {
+    pub fn validate_new_doc(&self, doc: NewDocument) -> Result<Document> {
         // Check that the document uses this schema
         match doc.schema_hash() {
             Some(hash) if hash == &self.hash => (),
@@ -404,21 +389,7 @@ impl Schema {
         let (parser, _) = self.inner.doc.validate(&self.inner.types, parser, None)?;
         parser.finish()?;
 
-        // Compress the document
-        let (hash, doc, compression) = doc.complete();
-        let doc = match compression {
-            None => compress_doc(doc, &self.inner.doc_compress),
-            Some(None) => doc,
-            Some(Some(level)) => compress_doc(
-                doc,
-                &Compress::General {
-                    algorithm: 0,
-                    level,
-                },
-            ),
-        };
-
-        Ok((hash, doc))
+        Ok(Document::from_new(doc))
     }
 
     /// Encode a [`Document`], returning the resulting Document's hash and fully encoded format.
@@ -490,7 +461,7 @@ impl Schema {
 
     /// Decode a Document, skipping any checks of the data. This should only be run when the raw
     /// document has definitely been passed through validation before, i.e. if it is stored in a
-    /// local database after going through [`encode_doc`] or [`encode_new_doc`].
+    /// local database after going through [`encode_doc`][Self::encode_doc].
     pub fn trusted_decode_doc(&self, doc: Vec<u8>) -> Result<Document> {
         self.check_schema(&doc)?;
 
@@ -607,7 +578,8 @@ impl Schema {
 
     /// Decode a Entry, skipping any checks of the data. This should only be run when the raw
     /// entry has definitely been passed through validation before, i.e. if it is stored in a
-    /// local database after going through [`encode_entry`] or [`encode_new_entry`].
+    /// local database after going through [`encode_entry`][Self::encode_entry] or
+    /// [`encode_new_entry`][Self::encode_new_entry].
     pub fn trusted_decode_entry(&self, entry: Vec<u8>, key: &str, parent: &Hash) -> Result<Entry> {
         // Find the entry
         let entry_schema = self.inner.entries.get(key).ok_or_else(|| {
@@ -621,6 +593,21 @@ impl Schema {
             parent,
         )?;
         Ok(entry)
+    }
+
+    pub fn encode_query(&self, query: NewQuery) -> Result<Vec<u8>> {
+        let key = query.key();
+        let entry_schema = self.inner.entries.get(key).ok_or_else(|| {
+            Error::FailValidate(format!("entry key \"{:?}\" is not in schema", key))
+        })?;
+        if entry_schema
+            .entry
+            .query_check(&self.inner.types, query.validator())
+        {
+            query.complete(self.inner.max_regex)
+        } else {
+            Err(Error::FailValidate("Query is not allowed by schema".into()))
+        }
     }
 
     pub fn decode_query(&self, query: Vec<u8>) -> Result<Query> {

@@ -14,46 +14,114 @@ fn validator_is_any(v: &Validator) -> bool {
 }
 
 #[inline]
-fn usize_is_zero(v: &usize) -> bool {
+fn u32_is_zero(v: &u32) -> bool {
     *v == 0
 }
 
 #[inline]
-fn usize_is_max(v: &usize) -> bool {
-    *v == usize::MAX
+fn u32_is_max(v: &u32) -> bool {
+    *v == u32::MAX
 }
 
+/// Validator for arrays.
+///
+/// This validator type will only pass array values. Validation passes if:
+///
+/// - If the `in` list is not empty, the array must be among the arrays in the list.
+/// - The array must not be among the arrays in the `nin` list.
+/// - The arrays's length is less than or equal to the value in `max_len`.
+/// - The arrays's length is greater than or equal to the value in `min_len`.
+/// - If `unique` is true, the array items are all unique.
+/// - For each validator in the `contains` list, at least one item in the array passes.
+/// - Each item in the array is checked with a validator at the same index in the `prefix` array.
+///     All validators must pass. If there is no validator at the same index, the validator in
+///     `items` must pass. If a validator is not used, it passes automatially.
+///
+/// # Defaults
+///
+/// Fields that aren't specified for the validator use their defaults instead. The defaults for
+/// each field are:
+///
+/// - comment: ""
+/// - contains: empty
+/// - items: Validator::Any
+/// - prefix: empty
+/// - max_len: u32::MAX
+/// - min_len: u32::MIN
+/// - in_list: empty
+/// - nin_list: empty
+/// - unique: false
+/// - query: false
+/// - array: false
+/// - contains_ok: false
+/// - unique_ok: false
+/// - size: false
+///
+/// # Query Checking
+///
+/// Queries for arrays are only allowed to use non-default values for each field if the
+/// corresponding query permission is set in the schema's validator:
+///
+/// - query: `in` and `nin` lists
+/// - array: `prefix` and `items`
+/// - contains_ok: `contains`
+/// - unique_ok: `unique`
+/// - size: `max_len` and `min_len`
+///
+/// In addition, sub-validators in the query are matched against the schema's sub-validators:
+///
+/// - Each validator in `contains` is checked against all of the schema's `prefix` validators, as
+///     well as its `items` validator.
+/// - The `items` validator is checked against the schema's `items' validator
+/// - The `prefix` validators are checked against the schema's `prefix` validators. Unmatched
+///     query validators are checked against the schema's `items` validator.
+///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ArrayValidator {
+    /// An optional comment explaining the validator.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub default: Vec<Value>,
+    /// For each validator in this array, at least one item in the array must pass the validator.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub contains: Vec<Validator>,
+    /// A validator that each item in the array must pass, unless it is instead checked by
+    /// `prefix`.
     #[serde(skip_serializing_if = "validator_is_any")]
     pub items: Box<Validator>,
+    /// An array of validators, which are matched up against the items in the array. Unmatched
+    /// validators automatically pass, while unmatched items are checked against the `items`
+    /// Validator.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub prefix: Vec<Validator>,
-    #[serde(skip_serializing_if = "usize_is_max")]
-    pub max_len: usize,
-    #[serde(skip_serializing_if = "usize_is_zero")]
-    pub min_len: usize,
+    /// The maximum allowed number of items in the array.
+    #[serde(skip_serializing_if = "u32_is_max")]
+    pub max_len: u32,
+    /// The minimum allowed number of items in the array.
+    #[serde(skip_serializing_if = "u32_is_zero")]
+    pub min_len: u32,
+    /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
     #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
     pub in_list: Vec<Vec<Value>>,
+    /// A vector of specific unallowed values, stored under the `nin` field.
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<Vec<Value>>,
+    /// If set, all items in the array must be unique.
     #[serde(skip_serializing_if = "is_false")]
     pub unique: bool,
+    /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
+    /// If true, queries against matching spots may use `items` and `prefix`.
     #[serde(skip_serializing_if = "is_false")]
     pub array: bool,
+    /// If true, queries against matching spots may use `contains`.
     #[serde(skip_serializing_if = "is_false")]
     pub contains_ok: bool,
+    /// If true, queries against matching spots may use `unique`.
     #[serde(skip_serializing_if = "is_false")]
     pub unique_ok: bool,
+    /// If true, queries against matching spots may use `max_len` and `min_len`.
     #[serde(skip_serializing_if = "is_false")]
     pub size: bool,
 }
@@ -62,12 +130,11 @@ impl Default for ArrayValidator {
     fn default() -> Self {
         Self {
             comment: String::new(),
-            default: Vec::new(),
             contains: Vec::new(),
             items: Box::new(Validator::Any),
             prefix: Vec::new(),
-            max_len: usize::MAX,
-            min_len: usize::MIN,
+            max_len: u32::MAX,
+            min_len: u32::MIN,
             in_list: Vec::new(),
             nin_list: Vec::new(),
             unique: false,
@@ -81,6 +148,100 @@ impl Default for ArrayValidator {
 }
 
 impl ArrayValidator {
+    /// Make a new validator with the default configuration.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set a comment for the validator.
+    pub fn comment(mut self, comment: impl Into<String>) -> Self {
+        self.comment = comment.into();
+        self
+    }
+
+    /// Extend the `contains` list with another validator
+    pub fn contains_add(mut self, validator: Validator) -> Self {
+        self.contains.push(validator);
+        self
+    }
+
+    /// Set the `items` validator.
+    pub fn items(mut self, items: Validator) -> Self {
+        self.items = Box::new(items);
+        self
+    }
+
+    /// Extend the `prefix` list with another validator
+    pub fn prefix_add(mut self, prefix: Validator) -> Self {
+        self.prefix.push(prefix);
+        self
+    }
+
+    /// Set the maximum number of allowed bytes.
+    pub fn max_len(mut self, max_len: u32) -> Self {
+        self.max_len = max_len;
+        self
+    }
+
+    /// Set the minimum number of allowed bytes.
+    pub fn min_len(mut self, min_len: u32) -> Self {
+        self.min_len = min_len;
+        self
+    }
+
+    /// Add a value to the `in` list.
+    pub fn in_add(mut self, add: impl Into<Vec<Value>>) -> Self {
+        self.in_list.push(add.into());
+        self
+    }
+
+    /// Add a value to the `nin` list.
+    pub fn nin_add(mut self, add: impl Into<Vec<Value>>) -> Self {
+        self.nin_list.push(add.into());
+        self
+    }
+
+    /// Set whether the items in the array must be unique.
+    pub fn unique(mut self, unique: bool) -> Self {
+        self.unique = unique;
+        self
+    }
+
+    /// Set whether or not queries can use the `in` and `nin` lists.
+    pub fn query(mut self, query: bool) -> Self {
+        self.query = query;
+        self
+    }
+
+    /// Set whether or not queries can use the `items` and `prefix` values.
+    pub fn array(mut self, array: bool) -> Self {
+        self.array = array;
+        self
+    }
+
+    /// Set whether or not queries can use the `contains` value.
+    pub fn contains_ok(mut self, contains_ok: bool) -> Self {
+        self.contains_ok = contains_ok;
+        self
+    }
+
+    /// Set whether or not queries can use the `unique` setting.
+    pub fn unique_ok(mut self, unique_ok: bool) -> Self {
+        self.unique_ok = unique_ok;
+        self
+    }
+
+    /// Set whether or not queries can use the `max_len` and `min_len` values.
+    pub fn size(mut self, size: bool) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Build this into a [`Validator`] enum.
+    pub fn build(self) -> Validator {
+        Validator::Array(self)
+    }
+
     pub(crate) fn validate<'de, 'c>(
         &'c self,
         types: &'c BTreeMap<String, Validator>,
@@ -100,13 +261,13 @@ impl ArrayValidator {
             )));
         };
 
-        if len > self.max_len {
+        if (len as u32) > self.max_len {
             return Err(Error::FailValidate(format!(
                 "Array is {} elements, longer than maximum allowed of {}",
                 len, self.max_len
             )));
         }
-        if len < self.min_len {
+        if (len as u32) < self.min_len {
             return Err(Error::FailValidate(format!(
                 "Array is {} elements, shorter than minimum allowed of {}",
                 len, self.min_len
@@ -189,7 +350,7 @@ impl ArrayValidator {
             && (self.array || (other.prefix.is_empty() && validator_is_any(&other.items)))
             && (self.contains_ok || other.contains.is_empty())
             && (self.unique_ok || !other.unique)
-            && (self.size || (usize_is_max(&other.max_len) && usize_is_zero(&other.min_len)));
+            && (self.size || (u32_is_max(&other.max_len) && u32_is_zero(&other.min_len)));
         if !initial_check {
             return false;
         }
@@ -254,7 +415,7 @@ mod test {
         println!("actual:   {:x?}", actual);
         assert_eq!(expected, actual);
 
-        let mut de = FogDeserializer::with_debug(&actual, "    ".into());
+        let mut de = FogDeserializer::with_debug(&actual, "    ");
         let decoded = ArrayValidator::deserialize(&mut de).unwrap();
         println!("{}", de.get_debug().unwrap());
         assert_eq!(schema, decoded);

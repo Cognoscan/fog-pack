@@ -72,14 +72,91 @@ impl<'a> SplitDoc<'a> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewDocument {
+struct DocumentInner {
     buf: Vec<u8>,
     hash_state: HashState,
     schema_hash: Option<Hash>,
     doc_hash: Hash,
-    has_signature: bool,
+    signer: Option<Identity>,
     set_compress: Option<Option<u8>>,
 }
+
+impl DocumentInner {
+    fn signer(&self) -> Option<&Identity> {
+        self.signer.as_ref()
+    }
+
+    /// Get the hash of the schema this document adheres to.
+    fn schema_hash(&self) -> Option<&Hash> {
+        self.schema_hash.as_ref()
+    }
+
+    /// Override the default compression settings. `None` will disable compression. `Some(level)`
+    /// will compress with the provided level as the setting for the algorithm.
+    fn compression(&mut self, setting: Option<u8>) -> &mut Self {
+        self.set_compress = Some(setting);
+        self
+    }
+
+    /// Sign the document, or or replace the existing signature if one exists already. Fails if the
+    /// signature would grow the document size beyond the maximum allowed.
+    fn sign(mut self, key: &IdentityKey) -> Result<Self> {
+        // Sign and check for size violation
+        let signature = key.sign(&self.doc_hash);
+        let new_len = if self.signer.is_some() {
+            self.buf.len() - self.split().signature_raw.len() + signature.size()
+        } else {
+            self.buf.len() + signature.size()
+        };
+        if new_len > MAX_DOC_SIZE {
+            return Err(Error::LengthTooLong {
+                max: MAX_DOC_SIZE,
+                actual: self.buf.len(),
+            });
+        }
+
+        // Erase previous signature & recalculate hash, if needed
+        if self.signer.is_some() {
+            let split = SplitDoc::split(&self.buf).unwrap();
+            let new_len = split.hash_raw.len() + split.data.len() + 5;
+            let mut hash_state = HashState::new();
+            match self.schema_hash {
+                None => hash_state.update(&[0u8]),
+                Some(ref hash) => hash_state.update(hash),
+            }
+            hash_state.update(split.data);
+            self.buf.resize(new_len, 0);
+            self.hash_state = hash_state;
+        }
+
+        // Append the signature and update the hasher
+        let pre_len = self.buf.len();
+        signature.encode_vec(&mut self.buf);
+        self.hash_state.update(&self.buf[pre_len..]);
+        self.signer = Some(key.id().clone());
+        Ok(self)
+    }
+
+    /// Get what the document's hash will be, given its current state
+    fn hash(&self) -> Hash {
+        self.hash_state.hash()
+    }
+
+    fn split(&self) -> SplitDoc {
+        SplitDoc::split(&self.buf).unwrap()
+    }
+
+    fn data(&self) -> &[u8] {
+        self.split().data
+    }
+
+    fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
+        (self.hash_state.finalize(), self.buf, self.set_compress)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NewDocument(DocumentInner);
 
 impl NewDocument {
     pub fn new<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
@@ -122,97 +199,53 @@ impl NewDocument {
         hash_state.update(&buf[start..]);
         let doc_hash = hash_state.hash();
 
-        Ok(NewDocument {
+        Ok(NewDocument(DocumentInner {
             buf,
             hash_state,
             schema_hash: schema.cloned(),
             doc_hash,
             set_compress: None,
-            has_signature: false,
-        })
+            signer: None,
+        }))
     }
 
     /// Get the hash of the schema this document adheres to.
     pub fn schema_hash(&self) -> Option<&Hash> {
-        self.schema_hash.as_ref()
+        self.0.schema_hash()
     }
 
     /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm.
-    pub fn compression(&mut self, setting: Option<u8>) -> &mut Self {
-        self.set_compress = Some(setting);
+    pub fn compression(mut self, setting: Option<u8>) -> Self {
+        self.0.compression(setting);
         self
     }
 
     /// Sign the document, or or replace the existing signature if one exists already. Fails if the
     /// signature would grow the document size beyond the maximum allowed. In the event of a
     /// failure, the document is dropped.
-    pub fn sign(mut self, key: &IdentityKey) -> Result<Self> {
-        // Sign and check for size violation
-        let signature = key.sign(&self.doc_hash);
-        let new_len = if self.has_signature {
-            self.buf.len() - self.split().signature_raw.len() + signature.size()
-        } else {
-            self.buf.len() + signature.size()
-        };
-        if new_len > MAX_DOC_SIZE {
-            return Err(Error::LengthTooLong {
-                max: MAX_DOC_SIZE,
-                actual: self.buf.len(),
-            });
-        }
-
-        // Erase previous signature & recalculate hash, if needed
-        if self.has_signature {
-            let split = SplitDoc::split(&self.buf).unwrap();
-            let new_len = split.hash_raw.len() + split.data.len() + 5;
-            let mut hash_state = HashState::new();
-            match self.schema_hash {
-                None => hash_state.update(&[0u8]),
-                Some(ref hash) => hash_state.update(hash),
-            }
-            hash_state.update(split.data);
-            self.buf.resize(new_len, 0);
-            self.hash_state = hash_state;
-        }
-
-        // Append the signature and update the hasher
-        let pre_len = self.buf.len();
-        signature.encode_vec(&mut self.buf);
-        self.hash_state.update(&self.buf[pre_len..]);
-        self.has_signature = true;
-        Ok(self)
+    pub fn sign(self, key: &IdentityKey) -> Result<Self> {
+        Ok(Self(self.0.sign(key)?))
     }
 
     /// Get what the document's hash will be, given its current state
     pub fn hash(&self) -> Hash {
-        self.hash_state.hash()
-    }
-
-    pub(crate) fn split(&self) -> SplitDoc {
-        SplitDoc::split(&self.buf).unwrap()
+        self.0.hash()
     }
 
     pub(crate) fn data(&self) -> &[u8] {
-        self.split().data
-    }
-
-    pub(crate) fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
-        (self.hash_state.finalize(), self.buf, self.set_compress)
+        self.0.data()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Document {
-    buf: Vec<u8>,
-    schema_hash: Option<Hash>,
-    hash_state: HashState,
-    doc_hash: Hash,
-    signer: Option<Identity>,
-    set_compress: Option<Option<u8>>,
-}
+pub struct Document(DocumentInner);
 
 impl Document {
+    pub(crate) fn from_new(doc: NewDocument) -> Document {
+        Self(doc.0)
+    }
+
     /// Create the document from a raw byte vec without fully verifying it.
     /// After creation, if the data is untrusted, you must still run it through a validator
     pub(crate) fn new(buf: Vec<u8>) -> Result<Self> {
@@ -248,42 +281,38 @@ impl Document {
             None
         };
 
-        Ok(Self {
+        Ok(Self(DocumentInner {
             buf,
             schema_hash,
             hash_state,
             doc_hash,
             signer,
             set_compress: None,
-        })
-    }
-
-    pub(crate) fn split(&self) -> SplitDoc {
-        SplitDoc::split(&self.buf).unwrap()
+        }))
     }
 
     pub(crate) fn data(&self) -> &[u8] {
-        self.split().data
+        self.0.data()
     }
 
     /// Get the hash of the schema this document adheres to.
     pub fn schema_hash(&self) -> Option<&Hash> {
-        self.schema_hash.as_ref()
+        self.0.schema_hash()
     }
 
     /// Get the Identity of the signer of this document, if the document is signed.
     pub fn signer(&self) -> Option<&Identity> {
-        self.signer.as_ref()
+        self.0.signer()
     }
 
     /// Get the hash of the complete document. This can change if the document is signed again with
-    /// the [`sign`] function.
+    /// the [`sign`][Self::sign] function.
     pub fn hash(&self) -> Hash {
-        self.hash_state.hash()
+        self.0.hash()
     }
 
     pub fn deserialize<'de, D: Deserialize<'de>>(&'de self) -> Result<D> {
-        let buf = self.data();
+        let buf = self.0.data();
         let mut de = FogDeserializer::new(buf);
         D::deserialize(&mut de)
     }
@@ -291,52 +320,19 @@ impl Document {
     /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm. This only has
     /// meaning when the document is re-encoded.
-    pub fn compression(&mut self, setting: Option<u8>) -> &mut Self {
-        self.set_compress = Some(setting);
+    pub fn compression(mut self, setting: Option<u8>) -> Self {
+        self.0.compression(setting);
         self
     }
 
     /// Sign the document, or or replace the existing signature if one exists already. Fails if the
     /// signature would grow the document size beyond the maximum allowed.
-    pub fn sign(mut self, key: &IdentityKey) -> Result<Self> {
-        // Sign and check for size violation
-        let signature = key.sign(&self.doc_hash);
-        let new_len = if self.signer.is_some() {
-            self.buf.len() - self.split().signature_raw.len() + signature.size()
-        } else {
-            self.buf.len() + signature.size()
-        };
-        if new_len > MAX_DOC_SIZE {
-            return Err(Error::LengthTooLong {
-                max: MAX_DOC_SIZE,
-                actual: self.buf.len(),
-            });
-        }
-
-        // Erase previous signature & recalculate hash, if needed
-        if self.signer.is_some() {
-            let split = SplitDoc::split(&self.buf).unwrap();
-            let new_len = split.hash_raw.len() + split.data.len() + 5;
-            let mut hash_state = HashState::new();
-            match self.schema_hash {
-                None => hash_state.update(&[0u8]),
-                Some(ref hash) => hash_state.update(hash),
-            }
-            hash_state.update(split.data);
-            self.buf.resize(new_len, 0);
-            self.hash_state = hash_state;
-        }
-
-        // Append the signature and update the hasher
-        let pre_len = self.buf.len();
-        signature.encode_vec(&mut self.buf);
-        self.hash_state.update(&self.buf[pre_len..]);
-        self.signer = Some(key.id().clone());
-        Ok(self)
+    pub fn sign(self, key: &IdentityKey) -> Result<Self> {
+        Ok(Self(self.0.sign(key)?))
     }
 
     pub(crate) fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
-        (self.hash_state.finalize(), self.buf, self.set_compress)
+        self.0.complete()
     }
 }
 
@@ -352,7 +348,7 @@ mod test {
         assert_eq!(new_doc.hash(), expected_hash);
         assert_eq!(new_doc.data(), &[1u8]);
         let expected = vec![0u8, 0u8, 1u8, 0u8, 0u8, 1u8];
-        let (doc_hash, doc_vec, doc_compress) = new_doc.complete();
+        let (doc_hash, doc_vec, doc_compress) = Document::from_new(new_doc).complete();
         assert_eq!(doc_hash, expected_hash);
         assert_eq!(doc_vec, expected);
         assert_eq!(doc_compress, None);
@@ -386,19 +382,19 @@ mod test {
             NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 9 - sign_len)]), None).unwrap();
         let signed_doc = new_doc.clone().sign(&key).unwrap();
         assert_eq!(
-            &signed_doc.buf[..(signed_doc.buf.len() - sign_len)],
-            &new_doc.buf[..]
+            &signed_doc.0.buf[..(signed_doc.0.buf.len() - sign_len)],
+            &new_doc.0.buf[..]
         );
 
         // Should be just large enough
         let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 10)]), None).unwrap();
         let mut expected = vec![0x00, 0x00];
         expected.extend_from_slice(&(MAX_DOC_SIZE - 6).to_le_bytes()[..3]);
-        assert_eq!(new_doc.buf[0..5], expected);
+        assert_eq!(new_doc.0.buf[0..5], expected);
         let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 9)]), None).unwrap();
         let mut expected = vec![0x00, 0x00];
         expected.extend_from_slice(&(MAX_DOC_SIZE - 5).to_le_bytes()[..3]);
-        assert_eq!(new_doc.buf[0..5], expected);
+        assert_eq!(new_doc.0.buf[0..5], expected);
         new_doc.sign(&key).unwrap_err(); // We have no space for a signature
 
         // Should fail by virtue of being too large
@@ -426,8 +422,8 @@ mod test {
         .unwrap();
         let signed_doc = new_doc.clone().sign(&key).unwrap();
         assert_eq!(
-            &signed_doc.buf[..(signed_doc.buf.len() - sign_len)],
-            &new_doc.buf[..]
+            &signed_doc.0.buf[..(signed_doc.0.buf.len() - sign_len)],
+            &new_doc.0.buf[..]
         );
 
         // Should be 1 byte below max - check against expected format
@@ -439,7 +435,7 @@ mod test {
         let mut expected = vec![0x00, hash_len as u8];
         expected.extend_from_slice(schema_hash.as_ref());
         expected.extend_from_slice(&(MAX_DOC_SIZE - 6 - hash_len).to_le_bytes()[..3]);
-        assert_eq!(new_doc.buf[0..(5 + hash_len)], expected);
+        assert_eq!(new_doc.0.buf[0..(5 + hash_len)], expected);
 
         // Should be at max - check against expected format
         let new_doc = NewDocument::new(
@@ -450,7 +446,7 @@ mod test {
         let mut expected = vec![0x00, hash_len as u8];
         expected.extend_from_slice(schema_hash.as_ref());
         expected.extend_from_slice(&(MAX_DOC_SIZE - 5 - hash_len).to_le_bytes()[..3]);
-        assert_eq!(new_doc.buf[0..(5 + hash_len)], expected);
+        assert_eq!(new_doc.0.buf[0..(5 + hash_len)], expected);
         new_doc.sign(&key).unwrap_err(); // We have no space for a signature
 
         // Should fail by virtue of being too large
@@ -555,7 +551,7 @@ mod test {
         let key = IdentityKey::new_temp(&mut rand::rngs::OsRng);
         let new_doc = NewDocument::new(&1u8, None).unwrap().sign(&key).unwrap();
         assert_eq!(new_doc.data(), &[1u8]);
-        let (doc_hash, doc_vec, _) = new_doc.complete();
+        let (doc_hash, doc_vec, _) = Document::from_new(new_doc).complete();
         let doc = Document::new(doc_vec).unwrap();
         let val: u8 = doc.deserialize().unwrap();
         assert_eq!(doc_hash, doc.hash());

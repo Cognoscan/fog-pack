@@ -1,7 +1,47 @@
+//! The fog-pack Validators, for building Schemas and Queries.
+//!
+//! This submodule contains various validators, which can be transformed into the [`Validator`]
+//! enum type for use in a Schema or a Query. Each struct acts as a constructor that can be
+//! built into a `Validator`.
+//!
+//! Validators are not used directly; instead, they should be used to build a Schema or Query,
+//! which will run them against fog-pack data.
+//!
+//! # Examples
+//!
+//! Say we want to build a Document that acts like a file directory. We want to store the creation
+//! time of the directory, and a list of file names with associated Hashes, each of which will be
+//! the Hash of a file or directory. Let's also assume we want a valid Unix file name, meaning "/"
+//! and NUL cannot be in the name, it cannot be longer than 255 bytes, and shouldn't be "." or
+//! "..". A validator for this Document might look like:
+//!
+//! ```
+//! # use fog_pack::validator::*;
+//! # use regex::Regex;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let dir = MapValidator::new()
+//!     .req_add("created", TimeValidator::new().build())
+//!     .req_add("contents", MapValidator::new()
+//!         .keys(KeyValidator::new()
+//!             .matches(Regex::new(r"^[^/\x00]+$").unwrap())
+//!             .max_len(255)
+//!             .min_len(1)
+//!         )
+//!         .ban_add(".")
+//!         .ban_add("..")
+//!         .values(HashValidator::new().build())
+//!         .build()
+//!     )
+//!     .build();
+//! # Ok(())
+//! # }
+//! ```
+
 mod array;
 mod bin;
 mod bool;
 mod checklist;
+mod enum_set;
 mod float32;
 mod float64;
 mod hash;
@@ -10,6 +50,7 @@ mod integer;
 mod lock_id;
 mod lockbox;
 mod map;
+mod multi;
 mod serde_regex;
 mod str;
 mod stream_id;
@@ -19,6 +60,7 @@ pub use self::array::*;
 pub use self::bin::*;
 pub use self::bool::*;
 pub use self::checklist::*;
+pub use self::enum_set::*;
 pub use self::float32::*;
 pub use self::float64::*;
 pub use self::hash::*;
@@ -27,6 +69,7 @@ pub use self::integer::*;
 pub use self::lock_id::*;
 pub use self::lockbox::*;
 pub use self::map::*;
+pub use self::multi::*;
 pub use self::str::*;
 pub use self::stream_id::*;
 pub use self::time::*;
@@ -36,6 +79,23 @@ use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// [Unicode Normalization](http://www.unicode.org/reports/tr15/) settings.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Normalize {
+    /// No normalization applied.
+    None,
+    /// NFC normalization applied.
+    NFC,
+    /// NFKC normalization applied.
+    NFKC,
+}
+
+/// A fog-pack Validator, for verifying the form of a fog-pack Document or Entry.
+///
+/// Validators can be used to verify a fog-pack Document or Entry. Schemas use them for
+/// verification, and they are also used by Queries to find matching Entries.
+///
+/// A Validator can range from the
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Validator {
     Null,
@@ -57,12 +117,24 @@ pub enum Validator {
     StreamLockbox(StreamLockboxValidator),
     LockLockbox(LockLockboxValidator),
     Ref(String),
-    Multi(Vec<Validator>),
-    Enum(BTreeMap<String, Option<Validator>>),
+    Multi(MultiValidator),
+    Enum(EnumValidator),
     Any,
 }
 
 impl Validator {
+    pub fn new_ref(name: impl Into<String>) -> Self {
+        Self::Ref(name.into())
+    }
+
+    pub fn new_null() -> Self {
+        Self::Null
+    }
+
+    pub fn new_any() -> Self {
+        Self::Any
+    }
+
     pub(crate) fn validate<'de, 'c>(
         &'c self,
         types: &'c BTreeMap<String, Validator>,
@@ -158,72 +230,8 @@ impl Validator {
                     _ => validator.validate(types, parser, checklist),
                 }
             }
-            Validator::Multi(multi) => {
-                // Iterate through Multi list, but skip any validators that could potentially be
-                // cyclic. Banned: Multi->Multi, Multi->Ref->Multi, Multi->Ref->Ref.
-                for validator in multi.iter() {
-                    let new_parser = parser.clone();
-                    let new_checklist = checklist.clone();
-                    let new_result = match validator {
-                        Validator::Ref(ref_name) => match types.get(ref_name) {
-                            None => continue,
-                            Some(validator) => match validator {
-                                Validator::Ref(_) => continue,
-                                Validator::Multi(_) => continue,
-                                _ => validator.validate(types, new_parser, new_checklist),
-                            },
-                        },
-                        Validator::Multi(_) => {
-                            continue;
-                        }
-                        _ => validator.validate(types, new_parser, new_checklist),
-                    };
-                    // We clone the parser each time because the validator modifies its state while
-                    // processing. On a pass, we return the parser state that passed
-                    if new_result.is_ok() {
-                        return new_result;
-                    }
-                }
-                Err(Error::FailValidate(
-                    "validator Multi had no passing validators".to_string(),
-                ))
-            }
-            Validator::Enum(enum_map) => {
-                // Get the enum itself, which should be a map with 1 key-value pair or a string.
-                let elem = parser
-                    .next()
-                    .ok_or_else(|| Error::FailValidate("expected a enum".to_string()))??;
-                let (key, has_value) = match elem {
-                    Element::Str(v) => (v, false),
-                    Element::Map(1) => {
-                        let key = parser.next().ok_or_else(|| {
-                            Error::FailValidate("expected a string".to_string())
-                        })??;
-                        if let Element::Str(key) = key {
-                            (key, true)
-                        } else {
-                            return Err(Error::FailValidate("expected a string".to_string()));
-                        }
-                    }
-                    _ => return Err(Error::FailValidate("expected an enum".to_string())),
-                };
-                // Find the matching validator and verify the (possible) content against it
-                let validator = enum_map
-                    .get(key)
-                    .ok_or_else(|| Error::FailValidate(format!("{} is not in enum list", key)))?;
-                match (validator, has_value) {
-                    (None, false) => Ok((parser, checklist)),
-                    (None, true) => Err(Error::FailValidate(format!(
-                        "enum {} shouldn't have any associated value",
-                        key
-                    ))),
-                    (Some(_), false) => Err(Error::FailValidate(format!(
-                        "enum {} should have an associated value",
-                        key
-                    ))),
-                    (Some(validator), true) => validator.validate(types, parser, checklist),
-                }
-            }
+            Validator::Multi(validator) => validator.validate(types, parser, checklist),
+            Validator::Enum(validator) => validator.validate(types, parser, checklist),
             Validator::Any => {
                 read_any(&mut parser)?;
                 Ok((parser, checklist))
@@ -231,7 +239,11 @@ impl Validator {
         }
     }
 
-    pub fn query_check(&self, types: &BTreeMap<String, Validator>, other: &Validator) -> bool {
+    pub(crate) fn query_check(
+        &self,
+        types: &BTreeMap<String, Validator>,
+        other: &Validator,
+    ) -> bool {
         match self {
             Validator::Null => matches!(other, Validator::Null | Validator::Any),
             Validator::Bool(validator) => validator.query_check(other),
@@ -243,7 +255,7 @@ impl Validator {
             Validator::Time(validator) => validator.query_check(other),
             Validator::Array(validator) => validator.query_check(types, other),
             Validator::Map(validator) => validator.query_check(types, other),
-            Validator::Hash(validator) => validator.query_check(other),
+            Validator::Hash(validator) => validator.query_check(types, other),
             Validator::Identity(validator) => validator.query_check(other),
             Validator::StreamId(validator) => validator.query_check(other),
             Validator::LockId(validator) => validator.query_check(other),
@@ -261,40 +273,8 @@ impl Validator {
                     }
                 }
             },
-            Validator::Multi(list) => list.iter().any(|validator| match validator {
-                Validator::Ref(ref_name) => match types.get(ref_name) {
-                    None => false,
-                    Some(validator) => match validator {
-                        Validator::Ref(_) => false,
-                        Validator::Multi(_) => false,
-                        _ => validator.query_check(types, other),
-                    },
-                },
-                Validator::Multi(_) => false,
-                _ => validator.query_check(types, other),
-            }),
-            Validator::Enum(validator) => {
-                match other {
-                    Validator::Enum(other) => {
-                        // For each entry in the query's enum, make sure it:
-                        // 1. Has a corresponding entry in our enum
-                        // 2. That our enum's matching validator would allow the query's validator
-                        //    for that enum.
-                        // 3. If both have a "None" instead of a validator, that's also OK
-                        other.iter().all(|(other_k, other_v)| {
-                            match (validator.get(other_k), other_v) {
-                                (Some(Some(validator)), Some(other_v)) => {
-                                    validator.query_check(types, other_v)
-                                }
-                                (Some(None), None) => true,
-                                _ => false,
-                            }
-                        })
-                    }
-                    Validator::Any => true,
-                    _ => false,
-                }
-            }
+            Validator::Multi(validator) => validator.query_check(types, other),
+            Validator::Enum(validator) => validator.query_check(types, other),
             Validator::Any => false,
         }
     }
@@ -326,13 +306,13 @@ fn read_any(parser: &mut Parser) -> Result<()> {
                         "expected string for map key".to_string(),
                     ));
                 }
-                get_elem(parser)?;
+                read_any(parser)?;
             }
             Ok(())
         }
         Element::Array(len) => {
             for _ in 0..len {
-                get_elem(parser)?;
+                read_any(parser)?;
             }
             Ok(())
         }

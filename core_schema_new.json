@@ -93,8 +93,8 @@
               "in": { "Array": { "items": { "Str": {} } } },
               "nin": { "Array": { "items": { "Str": {} } } },
               "matches": { "Str": {} },
-              "max_len": { "Int": { "min": 0 } },
-              "min_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
+              "min_len": { "Int": { "min": 0, "max": 4294967295 } },
               "max_char": { "Int": { "min": 0 } },
               "min_char": { "Int": { "min": 0 } },
               "normalize": {
@@ -156,8 +156,8 @@
               "ex_min": { "Bool": {} },
               "max": { "Bin": {} },
               "min": { "Bin": {} },
-              "max_len": { "Int": { "min": 0 } },
-              "min_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
+              "min_len": { "Int": { "min": 0, "max": 4294967295 } },
               "in": { "Array": { "items": { "Bin": {} } } },
               "nin": { "Array": { "items": { "Bin": {} } } },
               "query": { "Bool": {} },
@@ -176,8 +176,8 @@
               "contains": { "Array": { "items": { "Ref": "Validator" } } },
               "items": { "Ref": "Validator" },
               "prefix": { "Array": { "items": { "Ref": "Validator" } } },
-              "max_len": { "Int": { "min": 0 } },
-              "min_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
+              "min_len": { "Int": { "min": 0, "max": 4294967295 } },
               "in": { "Array": { "items": { "Array": {} } } },
               "nin": { "Array": { "items": { "Array": {} } } },
               "unique": { "Bool": {} },
@@ -195,14 +195,14 @@
             "opt": {
               "comment": { "Str": {} },
               "default": { "Map": { "values": "Any" } },
-              "max_len": { "Int": { "min": 0 } },
-              "min_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
+              "min_len": { "Int": { "min": 0, "max": 4294967295 } },
               "keys": { "Map": {
                 "comment": "Allowed key strings",
                 "opt": {
                   "matches": { "Str": {} },
-                  "max_len": { "Int": { "min": 0 } },
-                  "min_len": { "Int": { "min": 0 } },
+                  "max_len": { "Int": { "min": 0, "max": 4294967295 } },
+                  "min_len": { "Int": { "min": 0, "max": 4294967295 } },
                   "normalize": {
                     "Enum": {
                       "None": null,
@@ -301,7 +301,7 @@
             "comment": "The DataLockbox type validator",
             "opt": {
               "comment": { "Str": {} },
-              "max_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
               "size": { "Bool": {} }
             }
           }
@@ -311,7 +311,7 @@
             "comment": "The IdentityLockbox type validator",
             "opt": {
               "comment": { "Str": {} },
-              "max_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
               "size": { "Bool": {} }
             }
           }
@@ -321,7 +321,7 @@
             "comment": "The StreamLockbox type validator",
             "opt": {
               "comment": { "Str": {} },
-              "max_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
               "size": { "Bool": {} }
             }
           }
@@ -331,7 +331,7 @@
             "comment": "The LockLockbox type validator",
             "opt": {
               "comment": { "Str": {} },
-              "max_len": { "Int": { "min": 0 } },
+              "max_len": { "Int": { "min": 0, "max": 4294967295 } },
               "size": { "Bool": {} }
             }
           }

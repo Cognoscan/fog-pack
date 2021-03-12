@@ -17,11 +17,6 @@ impl DepthTracker {
         }
     }
 
-    /// Get the current depth
-    pub fn depth(&self) -> usize {
-        self.tracking.len()
-    }
-
     /// Update the depth tracker on each new element to serialize.
     pub fn update_elem(&mut self, elem: &Element) -> Result<()> {
         // Subtract from count for next element

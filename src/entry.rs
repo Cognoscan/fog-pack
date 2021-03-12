@@ -106,7 +106,7 @@ impl NewEntry {
 
     /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm.
-    pub fn compression(&mut self, setting: Option<u8>) -> &mut Self {
+    pub fn compression(mut self, setting: Option<u8>) -> Self {
         self.set_compress = Some(setting);
         self
     }
@@ -162,7 +162,7 @@ impl NewEntry {
         self.split().data
     }
 
-    /// Get the hash of the Entry's parent [`Document`].
+    /// Get the hash of the Entry's parent [`Document`][crate::Document].
     pub fn parent(&self) -> &Hash {
         &self.parent_hash
     }
@@ -235,7 +235,7 @@ impl Entry {
         self.split().data
     }
 
-    /// Get the hash of the Entry's parent [`Document`].
+    /// Get the hash of the Entry's parent [`Document`][crate::Document].
     pub fn parent(&self) -> &Hash {
         &self.parent_hash
     }
@@ -251,7 +251,7 @@ impl Entry {
     }
 
     /// Get the hash of the complete entry. This can change if the entry is signed again with the
-    /// [`sign`] function.
+    /// [`sign`][Self::sign] function.
     pub fn hash(&self) -> Hash {
         self.hash_state.hash()
     }
@@ -265,7 +265,7 @@ impl Entry {
 
     /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm.
-    pub fn compression(&mut self, setting: Option<u8>) -> &mut Self {
+    pub fn compression(mut self, setting: Option<u8>) -> Self {
         self.set_compress = Some(setting);
         self
     }

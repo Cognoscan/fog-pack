@@ -30,7 +30,7 @@ impl<'a> FogDeserializer<'a> {
         Self { parser }
     }
 
-    pub(crate) fn with_debug(buf: &'a [u8], indent: String) -> Self {
+    pub(crate) fn with_debug(buf: &'a [u8], indent: impl Into<String>) -> Self {
         Self {
             parser: Parser::with_debug(buf, indent),
         }
@@ -38,10 +38,6 @@ impl<'a> FogDeserializer<'a> {
 
     pub(crate) fn get_debug(&self) -> Option<&str> {
         self.parser.get_debug()
-    }
-
-    pub(crate) fn finish(self) -> Result<()> {
-        self.parser.finish()
     }
 
     fn next_elem(&mut self) -> Result<Element<'a>> {
@@ -141,9 +137,32 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut FogDeserializer<'de> {
         }
     }
 
+    fn deserialize_newtype_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        visitor.visit_newtype_struct(self)
+    }
+
+    fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
+        match self.next_elem()? {
+            Element::Null => visitor.visit_unit(),
+            elem => Err(Error::invalid_type(elem.unexpected(), &"null")),
+        }
+    }
+
+    fn deserialize_unit_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        self.deserialize_unit(visitor)
+    }
+
     serde::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str
-        string bytes byte_buf unit unit_struct newtype_struct
+        string bytes byte_buf
         seq tuple tuple_struct map struct identifier ignored_any
     }
 }
@@ -187,7 +206,6 @@ impl<'de> serde::de::VariantAccess<'de> for ExtAccess<'de> {
     where
         T: DeserializeSeed<'de>,
     {
-        println!("You picked the newtype, good jorb");
         seed.deserialize(&mut self)
     }
 
@@ -333,7 +351,7 @@ impl<'a, 'de> serde::de::VariantAccess<'de> for EnumAccess<'a, 'de> {
             self.de.deserialize_map(visitor)
         } else {
             Err(Error::SerdeFail(
-                "invalid type: unit variant, expected newtype variant".to_string(),
+                "invalid type: unit variant, expected struct variant".to_string(),
             ))
         }
     }
@@ -346,7 +364,7 @@ impl<'a, 'de> serde::de::VariantAccess<'de> for EnumAccess<'a, 'de> {
             self.de.deserialize_tuple(len, visitor)
         } else {
             Err(Error::SerdeFail(
-                "invalid type: unit variant, expected newtype variant".to_string(),
+                "invalid type: unit variant, expected tuple variant".to_string(),
             ))
         }
     }
@@ -494,7 +512,7 @@ mod test {
         let data = vec![0xc0];
         let mut de = FogDeserializer::new(&data);
         <()>::deserialize(&mut de).unwrap();
-        de.finish().unwrap();
+        de.parser.finish().unwrap();
     }
 
     #[test]
@@ -502,13 +520,13 @@ mod test {
         let data = vec![0xc3];
         let mut de = FogDeserializer::new(&data);
         let dec = bool::deserialize(&mut de).unwrap();
-        de.finish().unwrap();
+        de.parser.finish().unwrap();
         assert_eq!(dec, true);
 
         let data = vec![0xc2];
         let mut de = FogDeserializer::new(&data);
         let dec = bool::deserialize(&mut de).unwrap();
-        de.finish().unwrap();
+        de.parser.finish().unwrap();
         assert_eq!(dec, false);
     }
 
@@ -524,7 +542,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u8::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -543,7 +561,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u16::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -564,7 +582,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u32::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -593,7 +611,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = u64::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -613,7 +631,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i8::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -638,7 +656,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i16::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -667,7 +685,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i32::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -709,7 +727,7 @@ mod test {
         for (int, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = i64::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, int);
         }
     }
@@ -725,8 +743,8 @@ mod test {
         for (float, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = f32::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
-            assert_eq!(dec, float);
+            de.parser.finish().unwrap();
+            assert_eq!(dec.to_ne_bytes(), float.to_ne_bytes());
         }
     }
 
@@ -756,8 +774,8 @@ mod test {
         for (float, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = f64::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
-            assert_eq!(dec, float);
+            de.parser.finish().unwrap();
+            assert_eq!(dec.to_ne_bytes(), float.to_ne_bytes());
         }
     }
 
@@ -780,7 +798,7 @@ mod test {
         for (len, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = ByteBuf::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec.len(), len);
             assert!(dec.iter().all(|byte| *byte == 0));
         }
@@ -807,7 +825,7 @@ mod test {
         for (len, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = String::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec.len(), len);
             assert!(dec.as_bytes().iter().all(|byte| *byte == 0));
         }
@@ -815,16 +833,16 @@ mod test {
 
     #[test]
     fn de_char() {
-        let data = vec![0xa1, 'c' as u8];
+        let data = vec![0xa1, b'c'];
         let mut de = FogDeserializer::new(&data);
         let dec = char::deserialize(&mut de).unwrap();
-        de.finish().unwrap();
+        de.parser.finish().unwrap();
         assert_eq!(dec, 'c');
 
-        let data = vec![0xa1, '0' as u8];
+        let data = vec![0xa1, b'0'];
         let mut de = FogDeserializer::new(&data);
         let dec = char::deserialize(&mut de).unwrap();
-        de.finish().unwrap();
+        de.parser.finish().unwrap();
         assert_eq!(dec, '0');
     }
 
@@ -853,9 +871,60 @@ mod test {
         for (time, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);
             let dec = Timestamp::deserialize(&mut de).unwrap();
-            de.finish().unwrap();
+            de.parser.finish().unwrap();
             assert_eq!(dec, time);
         }
+    }
+
+    #[test]
+    fn de_enum() {
+        #[derive(PartialEq, Eq, Debug, Deserialize)]
+        enum EnumerateThis {
+            Null,
+            Newtype(char),
+            Tuple(char, u8),
+            Struct { b: char, a: u8 },
+        }
+
+        let mut data = Vec::new();
+        data.push(0xa4);
+        data.extend_from_slice("Null".as_bytes());
+        let mut de = FogDeserializer::new(&data);
+        let dec = EnumerateThis::deserialize(&mut de).unwrap();
+        assert_eq!(dec, EnumerateThis::Null);
+
+        let mut data = Vec::new();
+        data.push(0x81);
+        data.push(0xa7);
+        data.extend_from_slice("Newtype".as_bytes());
+        data.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
+        let mut de = FogDeserializer::new(&data);
+        let dec = EnumerateThis::deserialize(&mut de).unwrap();
+        assert_eq!(dec, EnumerateThis::Newtype('🙃')); // Encodes as "f0 9f 99 83"
+
+        let mut data = Vec::new();
+        data.push(0x81);
+        data.push(0xa5);
+        data.extend_from_slice("Tuple".as_bytes());
+        data.extend_from_slice(&[0x92, 0xa4, 0xf0, 0x9f, 0x99, 0x83, 0x04]);
+        let mut de = FogDeserializer::new(&data);
+        let dec = EnumerateThis::deserialize(&mut de).unwrap();
+        assert_eq!(dec, EnumerateThis::Tuple('🙃', 4));
+
+        let mut data = Vec::new();
+        data.push(0x81);
+        data.push(0xa6);
+        data.extend_from_slice("Struct".as_bytes());
+        data.push(0x82);
+        // map a
+        data.extend_from_slice(&[0xa1, b'a']);
+        data.push(0x04);
+        // map b
+        data.extend_from_slice(&[0xa1, b'b']);
+        data.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
+        let mut de = FogDeserializer::new(&data);
+        let dec = EnumerateThis::deserialize(&mut de).unwrap();
+        assert_eq!(dec, EnumerateThis::Struct { b: '🙃', a: 4 });
     }
 
     #[test]
@@ -866,7 +935,7 @@ mod test {
         enc.extend_from_slice(hash.as_ref());
         let mut de = FogDeserializer::new(&enc);
         let dec = Hash::deserialize(&mut de).unwrap();
-        de.finish().unwrap();
+        de.parser.finish().unwrap();
         assert_eq!(dec, hash);
     }
 }

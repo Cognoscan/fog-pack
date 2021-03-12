@@ -6,18 +6,21 @@ mod depth_tracking;
 mod document;
 mod entry;
 mod integer;
-pub mod query;
+mod query;
 mod schema;
 mod timestamp;
 pub mod validator;
-pub mod value;
-pub mod value_ref;
+mod value;
+mod value_ref;
 
 pub use document::*;
 pub use entry::*;
 pub use integer::*;
+pub use query::*;
 pub use schema::*;
 pub use timestamp::*;
+pub use value::Value;
+pub use value_ref::ValueRef;
 
 mod error;
 

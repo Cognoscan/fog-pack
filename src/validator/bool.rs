@@ -8,17 +8,33 @@ fn is_false(v: &bool) -> bool {
     !v
 }
 
+/// Validator for boolean values.
+///
+/// This validator type will only pass booleans. Validation only passes if the value also
+/// meets the `in`/`nin` requirements.
+///
+/// # Defaults
+///
+/// Fields that aren't specified for the validator use their defaults instead. The defaults for
+/// each field are:
+/// - comment: ""
+/// - in_list: empty
+/// - nin_list: empty
+/// - query: false
+///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct BoolValidator {
+    /// An optional comment explaining the validator.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
-    #[serde(skip_serializing_if = "is_false")]
-    pub default: bool,
+    /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
     #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
     pub in_list: Vec<bool>,
+    /// A vector of specific unallowed values, stored under the `nin` field.
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<bool>,
+    /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
 }
@@ -27,7 +43,6 @@ impl std::default::Default for BoolValidator {
     fn default() -> Self {
         Self {
             comment: String::new(),
-            default: false,
             in_list: Vec::new(),
             nin_list: Vec::new(),
             query: false,
@@ -36,18 +51,38 @@ impl std::default::Default for BoolValidator {
 }
 
 impl BoolValidator {
+    /// Make a new validator with the default configuration.
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn comment(&mut self, comment: &str) -> &mut Self {
-        self.comment = comment.to_owned();
+    /// Set a comment for the validator.
+    pub fn comment(mut self, comment: impl Into<String>) -> Self {
+        self.comment = comment.into();
         self
     }
 
-    pub fn set_default(&mut self, default: bool) -> &mut Self {
-        self.default = default;
+    /// Add a value to the `in` list.
+    pub fn in_add(mut self, add: bool) -> Self {
+        self.in_list.push(add);
         self
+    }
+
+    /// Add a value to the `nin` list.
+    pub fn nin_add(mut self, add: bool) -> Self {
+        self.nin_list.push(add);
+        self
+    }
+
+    /// Set whether or not queries can use the `in` and `nin` lists.
+    pub fn query(mut self, query: bool) -> Self {
+        self.query = query;
+        self
+    }
+
+    /// Build this into a [`Validator`] enum.
+    pub fn build(self) -> Validator {
+        Validator::Bool(self)
     }
 
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {

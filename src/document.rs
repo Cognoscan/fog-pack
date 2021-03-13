@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::{element::serialize_elem, error::{Error, Result}};
 use crate::{compress::CompressType, de::FogDeserializer, ser::FogSerializer, MAX_DOC_SIZE};
 use byteorder::{LittleEndian, ReadBytesExt};
 use fog_crypto::{
@@ -211,10 +211,12 @@ where
         let data_len = (MAX_DOC_SIZE>>1) - header_len - sign_len - 4;
 
         let mut prev_len = self.ser.buf.len();
+        let mut array_len = !self.ser.buf.is_empty() as usize;
         while self.ser.buf.len() < data_len {
             let item = if let Some(item) = self.iter.next() { item } else { break };
             prev_len = self.ser.buf.len();
             item.serialize(&mut self.ser)?;
+            array_len +=1;
         }
 
         if !self.ser.buf.is_empty() {
@@ -225,6 +227,7 @@ where
             }
             // Create the new document
             let doc = NewDocument::new_from(self.schema.as_ref(), |mut buf| {
+                serialize_elem(&mut buf, crate::element::Element::Array(array_len));
                 buf.extend_from_slice(&self.ser.buf);
                 Ok(buf)
             })?;
@@ -616,12 +619,15 @@ mod test {
 
         let mut builder = VecDocumentBuilder::new(std::iter::repeat(Example { a: 234235, b: "Ok".into()}), None);
         let mut docs = Vec::new();
-        for _ in 0..3 {
+        for _ in 0..4 {
             let iter = builder.next();
             let result = iter.unwrap();
             let doc = result.unwrap();
             docs.push(doc);
         }
-        assert!(docs.iter().all(|doc| doc.0.buf.len() <= (MAX_DOC_SIZE>>1)));
+        assert!(docs.iter().all(|doc| {
+            let len = doc.0.buf.len();
+            len <= (MAX_DOC_SIZE>>1) && len > (MAX_DOC_SIZE>>2)
+        }));
     }
 }

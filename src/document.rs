@@ -155,11 +155,134 @@ impl DocumentInner {
     }
 }
 
+pub struct VecDocumentBuilder<I>
+where
+    I: Iterator,
+    <I as Iterator>::Item: Serialize,
+{
+    iter: std::iter::Fuse<I>,
+    done: bool,
+    ser: FogSerializer,
+    item_buf: Vec<u8>,
+    schema: Option<Hash>,
+    signer: Option<IdentityKey>,
+    set_compress: Option<Option<u8>>,
+}
+
+impl<I> VecDocumentBuilder<I>
+where
+    I: Iterator,
+    <I as Iterator>::Item: Serialize,
+{
+    pub fn new(iter: I, schema: Option<&Hash>) -> Self {
+        Self {
+            iter: iter.fuse(),
+            done: false,
+            ser: FogSerializer::default(),
+            item_buf: Vec::new(),
+            schema: schema.cloned(),
+            signer: None,
+            set_compress: None,
+        }
+    }
+
+    /// Override the default compression settings for all produced Documents. `None` will disable 
+    /// compression. `Some(level)` will compress with the provided level as the setting for the 
+    /// algorithm.
+    pub fn compression(mut self, setting: Option<u8>) -> Self {
+        self.set_compress = Some(setting);
+        self
+    }
+
+    /// Sign the all produced documents from this point onward.
+    pub fn sign(mut self, key: &IdentityKey) -> Self {
+        self.signer = Some(key.clone());
+        self
+    }
+
+    fn next_doc(&mut self) -> Result<Option<NewDocument>> {
+        // We want to serialize a value, ideally using FogSerializer
+        // We don't know the size ahead of time, so we can't pre-fill at all. There's at least one 
+        // copy going on here.
+        // As such, we want to create a fake-o serializer, fill it up with values that *will* be 
+        // written, then periodically dump out the contents when it gets to be too large. We'll 
+        // target less than 512 kiB for each document.
+        // This means we want to directly be aware of the serializer's content somehow...
+        // So let's start, somehow. Or whatever.
+        // I am going to want to replace the 
+
+        // Precalculate the target size, and don't go past it:
+        // - 5 bytes from the header base
+        // - N bytes from the schema hash
+        // - N bytes at most from the signature
+        // - 4 bytes at most from the array element
+        let header_len = self.schema.as_ref().map_or(5, |h| 5+h.as_ref().len());
+        let sign_len = self.signer.as_ref().map_or(0, |k| k.max_signature_size());
+        let data_len = (MAX_DOC_SIZE>>1) - header_len - sign_len - 4;
+
+        let mut prev_len = self.ser.buf.len();
+        while prev_len < data_len {
+            let item = if let Some(item) = self.iter.next() { item } else { break };
+            item.serialize(&mut self.ser)?;
+            prev_len = self.ser.buf.len();
+        }
+
+
+        if !self.ser.buf.is_empty() {
+            // If we have excess data, lop it off and hold it for later copying
+            if prev_len != self.ser.buf.len() {
+                self.item_buf.extend_from_slice(&self.ser.buf[prev_len..]);
+                self.ser.buf.truncate(prev_len);
+            }
+            // Create the new document
+            let doc = NewDocument::new_from(self.schema.as_ref(), |mut buf| {
+                buf.extend_from_slice(&self.ser.buf);
+                Ok(buf)
+            })?;
+            let doc = match self.set_compress {
+                Some(set_compress) => doc.compression(set_compress),
+                None => doc,
+            };
+            let doc = match self.signer {
+                Some(ref signer) => doc.sign(signer)?,
+                None => doc,
+            };
+            // Move any lopped off data back into the serializer
+            if !self.item_buf.is_empty() {
+                self.ser.buf.clear();
+                self.ser.buf.extend_from_slice(&self.item_buf);
+                self.item_buf.clear();
+            }
+            Ok(Some(doc))
+        }
+        else {
+            Ok(None)
+        }
+    }
+}
+
+impl<I> Iterator for VecDocumentBuilder<I>
+where
+    I: Iterator,
+    <I as Iterator>::Item: Serialize,
+{
+    type Item = Result<NewDocument>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done { return None; }
+        let result = self.next_doc();
+        if result.is_err() { self.done = true; }
+        result.transpose()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct NewDocument(DocumentInner);
 
 impl NewDocument {
-    pub fn new<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
+    pub fn new_from<F>(schema: Option<&Hash>, encoder: F) -> Result<Self>
+        where F: FnOnce(Vec<u8>) -> Result<Vec<u8>>
+    {
         // Create the header
         let mut buf: Vec<u8> = vec![CompressType::NoCompress.into()];
         if let Some(ref hash) = schema {
@@ -174,9 +297,7 @@ impl NewDocument {
         let start = buf.len();
 
         // Encode the data
-        let mut ser = FogSerializer::from_vec(buf, false);
-        data.serialize(&mut ser)?;
-        let mut buf = ser.finish();
+        let mut buf = encoder(buf)?;
 
         if buf.len() > MAX_DOC_SIZE {
             return Err(Error::LengthTooLong {
@@ -207,6 +328,15 @@ impl NewDocument {
             set_compress: None,
             signer: None,
         }))
+    }
+
+    pub fn new<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
+        Self::new_from(schema, |buf| {
+            // Encode the data
+            let mut ser = FogSerializer::from_vec(buf, false);
+            data.serialize(&mut ser)?;
+            Ok(ser.finish())
+        })
     }
 
     /// Get the hash of the schema this document adheres to.

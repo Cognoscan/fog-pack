@@ -201,16 +201,6 @@ where
     }
 
     fn next_doc(&mut self) -> Result<Option<NewDocument>> {
-        // We want to serialize a value, ideally using FogSerializer
-        // We don't know the size ahead of time, so we can't pre-fill at all. There's at least one 
-        // copy going on here.
-        // As such, we want to create a fake-o serializer, fill it up with values that *will* be 
-        // written, then periodically dump out the contents when it gets to be too large. We'll 
-        // target less than 512 kiB for each document.
-        // This means we want to directly be aware of the serializer's content somehow...
-        // So let's start, somehow. Or whatever.
-        // I am going to want to replace the 
-
         // Precalculate the target size, and don't go past it:
         // - 5 bytes from the header base
         // - N bytes from the schema hash
@@ -221,12 +211,11 @@ where
         let data_len = (MAX_DOC_SIZE>>1) - header_len - sign_len - 4;
 
         let mut prev_len = self.ser.buf.len();
-        while prev_len < data_len {
+        while self.ser.buf.len() < data_len {
             let item = if let Some(item) = self.iter.next() { item } else { break };
-            item.serialize(&mut self.ser)?;
             prev_len = self.ser.buf.len();
+            item.serialize(&mut self.ser)?;
         }
-
 
         if !self.ser.buf.is_empty() {
             // If we have excess data, lop it off and hold it for later copying
@@ -468,6 +457,8 @@ impl Document {
 
 #[cfg(test)]
 mod test {
+    use fog_crypto::lock::DEFAULT_LOCK_VERSION;
+
     use super::*;
 
     #[test]
@@ -602,80 +593,6 @@ mod test {
         .unwrap_err();
     }
 
-    /*
-        #[test]
-        fn doc_limits() {
-            let key = IdentityKey::new_temp(&mut rand::rngs::OsRng);
-
-            // Create the encoded data
-            let mut enc = vec![0u8, 0u8];
-            let data_len = MAX_DOC_SIZE - 5;
-            enc.extend_from_slice(&data_len.to_le_bytes()[..3]);
-            enc.push(0xc6);
-            enc.extend_from_slice(&(data_len-5).to_le_bytes()[..4]);
-            enc.resize(data_len+10, 0xAA);
-            // 5 bytes for the Bin element header, 5 for the document header
-
-            // Should be large enough to include the signature
-            let sign_len = key.sign(&Hash::new(b"meh")).size();
-            let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10-sign_len)]), None).unwrap();
-            let signed_doc = new_doc.clone().sign(&key).unwrap();
-            assert_eq!(&signed_doc.buf[..(signed_doc.buf.len()-sign_len)], &new_doc.buf[..]);
-
-            // Should be just large enough
-            let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-11)]), None).unwrap();
-            let mut expected = vec![0x00, 0x00];
-            expected.extend_from_slice(&(MAX_DOC_SIZE-6).to_le_bytes()[..3]);
-            assert_eq!(new_doc.buf[0..5], expected);
-            let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10)]), None).unwrap();
-            let mut expected = vec![0x00, 0x00];
-            expected.extend_from_slice(&(MAX_DOC_SIZE-5).to_le_bytes()[..3]);
-            assert_eq!(new_doc.buf[0..5], expected);
-            new_doc.sign(&key).unwrap_err(); // We have no space for a signature
-
-            // Should fail by virtue of being too large
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9)]), None).unwrap_err();
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-8)]), None).unwrap_err();
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-7)]), None).unwrap_err();
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-6)]), None).unwrap_err();
-        }
-
-        #[test]
-        fn doc_schema_limits() {
-            use serde_bytes::Bytes;
-            let vec = vec![0xAAu8; MAX_DOC_SIZE]; // Make it too big
-            let key = IdentityKey::new_temp(&mut rand::rngs::OsRng);
-            let schema_hash = Hash::new(b"I'm totally a real schema, trust me");
-            let hash_len = schema_hash.as_ref().len();
-            // 5 bytes for the Bin element header, 5 for the document header
-
-            // Should be large enough to include the signature
-            let sign_len = key.sign(&Hash::new(b"meh")).size();
-            let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10-sign_len-hash_len)]), Some(&schema_hash)).unwrap();
-            let signed_doc = new_doc.clone().sign(&key).unwrap();
-            assert_eq!(&signed_doc.buf[..(signed_doc.buf.len()-sign_len)], &new_doc.buf[..]);
-
-            // Should be just large enough
-            let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-11-hash_len)]), Some(&schema_hash)).unwrap();
-            let mut expected = vec![0x00, hash_len as u8];
-            expected.extend_from_slice(schema_hash.as_ref());
-            expected.extend_from_slice(&(MAX_DOC_SIZE-6-hash_len).to_le_bytes()[..3]);
-            assert_eq!(new_doc.buf[0..(5+hash_len)], expected);
-            let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-10-hash_len)]), Some(&schema_hash)).unwrap();
-            let mut expected = vec![0x00, hash_len as u8];
-            expected.extend_from_slice(schema_hash.as_ref());
-            expected.extend_from_slice(&(MAX_DOC_SIZE-5-hash_len).to_le_bytes()[..3]);
-            assert_eq!(new_doc.buf[0..(5+hash_len)], expected);
-            new_doc.sign(&key).unwrap_err(); // We have no space for a signature
-
-            // Should fail by virtue of being too large
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-9-hash_len)]), Some(&schema_hash)).unwrap_err();
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-8-hash_len)]), Some(&schema_hash)).unwrap_err();
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-7-hash_len)]), Some(&schema_hash)).unwrap_err();
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE-6-hash_len)]), Some(&schema_hash)).unwrap_err();
-        }
-    */
-
     #[test]
     fn sign_roundtrip() {
         let key = IdentityKey::new_temp(&mut rand::rngs::OsRng);
@@ -687,5 +604,24 @@ mod test {
         assert_eq!(doc_hash, doc.hash());
         assert_eq!(val, 1u8);
         assert_eq!(doc.signer().unwrap(), key.id());
+    }
+
+    #[test]
+    fn vec_document_encode() {
+        #[derive(Clone, Serialize)]
+        struct Example {
+            a: u32,
+            b: String,
+        }
+
+        let mut builder = VecDocumentBuilder::new(std::iter::repeat(Example { a: 234235, b: "Ok".into()}), None);
+        let mut docs = Vec::new();
+        for _ in 0..3 {
+            let iter = builder.next();
+            let result = iter.unwrap();
+            let doc = result.unwrap();
+            docs.push(doc);
+        }
+        assert!(docs.iter().all(|doc| doc.0.buf.len() <= (MAX_DOC_SIZE>>1)));
     }
 }

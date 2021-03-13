@@ -162,7 +162,6 @@ where
 {
     iter: std::iter::Fuse<I>,
     done: bool,
-    total: usize,
     ser: FogSerializer,
     item_buf: Vec<u8>,
     schema: Option<Hash>,
@@ -179,7 +178,6 @@ where
         Self {
             iter: iter.fuse(),
             done: false,
-            total: 0,
             ser: FogSerializer::default(),
             item_buf: Vec::new(),
             schema: schema.cloned(),
@@ -229,8 +227,6 @@ where
                 self.ser.buf.truncate(prev_len);
                 array_len -= 1;
             }
-            self.total += array_len;
-            println!("Collecting {} items into a document, total = {}", array_len, self.total);
             // Create the new document
             let doc = NewDocument::new_from(self.schema.as_ref(), |mut buf| {
                 serialize_elem(&mut buf, crate::element::Element::Array(array_len));
@@ -762,7 +758,7 @@ mod test {
         result
     }
 
-    #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     pub struct Address {
         pub x0: u8,
         pub x1: u8,
@@ -781,7 +777,7 @@ mod test {
         }
     }
 
-    #[derive(Clone, serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     pub struct Log {
         pub address: Address,
         pub identity: String,
@@ -888,6 +884,27 @@ mod test {
             let len = doc.0.buf.len();
             len <= (MAX_DOC_SIZE>>1) && len > (MAX_DOC_SIZE>>2)
         }));
+    }
+
+    #[test]
+    fn logs_decode() {
+
+        // Generate a whole pile of log items
+        let mut rng = rand::thread_rng();
+        const LOGS: usize = 10_000;
+        let logs = generate_vec::<_, Log>(&mut rng, LOGS..LOGS + 1);
+
+        // Try to make them into documents
+        let builder = VecDocumentBuilder::new(logs.iter(), None);
+        let mut docs = builder.collect::<Result<Vec<NewDocument>>>().unwrap();
+
+        let docs: Vec<Document> = docs.drain(0..).map(|doc| crate::NoSchema::validate_new_doc(doc).unwrap())
+            .collect();
+        let dec_logs: Vec<Log> = docs.iter()
+            .map(|doc| { doc.deserialize::<Vec<Log>>().unwrap() })
+            .flatten()
+            .collect();
+        assert!(dec_logs == logs, "Didn't decode identically")
     }
 
 }

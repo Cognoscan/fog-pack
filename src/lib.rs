@@ -22,7 +22,7 @@ pub use timestamp::*;
 pub use value::Value;
 pub use value_ref::ValueRef;
 
-mod error;
+pub mod error;
 
 pub use fog_crypto::{
     hash::Hash,

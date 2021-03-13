@@ -186,6 +186,18 @@ where
         }
     }
 
+    pub fn new_ordered(iter: I, schema: Option<&Hash>) -> Self {
+        Self {
+            iter: iter.fuse(),
+            done: false,
+            ser: FogSerializer::with_params(true),
+            item_buf: Vec::new(),
+            schema: schema.cloned(),
+            signer: None,
+            set_compress: None,
+        }
+    }
+
     /// Override the default compression settings for all produced Documents. `None` will disable 
     /// compression. `Some(level)` will compress with the provided level as the setting for the 
     /// algorithm.
@@ -279,7 +291,7 @@ where
 pub struct NewDocument(DocumentInner);
 
 impl NewDocument {
-    pub fn new_from<F>(schema: Option<&Hash>, encoder: F) -> Result<Self>
+    fn new_from<F>(schema: Option<&Hash>, encoder: F) -> Result<Self>
         where F: FnOnce(Vec<u8>) -> Result<Vec<u8>>
     {
         // Create the header
@@ -329,10 +341,24 @@ impl NewDocument {
         }))
     }
 
+    /// Create a new Entry from any serializable data, a key, and the Hash of the parent document.
     pub fn new<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
         Self::new_from(schema, |buf| {
             // Encode the data
             let mut ser = FogSerializer::from_vec(buf, false);
+            data.serialize(&mut ser)?;
+            Ok(ser.finish())
+        })
+    }
+
+    /// Create a new Entry from any serializable data whose keys are all ordered. For structs, this 
+    /// means all fields are declared in lexicographic order. For maps, this means a `BTreeMap` 
+    /// type must be used, whose keys are ordered such that they serialize to lexicographically 
+    /// ordered strings. All sub-structs and sub-maps must be similarly ordered.
+    pub fn new_ordered<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
+        Self::new_from(schema, |buf| {
+            // Encode the data
+            let mut ser = FogSerializer::from_vec(buf, true);
             data.serialize(&mut ser)?;
             Ok(ser.finish())
         })

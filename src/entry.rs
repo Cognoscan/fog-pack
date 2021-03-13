@@ -66,12 +66,12 @@ pub struct NewEntry {
 }
 
 impl NewEntry {
-    pub fn new<S: Serialize>(data: S, key: &str, parent: &Hash) -> Result<Self> {
+    fn new_from<F>(key: &str, parent: &Hash, encoder: F) -> Result<Self>
+        where F: FnOnce(Vec<u8>) -> Result<Vec<u8>>
+    {
         // Serialize the data
         let buf: Vec<u8> = vec![CompressType::NoCompress.into(), 0u8, 0u8];
-        let mut ser = FogSerializer::from_vec(buf, false);
-        data.serialize(&mut ser)?;
-        let mut buf = ser.finish();
+        let mut buf = encoder(buf)?;
 
         // Check the total size and update the data length
         if buf.len() > MAX_ENTRY_SIZE {
@@ -101,6 +101,30 @@ impl NewEntry {
             entry_hash,
             has_signature: false,
             set_compress: None,
+        })
+    }
+
+    /// Create a new Entry from any serializable data, a key, and the Hash of the parent document.
+    pub fn new<S: Serialize>(data: S, key: &str, parent: &Hash) -> Result<Self> {
+        Self::new_from(key, parent, |buf| {
+            // Serialize the data
+            let mut ser = FogSerializer::from_vec(buf, false);
+            data.serialize(&mut ser)?;
+            Ok(ser.finish())
+        })
+    }
+
+    /// Create a new Entry from a key, the Hash of the parent document, and any serializable data 
+    /// whose keys are all ordered. For structs, this means all fields are declared in 
+    /// lexicographic order. For maps, this means a `BTreeMap` type must be used, whose keys are 
+    /// ordered such that they serialize to lexicographically ordered strings. All sub-structs and 
+    /// sub-maps must be similarly ordered.
+    pub fn new_ordered<S: Serialize>(data: S, key: &str, parent: &Hash) -> Result<Self> {
+        Self::new_from(key, parent, |buf| {
+            // Serialize the data
+            let mut ser = FogSerializer::from_vec(buf, false);
+            data.serialize(&mut ser)?;
+            Ok(ser.finish())
         })
     }
 

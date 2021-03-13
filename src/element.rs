@@ -36,9 +36,9 @@ pub enum Element<'a> {
     Map(usize),
     Timestamp(Timestamp),
     Hash(Hash),
-    Identity(Identity),
-    LockId(LockId),
-    StreamId(StreamId),
+    Identity(Box<Identity>),
+    LockId(Box<LockId>),
+    StreamId(Box<StreamId>),
     DataLockbox(&'a DataLockboxRef),
     IdentityLockbox(&'a IdentityLockboxRef),
     StreamLockbox(&'a StreamLockboxRef),
@@ -998,9 +998,9 @@ impl<'a> Parser<'a> {
                 Element::Timestamp(Timestamp::try_from(bytes).map_err(Error::BadEncode)?)
             }
             ExtType::Hash => Element::Hash(Hash::try_from(bytes)?),
-            ExtType::Identity => Element::Identity(Identity::try_from(bytes)?),
-            ExtType::LockId => Element::LockId(LockId::try_from(bytes)?),
-            ExtType::StreamId => Element::StreamId(StreamId::try_from(bytes)?),
+            ExtType::Identity => Element::Identity(Box::new(Identity::try_from(bytes)?)),
+            ExtType::LockId => Element::LockId(Box::new(LockId::try_from(bytes)?)),
+            ExtType::StreamId => Element::StreamId(Box::new(StreamId::try_from(bytes)?)),
             ExtType::DataLockbox => Element::DataLockbox(DataLockboxRef::from_bytes(bytes)?),
             ExtType::IdentityLockbox => {
                 Element::IdentityLockbox(IdentityLockboxRef::from_bytes(bytes)?)
@@ -2182,7 +2182,7 @@ mod test {
             let identity = fog_crypto::identity::IdentityKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::Identity(identity.clone());
+            let elem = Element::Identity(Box::new(identity.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             let mut parser = Parser::new(&enc);
@@ -2192,7 +2192,7 @@ mod test {
                 .expect("Should have gotten an Ok result");
             assert!(parser.next().is_none());
             if let Element::Identity(val) = val {
-                assert_eq!(val, identity);
+                assert_eq!(val.as_ref(), &identity);
             } else {
                 panic!("Element wasn't a Identity type");
             }
@@ -2203,7 +2203,7 @@ mod test {
             let identity = fog_crypto::identity::IdentityKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::Identity(identity.clone());
+            let elem = Element::Identity(Box::new(identity.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             assert!(enc[1] as usize == identity.size());
@@ -2220,7 +2220,7 @@ mod test {
             let identity = fog_crypto::identity::IdentityKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::Identity(identity.clone());
+            let elem = Element::Identity(Box::new(identity.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             assert!(enc[1] as usize == identity.size());
@@ -2241,7 +2241,7 @@ mod test {
             let id = fog_crypto::lock::LockKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::LockId(id.clone());
+            let elem = Element::LockId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             let mut parser = Parser::new(&enc);
@@ -2251,7 +2251,7 @@ mod test {
                 .expect("Should have gotten an Ok result");
             assert!(parser.next().is_none());
             if let Element::LockId(val) = val {
-                assert_eq!(val, id);
+                assert_eq!(val.as_ref(), &id);
             } else {
                 panic!("Element wasn't a LockId type");
             }
@@ -2262,7 +2262,7 @@ mod test {
             let id = fog_crypto::lock::LockKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::LockId(id.clone());
+            let elem = Element::LockId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             assert!(enc[1] as usize == id.size());
@@ -2279,7 +2279,7 @@ mod test {
             let id = fog_crypto::lock::LockKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::LockId(id.clone());
+            let elem = Element::LockId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             assert!(enc[1] as usize == id.size());
@@ -2300,7 +2300,7 @@ mod test {
             let id = fog_crypto::stream::StreamKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::StreamId(id.clone());
+            let elem = Element::StreamId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             let mut parser = Parser::new(&enc);
@@ -2310,7 +2310,7 @@ mod test {
                 .expect("Should have gotten an Ok result");
             assert!(parser.next().is_none());
             if let Element::StreamId(val) = val {
-                assert_eq!(val, id);
+                assert_eq!(val.as_ref(), &id);
             } else {
                 panic!("Element wasn't a LockId type");
             }
@@ -2321,7 +2321,7 @@ mod test {
             let id = fog_crypto::stream::StreamKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::StreamId(id.clone());
+            let elem = Element::StreamId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             assert!(enc[1] as usize == id.size());
@@ -2338,7 +2338,7 @@ mod test {
             let id = fog_crypto::stream::StreamKey::new_temp(&mut rand::rngs::OsRng)
                 .id()
                 .to_owned();
-            let elem = Element::StreamId(id.clone());
+            let elem = Element::StreamId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
             assert!(enc[1] as usize == id.size());

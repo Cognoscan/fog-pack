@@ -862,19 +862,19 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
                     let v = fog_crypto::identity::Identity::try_from(v).map_err(|_| {
                         Error::SerdeFail("Identity bytes weren't valid on encode".to_string())
                     })?;
-                    Element::Identity(v)
+                    Element::Identity(Box::new(v))
                 }
                 ExtType::LockId => {
                     let v = fog_crypto::lock::LockId::try_from(v).map_err(|_| {
                         Error::SerdeFail("LockId bytes weren't valid on encode".to_string())
                     })?;
-                    Element::LockId(v)
+                    Element::LockId(Box::new(v))
                 }
                 ExtType::StreamId => {
                     let v = fog_crypto::stream::StreamId::try_from(v).map_err(|_| {
                         Error::SerdeFail("StreamId bytes weren't valid on encode".to_string())
                     })?;
-                    Element::StreamId(v)
+                    Element::StreamId(Box::new(v))
                 }
                 ExtType::DataLockbox => {
                     let v = fog_crypto::lockbox::DataLockboxRef::from_bytes(v).map_err(|_| {

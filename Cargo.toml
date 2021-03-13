@@ -28,4 +28,9 @@ serde_bytes = "0.11"
 
 [dev-dependencies]
 rand = "0.7"
+criterion = "0.3"
+
+[[bench]]
+name = "log"
+harness = false
 

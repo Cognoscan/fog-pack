@@ -446,7 +446,9 @@ impl Document {
         }))
     }
 
-    pub(crate) fn data(&self) -> &[u8] {
+    // TODO: Make this pub(crate) again
+    //pub(crate) fn data(&self) -> &[u8] {
+    pub fn data(&self) -> &[u8] {
         self.0.data()
     }
 

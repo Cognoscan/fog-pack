@@ -18,6 +18,7 @@ impl DepthTracker {
     }
 
     /// Update the depth tracker on each new element to serialize.
+    #[inline]
     pub fn update_elem(&mut self, elem: &Element) -> Result<()> {
         // Subtract from count for next element
         if let Some(v) = self.tracking.last_mut() {
@@ -41,6 +42,7 @@ impl DepthTracker {
     }
 
     /// Drop any depth tracking elements that have hit zero
+    #[inline]
     pub fn purge_zeros(&mut self) {
         loop {
             match self.tracking.last() {
@@ -56,6 +58,7 @@ impl DepthTracker {
     /// that didn't know their total length ahead of time. This way, they can put in a
     /// maximally-sized map/array element, then run through the depth tracker as normal, calling
     /// this when done.
+    #[inline]
     pub fn early_end(&mut self) {
         self.tracking.pop();
         self.purge_zeros();

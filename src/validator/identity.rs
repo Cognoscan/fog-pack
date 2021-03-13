@@ -101,12 +101,12 @@ impl IdentityValidator {
                 elem.name()
             )));
         };
-        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == elem) {
+        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| v == elem.as_ref()) {
             return Err(Error::FailValidate(
                 "Identity is not on `in` list".to_string(),
             ));
         }
-        if self.nin_list.iter().any(|v| *v == elem) {
+        if self.nin_list.iter().any(|v| v == elem.as_ref()) {
             return Err(Error::FailValidate("Identity is on `nin` list".to_string()));
         }
         Ok(())

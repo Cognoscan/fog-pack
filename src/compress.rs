@@ -10,7 +10,7 @@ pub const ALGORITHM_ZSTD: u8 = 0;
 /// reserved for possible future compression formats. For now, the only allowed compression is
 /// zstd, where the upper 6 bits are 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CompressType {
+pub(crate) enum CompressType {
     /// No compression
     NoCompress,
     /// Standard Compression
@@ -51,16 +51,20 @@ impl TryFrom<u8> for CompressType {
     }
 }
 
+/// Compression settings for Documents and Entries.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum Compress {
+    /// Don't compress by default.
     None,
+    /// Compress using the given algorithm identifier and compression level.
     General { algorithm: u8, level: u8 },
+    /// Compress using the provided dictionary object
     Dict(Dictionary),
 }
 
 impl Compress {
-    /// Create a new general Zstd Compression
+    /// Create a new general Zstd Compression setting.
     pub fn new_zstd_general(level: u8) -> Self {
         Compress::General {
             algorithm: ALGORITHM_ZSTD,
@@ -68,6 +72,7 @@ impl Compress {
         }
     }
 
+    /// Create a new ZStandard dictionary with the given compression level.
     pub fn new_zstd_dict(level: u8, dict: Vec<u8>) -> Self {
         Compress::Dict(Dictionary::new_zstd(level, dict))
     }
@@ -235,10 +240,15 @@ impl std::default::Default for Compress {
     }
 }
 
+/// A ZStandard Compression dictionary.
+///
+/// A new dictionary can be created by providing the desired compression level and the dictionary
+/// as a byte vector.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Dictionary(DictionaryPrivate);
 
 impl Dictionary {
+    /// Create a new ZStandard compression dictionary.
     pub fn new_zstd(level: u8, dict: Vec<u8>) -> Self {
         let cdict = zstd_safe::create_cdict(&dict, level as i32);
         let ddict = zstd_safe::create_ddict(&dict);

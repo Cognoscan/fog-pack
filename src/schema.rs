@@ -265,6 +265,11 @@ fn decompress_entry(compress: Vec<u8>, compression: &Compress) -> Result<Vec<u8>
     Ok(entry)
 }
 
+/// Builds schemas up from Validators.
+///
+/// A schema can be directly made from any document, but it's generally much easier to construct
+/// them from [`Validator`][crate::validator::Validator] structs and turn the result into a
+/// Document.
 pub struct SchemaBuilder {
     inner: InnerSchema,
 }
@@ -299,8 +304,10 @@ impl SchemaBuilder {
         self
     }
 
-    /// Set the schema name. This is only used for documentation purposes.
-    pub fn add_entry(
+    /// Add a new entry type to the schema, where `entry` is the key for the entry, `validator`
+    /// will be used to validate each entry, and `compress` optionally overrides the default
+    /// compression with a specific compression setting.
+    pub fn entry_add(
         mut self,
         entry: &str,
         validator: Validator,
@@ -324,7 +331,7 @@ impl SchemaBuilder {
     }
 
     /// Add a new stored type to the schema.
-    pub fn add_type(mut self, type_ref: &str, validator: Validator) -> Self {
+    pub fn type_add(mut self, type_ref: &str, validator: Validator) -> Self {
         self.inner.types.insert(type_ref.to_owned(), validator);
         self
     }

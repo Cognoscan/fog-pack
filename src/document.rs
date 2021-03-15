@@ -1,12 +1,22 @@
-use crate::{element::serialize_elem, error::{Error, Result}};
 use crate::{compress::CompressType, de::FogDeserializer, ser::FogSerializer, MAX_DOC_SIZE};
+use crate::{
+    element::serialize_elem,
+    error::{Error, Result},
+};
 use byteorder::{LittleEndian, ReadBytesExt};
 use fog_crypto::{
     hash::{Hash, HashState},
     identity::{Identity, IdentityKey},
 };
+use futures_core::{ready, FusedStream, Stream};
+use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+use std::{
+    convert::TryFrom,
+    fmt,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 // Header format:
 //  1. Compression Type marker
@@ -155,12 +165,8 @@ impl DocumentInner {
     }
 }
 
-pub struct VecDocumentBuilder<I>
-where
-    I: Iterator,
-    <I as Iterator>::Item: Serialize,
-{
-    iter: std::iter::Fuse<I>,
+#[derive(Clone, Debug)]
+struct VecDocumentInner {
     done: bool,
     ser: FogSerializer,
     item_buf: Vec<u8>,
@@ -169,14 +175,9 @@ where
     set_compress: Option<Option<u8>>,
 }
 
-impl<I> VecDocumentBuilder<I>
-where
-    I: Iterator,
-    <I as Iterator>::Item: Serialize,
-{
-    pub fn new(iter: I, schema: Option<&Hash>) -> Self {
+impl VecDocumentInner {
+    fn new(schema: Option<&Hash>) -> Self {
         Self {
-            iter: iter.fuse(),
             done: false,
             ser: FogSerializer::default(),
             item_buf: Vec::new(),
@@ -186,9 +187,8 @@ where
         }
     }
 
-    pub fn new_ordered(iter: I, schema: Option<&Hash>) -> Self {
+    fn new_ordered(schema: Option<&Hash>) -> Self {
         Self {
-            iter: iter.fuse(),
             done: false,
             ser: FogSerializer::with_params(true),
             item_buf: Vec::new(),
@@ -198,40 +198,33 @@ where
         }
     }
 
-    /// Override the default compression settings for all produced Documents. `None` will disable 
-    /// compression. `Some(level)` will compress with the provided level as the setting for the 
-    /// algorithm.
-    pub fn compression(mut self, setting: Option<u8>) -> Self {
+    fn compression(mut self, setting: Option<u8>) -> Self {
         self.set_compress = Some(setting);
         self
     }
 
-    /// Sign the all produced documents from this point onward.
-    pub fn sign(mut self, key: &IdentityKey) -> Self {
+    fn sign(mut self, key: &IdentityKey) -> Self {
         self.signer = Some(key.clone());
         self
     }
 
-    fn next_doc(&mut self) -> Result<Option<NewDocument>> {
+    fn data_len(&self) -> usize {
         // Precalculate the target size, and don't go past it:
         // - 5 bytes from the header base
         // - N bytes from the schema hash
         // - N bytes at most from the signature
         // - 4 bytes at most from the array element
-        let header_len = self.schema.as_ref().map_or(5, |h| 5+h.as_ref().len());
+        let header_len = self.schema.as_ref().map_or(5, |h| 5 + h.as_ref().len());
         let sign_len = self.signer.as_ref().map_or(0, |k| k.max_signature_size());
-        let data_len = (MAX_DOC_SIZE>>1) - header_len - sign_len - 4;
+        (MAX_DOC_SIZE >> 1) - header_len - sign_len - 4
+    }
 
-        let mut prev_len = self.ser.buf.len();
-        let mut array_len = !self.ser.buf.is_empty() as usize;
-        while self.ser.buf.len() <= data_len {
-            let item = if let Some(item) = self.iter.next() { item } else { break };
-            prev_len = self.ser.buf.len();
-            item.serialize(&mut self.ser)?;
-            array_len +=1;
-        }
-
-
+    fn next_doc(
+        &mut self,
+        data_len: usize,
+        prev_len: usize,
+        mut array_len: usize,
+    ) -> Result<Option<NewDocument>> {
         if !self.ser.buf.is_empty() {
             // If we have excess data, lop it off and hold it for later copying
             if self.ser.buf.len() > data_len {
@@ -253,22 +246,92 @@ where
                 Some(ref signer) => doc.sign(signer)?,
                 None => doc,
             };
-            // Move any lopped off data back into the serializer. If we have no lopped off data, 
+            // Move any lopped off data back into the serializer. If we have no lopped off data,
             // then we are out of stuff to write and can terminate
             self.ser.buf.clear();
             if !self.item_buf.is_empty() {
                 self.ser.buf.extend_from_slice(&self.item_buf);
                 self.item_buf.clear();
-            }
-            else {
+            } else {
                 self.done = true;
             }
             Ok(Some(doc))
-        }
-        else {
+        } else {
             self.done = true;
             Ok(None)
         }
+    }
+}
+
+/// An iterator adapter for building many Documents.
+///
+/// Frequently, fog-pack's 1 MiB size limit can pose problems with large data sets. Generally,
+/// these data sets can be treated as large arrays of relatively small data objects. This adaptor
+/// can take an iterator over any set of data objects, and will produce a series of Documents that
+/// are under the size limit.
+///
+/// For the asynchronous version that works on streams, see
+/// [`AsyncVecDocumentBuilder`][AsyncVecDocumentBuilder].
+#[derive(Clone, Debug)]
+pub struct VecDocumentBuilder<I>
+where
+    I: Iterator,
+    <I as Iterator>::Item: Serialize,
+{
+    iter: std::iter::Fuse<I>,
+    inner: VecDocumentInner,
+}
+
+impl<I> VecDocumentBuilder<I>
+where
+    I: Iterator,
+    <I as Iterator>::Item: Serialize,
+{
+    pub fn new(iter: I, schema: Option<&Hash>) -> Self {
+        Self {
+            iter: iter.fuse(),
+            inner: VecDocumentInner::new(schema),
+        }
+    }
+
+    pub fn new_ordered(iter: I, schema: Option<&Hash>) -> Self {
+        Self {
+            iter: iter.fuse(),
+            inner: VecDocumentInner::new_ordered(schema),
+        }
+    }
+
+    /// Override the default compression settings for all produced Documents. `None` will disable
+    /// compression. `Some(level)` will compress with the provided level as the setting for the
+    /// algorithm.
+    pub fn compression(mut self, setting: Option<u8>) -> Self {
+        self.inner = self.inner.compression(setting);
+        self
+    }
+
+    /// Sign the all produced documents from this point onward.
+    pub fn sign(mut self, key: &IdentityKey) -> Self {
+        self.inner = self.inner.sign(key);
+        self
+    }
+
+    fn next_doc(&mut self) -> Result<Option<NewDocument>> {
+        let data_len = self.inner.data_len();
+
+        let mut prev_len = self.inner.ser.buf.len();
+        let mut array_len = !self.inner.ser.buf.is_empty() as usize;
+        while self.inner.ser.buf.len() <= data_len {
+            let item = if let Some(item) = self.iter.next() {
+                item
+            } else {
+                break;
+            };
+            prev_len = self.inner.ser.buf.len();
+            item.serialize(&mut self.inner.ser)?;
+            array_len += 1;
+        }
+
+        self.inner.next_doc(data_len, prev_len, array_len)
     }
 }
 
@@ -280,19 +343,162 @@ where
     type Item = Result<NewDocument>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done { return None; }
+        if self.inner.done {
+            return None;
+        }
         let result = self.next_doc();
-        if result.is_err() { self.done = true; }
+        if result.is_err() {
+            self.inner.done = true;
+        }
         result.transpose()
     }
 }
 
+pin_project! {
+    /// An stream adapter for building many Documents.
+    ///
+    /// Frequently, fog-pack's 1 MiB size limit can pose problems with large data sets. Generally,
+    /// these data sets can be treated as large arrays of relatively small data objects. This adaptor
+    /// can take a stream over any set of data objects, and will produce a series of Documents
+    /// that are under the size limit.
+    ///
+    /// For the synchronous version that works on iterators, see
+    /// [`AsyncVecDocumentBuilder`][AsyncVecDocumentBuilder].
+    #[must_use = "streams do nothing unless polled"]
+    pub struct AsyncVecDocumentBuilder<St>
+        where
+            St: Stream,
+            St::Item: Serialize,
+    {
+        #[pin]
+        stream: St,
+        inner: VecDocumentInner,
+        array_len: usize,
+    }
+}
+
+impl<St> fmt::Debug for AsyncVecDocumentBuilder<St>
+where
+    St: Stream + fmt::Debug,
+    St::Item: Serialize + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("AsyncVecDocumentBuilder")
+            .field("stream", &self.stream)
+            .field("inner", &self.stream)
+            .field("array_len", &self.array_len)
+            .finish()
+    }
+}
+
+impl<St> AsyncVecDocumentBuilder<St>
+where
+    St: Stream,
+    St::Item: Serialize,
+{
+    pub fn new(stream: St, schema: Option<&Hash>) -> Self {
+        Self {
+            stream,
+            inner: VecDocumentInner::new(schema),
+            array_len: 0,
+        }
+    }
+
+    pub fn new_ordered(stream: St, schema: Option<&Hash>) -> Self {
+        Self {
+            stream,
+            inner: VecDocumentInner::new_ordered(schema),
+            array_len: 0,
+        }
+    }
+
+    /// Override the default compression settings for all produced Documents. `None` will disable
+    /// compression. `Some(level)` will compress with the provided level as the setting for the
+    /// algorithm.
+    pub fn compression(mut self, setting: Option<u8>) -> Self {
+        self.inner = self.inner.compression(setting);
+        self
+    }
+
+    /// Sign the all produced documents from this point onward.
+    pub fn sign(mut self, key: &IdentityKey) -> Self {
+        self.inner = self.inner.sign(key);
+        self
+    }
+}
+
+impl<St> FusedStream for AsyncVecDocumentBuilder<St>
+where
+    St: Stream + FusedStream,
+    St::Item: Serialize,
+{
+    fn is_terminated(&self) -> bool {
+        self.inner.done && self.stream.is_terminated()
+    }
+}
+
+impl<St> Stream for AsyncVecDocumentBuilder<St>
+where
+    St: Stream,
+    St::Item: Serialize,
+{
+    type Item = Result<NewDocument>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<NewDocument>>> {
+        let mut this = self.project();
+        if this.inner.done {
+            return Poll::Ready(None);
+        }
+        Poll::Ready(loop {
+            // Our loop is simple: get data, and if none is available, we're done.
+            if let Some(item) = ready!(this.stream.as_mut().poll_next(cx)) {
+                // We got the next item. Try serializing it.
+                let prev_len = this.inner.ser.buf.len();
+                if let Err(e) = item.serialize(&mut this.inner.ser) {
+                    this.inner.done = true;
+                    break Some(Err(e));
+                }
+                *this.array_len += 1;
+
+                // If we have enough data to make a document, try to do so and return the result.
+                let data_len = this.inner.data_len();
+                if this.inner.ser.buf.len() > data_len {
+                    let res = this.inner.next_doc(data_len, prev_len, *this.array_len);
+                    *this.array_len = !this.inner.ser.buf.is_empty() as usize;
+                    if res.is_err() {
+                        this.inner.done = true;
+                    }
+                    break res.transpose();
+                }
+            } else {
+                // We yield one last document (maybe)
+                if !this.inner.ser.buf.is_empty() {
+                    let data_len = this.inner.data_len();
+                    let res =
+                        this.inner
+                            .next_doc(data_len, this.inner.ser.buf.len(), *this.array_len);
+                    *this.array_len = !this.inner.ser.buf.is_empty() as usize;
+                    this.inner.done = true;
+                    break res.transpose();
+                } else {
+                    break None;
+                }
+            }
+        })
+    }
+}
+
+/// A new Document that has not yet been validated.
+///
+/// This struct acts like a Document, but cannot be decoded until it has passed through either a
+/// [`Schema`][crate::Schema] or through [`NoSchema`][crate::NoSchema].
 #[derive(Clone, Debug)]
 pub struct NewDocument(DocumentInner);
 
 impl NewDocument {
     fn new_from<F>(schema: Option<&Hash>, encoder: F) -> Result<Self>
-        where F: FnOnce(Vec<u8>) -> Result<Vec<u8>>
+    where
+        F: FnOnce(Vec<u8>) -> Result<Vec<u8>>,
     {
         // Create the header
         let mut buf: Vec<u8> = vec![CompressType::NoCompress.into()];
@@ -351,9 +557,9 @@ impl NewDocument {
         })
     }
 
-    /// Create a new Entry from any serializable data whose keys are all ordered. For structs, this 
-    /// means all fields are declared in lexicographic order. For maps, this means a `BTreeMap` 
-    /// type must be used, whose keys are ordered such that they serialize to lexicographically 
+    /// Create a new Entry from any serializable data whose keys are all ordered. For structs, this
+    /// means all fields are declared in lexicographic order. For maps, this means a `BTreeMap`
+    /// type must be used, whose keys are ordered such that they serialize to lexicographically
     /// ordered strings. All sub-structs and sub-maps must be similarly ordered.
     pub fn new_ordered<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
         Self::new_from(schema, |buf| {
@@ -393,6 +599,11 @@ impl NewDocument {
     }
 }
 
+/// Holds serialized data optionally adhering to a schema.
+///
+/// A Document holds a piece of serialized data, which may be deserialized by calling
+/// [`deserialize`][Document::deserialize]. If it adheres to a schema, Entries may also be attached
+/// to it, in accordance with the schema.
 #[derive(Clone, Debug)]
 pub struct Document(DocumentInner);
 
@@ -446,9 +657,7 @@ impl Document {
         }))
     }
 
-    // TODO: Make this pub(crate) again
-    //pub(crate) fn data(&self) -> &[u8] {
-    pub fn data(&self) -> &[u8] {
+    pub(crate) fn data(&self) -> &[u8] {
         self.0.data()
     }
 
@@ -468,6 +677,7 @@ impl Document {
         self.0.hash()
     }
 
+    /// Attempt to deserialize the data into anything implementing `Deserialize`.
     pub fn deserialize<'de, D: Deserialize<'de>>(&'de self) -> Result<D> {
         let buf = self.0.data();
         let mut de = FogDeserializer::new(buf);
@@ -654,7 +864,13 @@ mod test {
             b: String,
         }
 
-        let mut builder = VecDocumentBuilder::new(std::iter::repeat(Example { a: 234235, b: "Ok".into()}), None);
+        let mut builder = VecDocumentBuilder::new(
+            std::iter::repeat(Example {
+                a: 234235,
+                b: "Ok".into(),
+            }),
+            None,
+        );
         let mut docs = Vec::new();
         for _ in 0..4 {
             let iter = builder.next();
@@ -664,7 +880,7 @@ mod test {
         }
         assert!(docs.iter().all(|doc| {
             let len = doc.0.buf.len();
-            len <= (MAX_DOC_SIZE>>1) && len > (MAX_DOC_SIZE>>2)
+            len <= (MAX_DOC_SIZE >> 1) && len > (MAX_DOC_SIZE >> 2)
         }));
     }
 
@@ -676,32 +892,34 @@ mod test {
             b: String,
         }
 
-        let iter = std::iter::repeat(Example { a: 23456, b: "Ok".into()}).take(MAX_DOC_SIZE + 12);
+        let iter = std::iter::repeat(Example {
+            a: 23456,
+            b: "Ok".into(),
+        })
+        .take(MAX_DOC_SIZE + 12);
         let builder = VecDocumentBuilder::new(iter, None);
         let docs = builder.collect::<Result<Vec<NewDocument>>>().unwrap();
-        assert!(docs.iter().take(docs.len()-1).all(|doc| {
+        assert!(docs.iter().take(docs.len() - 1).all(|doc| {
             let len = doc.0.buf.len();
-            len <= (MAX_DOC_SIZE>>1) && len > (MAX_DOC_SIZE>>2)
+            len <= (MAX_DOC_SIZE >> 1) && len > (MAX_DOC_SIZE >> 2)
         }));
         assert!(!docs.last().unwrap().data().is_empty());
     }
 
-
     pub trait Generate {
         fn generate<R: Rng>(rng: &mut R) -> Self;
     }
-    
+
     impl Generate for () {
-        fn generate<R: Rng>(_: &mut R) -> Self {
-        }
+        fn generate<R: Rng>(_: &mut R) -> Self {}
     }
-    
+
     impl Generate for bool {
         fn generate<R: Rng>(rng: &mut R) -> Self {
             rng.gen_bool(0.5)
         }
     }
-    
+
     macro_rules! impl_generate {
         ($ty:ty) => {
             impl Generate for $ty {
@@ -709,9 +927,9 @@ mod test {
                     rng.gen()
                 }
             }
-        }
+        };
     }
-    
+
     impl_generate!(u8);
     impl_generate!(u16);
     impl_generate!(u32);
@@ -726,7 +944,7 @@ mod test {
     impl_generate!(isize);
     impl_generate!(f32);
     impl_generate!(f64);
-    
+
     macro_rules! impl_tuple {
         () => {};
         ($first:ident, $($rest:ident,)*) => {
@@ -735,13 +953,13 @@ mod test {
                     ($first::generate(rng), $($rest::generate(rng),)*)
                 }
             }
-    
+
             impl_tuple!($($rest,)*);
         };
     }
-    
+
     impl_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11,);
-    
+
     macro_rules! impl_array {
         () => {};
         ($len:literal, $($rest:literal,)*) => {
@@ -760,13 +978,16 @@ mod test {
                     }
                 }
             }
-    
+
             impl_array!($($rest,)*);
         }
     }
-    
-    impl_array!(31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, );
-    
+
+    impl_array!(
+        31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9,
+        8, 7, 6, 5, 4, 3, 2, 1, 0,
+    );
+
     impl<T: Generate> Generate for Option<T> {
         fn generate<R: Rng>(rng: &mut R) -> Self {
             if rng.gen_bool(0.5) {
@@ -776,7 +997,7 @@ mod test {
             }
         }
     }
-    
+
     pub fn generate_vec<R: Rng, T: Generate>(rng: &mut R, range: ops::Range<usize>) -> Vec<T> {
         let len = rng.gen_range(range.start, range.end);
         let mut result = Vec::with_capacity(len);
@@ -819,19 +1040,10 @@ mod test {
     impl Generate for Log {
         fn generate<R: Rng>(rand: &mut R) -> Self {
             const USERID: [&str; 9] = [
-                "-",
-                "alice",
-                "bob",
-                "carmen",
-                "david",
-                "eric",
-                "frank",
-                "george",
-                "harry",
+                "-", "alice", "bob", "carmen", "david", "eric", "frank", "george", "harry",
             ];
             const MONTHS: [&str; 12] = [
-                "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
             ];
             const TIMEZONE: [&str; 25] = [
                 "-1200", "-1100", "-1000", "-0900", "-0800", "-0700", "-0600", "-0500", "-0400",
@@ -841,20 +1053,18 @@ mod test {
             let date = format!(
                 "{}/{}/{}:{}:{}:{} {}",
                 rand.gen_range(1, 29),
-                MONTHS[rand.gen_range(0,12)],
-                rand.gen_range(1970,2022),
-                rand.gen_range(0,24),
-                rand.gen_range(0,60),
-                rand.gen_range(0,60),
-                TIMEZONE[rand.gen_range(0,25)],
+                MONTHS[rand.gen_range(0, 12)],
+                rand.gen_range(1970, 2022),
+                rand.gen_range(0, 24),
+                rand.gen_range(0, 60),
+                rand.gen_range(0, 60),
+                TIMEZONE[rand.gen_range(0, 25)],
             );
             const CODES: [u16; 63] = [
-                100, 101, 102, 103,
-                200, 201, 202, 203, 204, 205, 206, 207, 208, 226,
-                300, 301, 302, 303, 304, 305, 306, 307, 308,
-                400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416,
-                417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451,
-                500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+                100, 101, 102, 103, 200, 201, 202, 203, 204, 205, 206, 207, 208, 226, 300, 301,
+                302, 303, 304, 305, 306, 307, 308, 400, 401, 402, 403, 404, 405, 406, 407, 408,
+                409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421, 422, 423, 424, 425, 426,
+                428, 429, 431, 451, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
             ];
             const METHODS: [&str; 5] = ["GET", "POST", "PUT", "UPDATE", "DELETE"];
             const ROUTES: [&str; 7] = [
@@ -866,33 +1076,27 @@ mod test {
                 "/api/login",
                 "/api/logout",
             ];
-            const PROTOCOLS: [&str; 4] = [
-                "HTTP/1.0",
-                "HTTP/1.1",
-                "HTTP/2",
-                "HTTP/3",
-            ];
+            const PROTOCOLS: [&str; 4] = ["HTTP/1.0", "HTTP/1.1", "HTTP/2", "HTTP/3"];
             let request = format!(
                 "{} {} {}",
-                METHODS[rand.gen_range(0,5)],
-                ROUTES[rand.gen_range(0,7)],
-                PROTOCOLS[rand.gen_range(0,4)],
+                METHODS[rand.gen_range(0, 5)],
+                ROUTES[rand.gen_range(0, 7)],
+                PROTOCOLS[rand.gen_range(0, 4)],
             );
             Self {
                 address: Address::generate(rand),
                 identity: "-".into(),
-                userid: USERID[rand.gen_range(0,USERID.len())].into(),
+                userid: USERID[rand.gen_range(0, USERID.len())].into(),
                 date,
                 request,
-                code: CODES[rand.gen_range(0,CODES.len())],
-                size: rand.gen_range(0,100_000_000),
+                code: CODES[rand.gen_range(0, CODES.len())],
+                size: rand.gen_range(0, 100_000_000),
             }
         }
     }
 
     #[test]
     fn logs_encode() {
-
         // Generate a whole pile of log items
         let mut rng = rand::thread_rng();
         const LOGS: usize = 10_000;
@@ -908,15 +1112,14 @@ mod test {
             }
             println!("Doc #{}: \n{}", index, parser.get_debug().unwrap());
         }
-        assert!(docs.iter().take(docs.len()-1).all(|doc| {
+        assert!(docs.iter().take(docs.len() - 1).all(|doc| {
             let len = doc.0.buf.len();
-            len <= (MAX_DOC_SIZE>>1) && len > (MAX_DOC_SIZE>>2)
+            len <= (MAX_DOC_SIZE >> 1) && len > (MAX_DOC_SIZE >> 2)
         }));
     }
 
     #[test]
     fn logs_decode() {
-
         // Generate a whole pile of log items
         let mut rng = rand::thread_rng();
         const LOGS: usize = 10_000;
@@ -926,13 +1129,93 @@ mod test {
         let builder = VecDocumentBuilder::new(logs.iter(), None);
         let mut docs = builder.collect::<Result<Vec<NewDocument>>>().unwrap();
 
-        let docs: Vec<Document> = docs.drain(0..).map(|doc| crate::NoSchema::validate_new_doc(doc).unwrap())
+        let docs: Vec<Document> = docs
+            .drain(0..)
+            .map(|doc| crate::NoSchema::validate_new_doc(doc).unwrap())
             .collect();
-        let dec_logs: Vec<Log> = docs.iter()
-            .map(|doc| { doc.deserialize::<Vec<Log>>().unwrap() })
+        let dec_logs: Vec<Log> = docs
+            .iter()
+            .map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
             .flatten()
             .collect();
         assert!(dec_logs == logs, "Didn't decode identically")
     }
 
+    #[test]
+    fn async_logs_encode() {
+        // Generate a whole pile of log items
+        let mut rng = rand::thread_rng();
+        const LOGS: usize = 20_000;
+        let logs = generate_vec::<_, Log>(&mut rng, LOGS..LOGS + 1);
+
+        // Try to make them into documents
+        let mut builder =
+            AsyncVecDocumentBuilder::new(futures_util::stream::iter(logs.iter()), None);
+        use futures_util::StreamExt;
+        let docs = futures_executor::block_on(async {
+            let mut docs = Vec::new();
+            while let Some(result) = builder.next().await {
+                match result {
+                    Ok(doc) => docs.push(doc),
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(docs)
+        })
+        .unwrap();
+        for (index, doc) in docs.iter().enumerate() {
+            let mut parser = crate::element::Parser::with_debug(doc.data(), "  ");
+            while let Some(x) = parser.next() {
+                x.unwrap();
+            }
+            println!("Doc #{}: \n{}", index, parser.get_debug().unwrap());
+        }
+        println!("A total of {} documents", docs.len());
+        assert!(docs.iter().take(docs.len() - 1).all(|doc| {
+            let len = doc.0.buf.len();
+            len <= (MAX_DOC_SIZE >> 1) && len > (MAX_DOC_SIZE >> 2)
+        }));
+    }
+
+    #[test]
+    fn async_logs_decode() {
+        // Generate a whole pile of log items
+        let mut rng = rand::thread_rng();
+        const LOGS: usize = 20_000;
+        let logs = generate_vec::<_, Log>(&mut rng, LOGS..LOGS + 1);
+
+        // Try to make them into documents
+        let mut builder =
+            AsyncVecDocumentBuilder::new(futures_util::stream::iter(logs.iter()), None);
+        use futures_util::StreamExt;
+        let mut docs = futures_executor::block_on(async {
+            let mut docs = Vec::new();
+            while let Some(result) = builder.next().await {
+                match result {
+                    Ok(doc) => docs.push(doc),
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(docs)
+        })
+        .unwrap();
+
+        // Parse them
+        let docs: Vec<Document> = docs
+            .drain(0..)
+            .map(|doc| crate::NoSchema::validate_new_doc(doc).unwrap())
+            .collect();
+        let dec_logs: Vec<Log> = docs
+            .iter()
+            .map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
+            .map(|doc| {
+                println!("Document item count = {}", doc.len());
+                doc
+            })
+            .flatten()
+            .collect();
+        println!("We have a total of {} logs", dec_logs.len());
+        println!("We expected a total of {} logs", logs.len());
+        assert!(dec_logs == logs, "Didn't decode identically")
+    }
 }

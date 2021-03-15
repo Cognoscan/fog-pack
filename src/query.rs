@@ -21,6 +21,16 @@ struct InnerQuery {
     query: Validator,
 }
 
+/// A new Query, ready for encoding.
+///
+/// New queries must first be encoded by a schema, and can then be decoded later by that same
+/// schema into a proper [`Query`][Query].
+///
+/// A Query contains a single validator and a key, which may be used for querying a set of Entries.
+/// Entries that pass the validator can be returned as the query results.
+///
+/// Queries are not meant to be used without associated context; they should be provided alongside
+/// information about what Document they are being used to query.
 #[derive(Clone, Debug)]
 pub struct NewQuery {
     inner: InnerQuery,
@@ -99,6 +109,13 @@ impl NewQuery {
     }
 }
 
+/// For querying Entries.
+///
+/// A Query contains a single validator and a key, which may be used for querying a set of Entries.
+/// Entries that pass the validator can be returned as the query results.
+///
+/// Queries are not meant to be used without associated context; they should be provided alongside
+/// information about what Document they are being used to query.
 #[derive(Clone, Debug)]
 pub struct Query {
     inner: InnerQuery,

@@ -16,13 +16,6 @@ use serde::de::Unexpected;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-pub enum Thing {
-    Unit,
-    Newtype(String),
-    Tuple(String, String),
-    Struct { key: String },
-}
-
 #[derive(Clone, Debug)]
 pub enum Element<'a> {
     Null,

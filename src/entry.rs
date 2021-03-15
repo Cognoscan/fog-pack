@@ -55,6 +55,10 @@ impl<'a> SplitEntry<'a> {
     }
 }
 
+/// A new Entry that has not yet been validated.
+///
+/// This struct acts like an Entry, but cannot be decoded until it has passed through a
+/// [`Schema`][crate::Schema].
 pub struct NewEntry {
     buf: Vec<u8>,
     hash_state: HashState,
@@ -67,7 +71,8 @@ pub struct NewEntry {
 
 impl NewEntry {
     fn new_from<F>(key: &str, parent: &Hash, encoder: F) -> Result<Self>
-        where F: FnOnce(Vec<u8>) -> Result<Vec<u8>>
+    where
+        F: FnOnce(Vec<u8>) -> Result<Vec<u8>>,
     {
         // Serialize the data
         let buf: Vec<u8> = vec![CompressType::NoCompress.into(), 0u8, 0u8];
@@ -114,10 +119,10 @@ impl NewEntry {
         })
     }
 
-    /// Create a new Entry from a key, the Hash of the parent document, and any serializable data 
-    /// whose keys are all ordered. For structs, this means all fields are declared in 
-    /// lexicographic order. For maps, this means a `BTreeMap` type must be used, whose keys are 
-    /// ordered such that they serialize to lexicographically ordered strings. All sub-structs and 
+    /// Create a new Entry from a key, the Hash of the parent document, and any serializable data
+    /// whose keys are all ordered. For structs, this means all fields are declared in
+    /// lexicographic order. For maps, this means a `BTreeMap` type must be used, whose keys are
+    /// ordered such that they serialize to lexicographically ordered strings. All sub-structs and
     /// sub-maps must be similarly ordered.
     pub fn new_ordered<S: Serialize>(data: S, key: &str, parent: &Hash) -> Result<Self> {
         Self::new_from(key, parent, |buf| {
@@ -201,6 +206,10 @@ impl NewEntry {
     }
 }
 
+/// Holds serialized data associated with a parent document and a key string.
+///
+/// An Entry holds a piece of serialized data, which may be deserialized by calling
+/// [`deserialize`][Entry::deserialize].
 pub struct Entry {
     buf: Vec<u8>,
     hash_state: HashState,

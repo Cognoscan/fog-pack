@@ -185,7 +185,6 @@ impl Value {
 
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
-            Value::Int(ref n) => n.as_f64(),
             Value::F32(n) => Some(From::from(n)),
             Value::F64(n) => Some(n),
             _ => None,

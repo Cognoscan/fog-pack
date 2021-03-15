@@ -3,8 +3,6 @@ use std::cmp::Ordering;
 use std::fmt::{self, Debug, Display, LowerHex, UpperHex};
 use std::ops;
 
-use num_traits::NumCast;
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum IntPriv {
     /// Always non-less than zero.
@@ -58,7 +56,7 @@ impl Integer {
     #[inline]
     pub fn as_i64(&self) -> Option<i64> {
         match self.n {
-            IntPriv::PosInt(n) => NumCast::from(n),
+            IntPriv::PosInt(n) => i64::try_from(n).ok(),
             IntPriv::NegInt(n) => Some(n),
         }
     }
@@ -68,16 +66,7 @@ impl Integer {
     pub fn as_u64(&self) -> Option<u64> {
         match self.n {
             IntPriv::PosInt(n) => Some(n),
-            IntPriv::NegInt(n) => NumCast::from(n),
-        }
-    }
-
-    /// Returns the integer represented as `f64` if possible, or else `None`.
-    #[inline]
-    pub fn as_f64(&self) -> Option<f64> {
-        match self.n {
-            IntPriv::PosInt(n) => NumCast::from(n),
-            IntPriv::NegInt(n) => NumCast::from(n),
+            IntPriv::NegInt(n) => u64::try_from(n).ok(),
         }
     }
 

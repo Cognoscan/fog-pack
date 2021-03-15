@@ -339,7 +339,7 @@ impl BinValidator {
             return Err(Error::FailValidate("Bin is on `nin` list".to_string()));
         }
 
-        todo!()
+        Ok(())
     }
 
     fn query_check_self(&self, other: &Self) -> bool {

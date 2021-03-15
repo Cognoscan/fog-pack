@@ -41,7 +41,7 @@ use std::default::Default;
 ///
 /// // We'll build a full schema, so we can do query validation
 /// let schema_doc = SchemaBuilder::new(Validator::Null)
-///     .add_entry("item", entry_validator, None)
+///     .entry_add("item", entry_validator, None)
 ///     .build()
 ///     .unwrap();
 /// let schema = Schema::from_doc(&schema_doc).unwrap();
@@ -189,7 +189,7 @@ mod test {
             .insert("String", Some(StrValidator::new().build()))
             .build();
         let schema_doc = SchemaBuilder::new(Validator::Null)
-            .add_entry("item", entry_validator, None)
+            .entry_add("item", entry_validator, None)
             .build()
             .unwrap();
         Schema::from_doc(&schema_doc).unwrap();

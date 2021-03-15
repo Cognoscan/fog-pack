@@ -183,7 +183,6 @@ impl<'a> ValueRef<'a> {
 
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
-            ValueRef::Int(ref n) => n.as_f64(),
             ValueRef::F32(n) => Some(From::from(n)),
             ValueRef::F64(n) => Some(n),
             _ => None,

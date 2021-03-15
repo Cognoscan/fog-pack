@@ -18,6 +18,7 @@ use crate::error::{Error, Result};
 
 use crate::depth_tracking::DepthTracker;
 
+#[derive(Clone, Debug)]
 pub(crate) struct FogSerializer {
     must_be_ordered: bool,
     depth_tracking: DepthTracker,

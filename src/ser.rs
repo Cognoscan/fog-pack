@@ -737,7 +737,7 @@ impl<'a> StructSerializer<'a> {
         match self {
             StructSerializer::Ordered { se, last_key } => {
                 if let Some(last_key) = last_key {
-                    if field <= last_key {
+                    if field <= *last_key {
                         return Err(Error::SerdeFail(format!(
                             "map keys are unordered: {} follows {}",
                             field, last_key

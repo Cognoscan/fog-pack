@@ -439,6 +439,7 @@ impl<'a> Parser<'a> {
 
     /// Turn a byte slice into a new parser, with a debugging pretty-printer that will run as
     /// elements are parsed.
+    #[allow(dead_code)]
     pub fn with_debug(data: &'a [u8], indent: impl Into<String>) -> Parser<'a> {
         Self {
             debug: Some(DebugFormatter::new(indent.into())),
@@ -466,6 +467,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_debug(&self) -> Option<&str> {
         match self.debug {
             None => None,

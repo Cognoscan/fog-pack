@@ -1,18 +1,23 @@
+//! Schema, which can be used to encode/decode a document or entry, while verifying its
+//! contents.
+//!
+//! A schema is always decoded from a [`Document`][crate::document::Document]. Schema documents can
+//! be easily built from scratch using a [`SchemaBuilder`].
+//!
 use std::{
     collections::BTreeMap,
     convert::{TryFrom, TryInto},
 };
 
-use compress::ALGORITHM_ZSTD;
+use crate::document::*;
+use crate::entry::*;
+pub use compress::*;
 use element::Parser;
 use query::{NewQuery, Query};
 
 use crate::error::{Error, Result};
+use crate::validator::{Checklist, DataChecklist, Validator};
 use crate::*;
-use crate::{
-    compress::{Compress, CompressType},
-    validator::{Checklist, DataChecklist, Validator},
-};
 use serde::{Deserialize, Serialize};
 
 #[inline]
@@ -62,6 +67,14 @@ struct EntrySchema {
     compress: Compress,
 }
 
+/// Validation for documents without a schema.
+///
+/// Not all documents adhere to a schema, but they must still be verified for correctness and be
+/// optionally compressed on encoding. This `NoSchema` struct acts like a Schema to accomplish
+/// this.
+///
+/// As schemaless documents cannot have attached entries, `NoSchema` does not do any entry
+/// encode/decode.
 pub struct NoSchema;
 
 impl NoSchema {

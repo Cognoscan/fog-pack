@@ -1,4 +1,4 @@
-use fog_pack::*;
+use fog_pack::{document::*, schema::NoSchema};
 use rand::Rng;
 use std::error::Error;
 use std::mem;

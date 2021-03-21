@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use super::*;
 use crate::Hash;
 use crate::{
+    document::Document,
     error::{Error, Result},
-    Document,
 };
 
 /// An item in a Checklist. To complete it, find a document whose hash matches the one that was
@@ -181,7 +181,7 @@ impl<'a> Checklist<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{Integer, NewDocument, NoSchema, Schema, SchemaBuilder};
+    use crate::{document::NewDocument, schema::*, types::Integer};
 
     use super::*;
 

@@ -1,3 +1,5 @@
+//! Library error types.
+//!
 use fog_crypto::{hash::Hash, CryptoError};
 use std::fmt;
 

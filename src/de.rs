@@ -30,12 +30,14 @@ impl<'a> FogDeserializer<'a> {
         Self { parser }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_debug(buf: &'a [u8], indent: impl Into<String>) -> Self {
         Self {
             parser: Parser::with_debug(buf, indent),
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_debug(&self) -> Option<&str> {
         self.parser.get_debug()
     }

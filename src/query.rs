@@ -1,7 +1,15 @@
+//! Queries for finding Entries.
+//!
+//! A query can be used to find and return [Entries][crate::entry::Entry] that are attached to a
+//! [Document][crate::document::Document]. They are created by providing a single
+//! [`Validator`][crate::validator::Validator] to [`NewQuery::new`]. Queries must be validated by a
+//! [Schema][crate::schema::Schema] before they can be used.
+//!
+
 use std::collections::BTreeMap;
 
+use crate::entry::Entry;
 use crate::validator::Validator;
-use crate::Entry;
 use crate::{
     de::FogDeserializer,
     element::Parser,

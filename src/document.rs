@@ -1,3 +1,18 @@
+//! Serialized data optionally adhering to a schema.
+//!
+//! Documents are created by taking a serializable struct and calling
+//! [`NewDocument::new`] with it, along with an optional Hash of the schema the document will
+//! adhere to. Once created, it can be signed and the compression setting can be chosen. To create
+//! a complete, verified document, it must be passed to [`NoSchema`][crate::schema::NoSchema] or a
+//! [`Schema`][crate::schema::Schema], as appropriate.
+//!
+//! In addition to direct creation, two additional builder structs are available.
+//! [`VecDocumentBuilder`] can be used to take a long iterator and create many documents that are
+//! arrays of the serialized items in the iterator. The builder produces documents 512 kiB in size
+//! or lower. This is useful for serializing large lists that don't fit in the Document maximum
+//! size limit of 1 MiB. [`AsyncVecDocumentBuilder`] does the same, but for asynchronous Streams.
+//!
+
 use crate::{compress::CompressType, de::FogDeserializer, ser::FogSerializer, MAX_DOC_SIZE};
 use crate::{
     element::serialize_elem,
@@ -491,7 +506,7 @@ where
 /// A new Document that has not yet been validated.
 ///
 /// This struct acts like a Document, but cannot be decoded until it has passed through either a
-/// [`Schema`][crate::Schema] or through [`NoSchema`][crate::NoSchema].
+/// [`Schema`][crate::schema::Schema] or through [`NoSchema`][crate::schema::NoSchema].
 #[derive(Clone, Debug)]
 pub struct NewDocument(DocumentInner);
 
@@ -1131,7 +1146,7 @@ mod test {
 
         let docs: Vec<Document> = docs
             .drain(0..)
-            .map(|doc| crate::NoSchema::validate_new_doc(doc).unwrap())
+            .map(|doc| crate::schema::NoSchema::validate_new_doc(doc).unwrap())
             .collect();
         let dec_logs: Vec<Log> = docs
             .iter()
@@ -1203,7 +1218,7 @@ mod test {
         // Parse them
         let docs: Vec<Document> = docs
             .drain(0..)
-            .map(|doc| crate::NoSchema::validate_new_doc(doc).unwrap())
+            .map(|doc| crate::schema::NoSchema::validate_new_doc(doc).unwrap())
             .collect();
         let dec_logs: Vec<Log> = docs
             .iter()

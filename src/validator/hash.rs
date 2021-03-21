@@ -35,7 +35,7 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// Hash validators are unique in that they do not always complete validation after examining a
 /// single value. If used for checking an Entry, they can require an additional Document for
 /// validation. For this reason, completing validation of an Entry requires completing a
-/// [`DataChecklist`][DataChecklist]. See the [`Schema`][crate::Schema] documentation for more
+/// [`DataChecklist`][DataChecklist]. See the [`Schema`][crate::schema::Schema] documentation for more
 /// details.
 ///
 /// # Defaults

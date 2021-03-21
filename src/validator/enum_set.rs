@@ -21,8 +21,14 @@ use std::default::Default;
 /// see the following:
 ///
 /// ```
-/// # use fog_pack::validator::*;
-/// # use fog_pack::*;
+/// # use fog_pack::{
+/// #     validator::*,
+/// #     schema::*,
+/// #     document::*,
+/// #     entry::*,
+/// #     query::*,
+/// #     types::*,
+/// # };
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// // Say we have a enum like this:
@@ -181,7 +187,7 @@ mod test {
 
     #[test]
     fn example_schema() {
-        use crate::{Schema, SchemaBuilder};
+        use crate::schema::{Schema, SchemaBuilder};
         // Let's use this as our schema-side validator, and make a full schema.
         let entry_validator = EnumValidator::new()
             .insert("Empty", None)

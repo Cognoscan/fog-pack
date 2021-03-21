@@ -25,13 +25,13 @@
 //!
 //! # Key Concepts
 //!
-//! - [`Schemas`][Schema]: A schema, which validates Documents and associated Entries, and can
+//! - [`Schemas`][schema::Schema]: A schema, which validates Documents and associated Entries, and can
 //!     compress both of them
-//! - [`Documents`][Document]: A hashed piece of serialized data, which may adhere to a schema and
+//! - [`Documents`][document::Document]: A hashed piece of serialized data, which may adhere to a schema and
 //!     be cryptographically signed.
-//! - [`Entries`][Entry]: A hashed piece of serialized data, which has an associated parent
+//! - [`Entries`][entry::Entry]: A hashed piece of serialized data, which has an associated parent
 //!     document and key string. It may also be cryptographically signed.
-//! - [`Queries`][Query]: A query, which may be used to find entries attached to a Document.
+//! - [`Queries`][query::Query]: A query, which may be used to find entries attached to a Document.
 //!
 //! These four types form the core of fog-pack's concepts, and are used to build up complex,
 //! inter-related data in content-addressed storage systems.
@@ -44,8 +44,14 @@
 //! We'll start by declaring the documents and the schema:
 //!
 //! ```
-//! # use fog_pack::*;
-//! # use fog_pack::validator::*;
+//! # use fog_pack::{
+//! #     validator::*,
+//! #     schema::*,
+//! #     document::*,
+//! #     entry::*,
+//! #     query::*,
+//! #     types::*,
+//! # };
 //! # use serde::{Serialize, Deserialize};
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! #
@@ -96,8 +102,14 @@
 //! We can even make a query that can be used to search for specific posts!
 //!
 //! ```
-//! # use fog_pack::*;
-//! # use fog_pack::validator::*;
+//! # use fog_pack::{
+//! #     validator::*,
+//! #     schema::*,
+//! #     document::*,
+//! #     entry::*,
+//! #     query::*,
+//! #     types::*,
+//! # };
 //! # use serde::{Serialize, Deserialize};
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # #[derive(Serialize, Deserialize)]
@@ -179,51 +191,76 @@
 mod compress;
 mod de;
 mod depth_tracking;
-mod document;
 mod element;
-mod entry;
 mod integer;
 mod marker;
-mod query;
-mod schema;
 mod ser;
 mod timestamp;
 mod value;
 mod value_ref;
 
+pub mod document;
+pub mod entry;
 pub mod error;
+pub mod query;
+pub mod schema;
 pub mod validator;
 
-pub use compress::*;
-pub use document::*;
-pub use entry::*;
-pub use integer::*;
-pub use query::*;
-pub use schema::*;
-pub use timestamp::*;
-pub use value::Value;
-pub use value_ref::ValueRef;
+use types::*;
 
-pub use fog_crypto::{
-    hash::Hash,
-    identity::Identity,
-    lock::LockId,
-    lockbox::{
-        DataLockbox, DataLockboxRef, IdentityLockbox, IdentityLockboxRef, LockLockbox,
-        LockLockboxRef, StreamLockbox, StreamLockboxRef,
-    },
-    stream::StreamId,
-};
+/// Various fog-pack content types.
+///
+/// The fog-pack serialization format has a number of special types, in addition to the usual
+/// primitive types:
+///
+/// - Null
+/// - Bool
+/// - [`Int`][crate::types::Integer] - any integer from -2^63 to 2^64-1
+/// - F32 - 32-bit floating point
+/// - F64 - 64-bit floating point
+/// - Bin - Binary byte sequences
+/// - Str - UTF-8 strings
+/// - Array - heterogeneous sequence of values
+/// - Map - Ordered key-value map, with strings for keys
+/// - [`Time`][crate::types::Timestamp] - a unix timestamp
+/// - [`Hash`][crate::types::Hash] - a cryptographic hash
+/// - [`Identity`][crate::types::Identity] - a public signing key
+/// - [`StreamId`][crate::types::StreamId] - an identifier for a symmetric encryption key
+/// - [`LockId`][crate::types::LockId] - a public key for encryption
+/// - [`DataLockbox`][crate::types::DataLockbox] - Encrypted general data
+/// - [`IdentityLockbox`][crate::types::IdentityLockbox] - An encrypted private signing key
+/// - [`StreamLockbox`][crate::types::StreamLockbox] - An encrypted key for symmetric encryption
+/// - [`LockLockbox`][crate::types::LockLockbox] - An encrypted private key
+///
+/// A general structure for holding fog-pack data is [`Value`][crate::types::Value]. The non-owning
+/// version of it is [`ValueRef`][crate::types::ValueRef].
+///
+pub mod types {
+    pub use crate::integer::*;
+    pub use crate::timestamp::*;
+    pub use crate::value::Value;
+    pub use crate::value_ref::ValueRef;
+    pub use fog_crypto::{
+        hash::Hash,
+        identity::Identity,
+        lock::LockId,
+        lockbox::{
+            DataLockbox, DataLockboxRef, IdentityLockbox, IdentityLockboxRef, LockLockbox,
+            LockLockboxRef, StreamLockbox, StreamLockboxRef,
+        },
+        stream::StreamId,
+    };
+}
 
 /// The maximum nesting depth allowed for any fog-pack value. No encoded document will ever nest
 /// Map/Array markers deeper than this.
 pub const MAX_DEPTH: usize = 100;
 /// The maximum allowed size of a raw document, including signatures, is 1 MiB. No encoded document
-/// will ever be larger than this size.
+/// will ever be equal to or larger than this size.
 pub const MAX_DOC_SIZE: usize = (1usize << 20) - 1; // 1 MiB
 /// The maximum allowed size of a raw entry, including signatures, is 64 kiB. No encoded entry will
-/// ever be larger than this size.
+/// ever be equal to or larger than this size.
 pub const MAX_ENTRY_SIZE: usize = (1usize << 16) - 1; // 64 kiB
-/// The maximum allowed size of a raw query, is 64 kiB. No encoded query will ever be larger than
-/// this size.
+/// The maximum allowed size of a raw query, is 64 kiB. No encoded query will ever be equal to or
+/// larger than this size.
 pub const MAX_QUERY_SIZE: usize = (1usize << 16) - 1; // 64 kiB

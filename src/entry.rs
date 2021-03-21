@@ -1,3 +1,10 @@
+//! Serialized data associated with a parent Document and key string.
+//!
+//! Entries are created by calling [`NewEntry::new`] with serializable data, the hash of the parent
+//! document, and the key string. Once created, they can be signed and have their compression
+//! settings chosen. Entries (new or otherwise) are verified and encoded using a
+//! [`Schema`][crate::schema::Schema], which should match the schema used by the parent document.
+
 use crate::error::{Error, Result};
 use crate::{
     compress::CompressType,
@@ -58,7 +65,7 @@ impl<'a> SplitEntry<'a> {
 /// A new Entry that has not yet been validated.
 ///
 /// This struct acts like an Entry, but cannot be decoded until it has passed through a
-/// [`Schema`][crate::Schema].
+/// [`Schema`][crate::schema::Schema].
 pub struct NewEntry {
     buf: Vec<u8>,
     hash_state: HashState,
@@ -191,7 +198,7 @@ impl NewEntry {
         self.split().data
     }
 
-    /// Get the hash of the Entry's parent [`Document`][crate::Document].
+    /// Get the hash of the Entry's parent [`Document`][crate::document::Document].
     pub fn parent(&self) -> &Hash {
         &self.parent_hash
     }
@@ -268,7 +275,7 @@ impl Entry {
         self.split().data
     }
 
-    /// Get the hash of the Entry's parent [`Document`][crate::Document].
+    /// Get the hash of the Entry's parent [`Document`][crate::document::Document].
     pub fn parent(&self) -> &Hash {
         &self.parent_hash
     }

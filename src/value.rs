@@ -40,7 +40,7 @@ impl Value {
             Value::Array(ref v) => ValueRef::Array(v.iter().map(|i| i.as_ref()).collect()),
             Value::Map(ref v) => ValueRef::Map(
                 v.iter()
-                    .map(|(f, ref i)| (f.as_ref(), i.as_ref()))
+                    .map(|(f, i)| (f.as_ref(), i.as_ref()))
                     .collect(),
             ),
             Value::Timestamp(v) => ValueRef::Timestamp(v),
@@ -771,25 +771,25 @@ impl<'de> serde::Deserialize<'de> for Value {
                         Ok(Value::StreamId(val))
                     }
                     FOG_TYPE_ENUM_DATA_LOCKBOX_INDEX => {
-                        let val = DataLockboxRef::from_bytes(&bytes)
+                        let val = DataLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::DataLockbox(val))
                     }
                     FOG_TYPE_ENUM_IDENTITY_LOCKBOX_INDEX => {
-                        let val = IdentityLockboxRef::from_bytes(&bytes)
+                        let val = IdentityLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::IdentityLockbox(val))
                     }
                     FOG_TYPE_ENUM_STREAM_LOCKBOX_INDEX => {
-                        let val = StreamLockboxRef::from_bytes(&bytes)
+                        let val = StreamLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::StreamLockbox(val))
                     }
                     FOG_TYPE_ENUM_LOCK_LOCKBOX_INDEX => {
-                        let val = LockLockboxRef::from_bytes(&bytes)
+                        let val = LockLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::LockLockbox(val))

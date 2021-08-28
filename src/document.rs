@@ -1122,7 +1122,7 @@ mod test {
         let docs = builder.collect::<Result<Vec<NewDocument>>>().unwrap();
         for (index, doc) in docs.iter().enumerate() {
             let mut parser = crate::element::Parser::with_debug(doc.data(), "  ");
-            while let Some(x) = parser.next() {
+            for x in &mut parser {
                 x.unwrap();
             }
             println!("Doc #{}: \n{}", index, parser.get_debug().unwrap());
@@ -1180,7 +1180,7 @@ mod test {
         .unwrap();
         for (index, doc) in docs.iter().enumerate() {
             let mut parser = crate::element::Parser::with_debug(doc.data(), "  ");
-            while let Some(x) = parser.next() {
+            for x in &mut parser {
                 x.unwrap();
             }
             println!("Doc #{}: \n{}", index, parser.get_debug().unwrap());

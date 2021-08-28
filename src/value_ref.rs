@@ -190,7 +190,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn as_str(&self) -> Option<&str> {
-        if let ValueRef::Str(ref val) = *self {
+        if let ValueRef::Str(val) = *self {
             Some(val)
         } else {
             None
@@ -198,7 +198,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn as_slice(&self) -> Option<&[u8]> {
-        if let ValueRef::Bin(ref val) = *self {
+        if let ValueRef::Bin(val) = *self {
             Some(val)
         } else {
             None
@@ -275,7 +275,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn as_data_lockbox(&self) -> Option<&DataLockboxRef> {
-        if let ValueRef::DataLockbox(ref lockbox) = *self {
+        if let ValueRef::DataLockbox(lockbox) = *self {
             Some(lockbox)
         } else {
             None
@@ -283,7 +283,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn as_identity_lockbox(&self) -> Option<&IdentityLockboxRef> {
-        if let ValueRef::IdentityLockbox(ref lockbox) = *self {
+        if let ValueRef::IdentityLockbox(lockbox) = *self {
             Some(lockbox)
         } else {
             None
@@ -291,7 +291,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn as_stream_lockbox(&self) -> Option<&StreamLockboxRef> {
-        if let ValueRef::StreamLockbox(ref lockbox) = *self {
+        if let ValueRef::StreamLockbox(lockbox) = *self {
             Some(lockbox)
         } else {
             None
@@ -299,7 +299,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn as_lock_lockbox(&self) -> Option<&LockLockboxRef> {
-        if let ValueRef::LockLockbox(ref lockbox) = *self {
+        if let ValueRef::LockLockbox(lockbox) = *self {
             Some(lockbox)
         } else {
             None
@@ -732,22 +732,22 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
                         Ok(ValueRef::StreamId(val))
                     }
                     FOG_TYPE_ENUM_DATA_LOCKBOX_INDEX => {
-                        let val = DataLockboxRef::from_bytes(&bytes)
+                        let val = DataLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::DataLockbox(val))
                     }
                     FOG_TYPE_ENUM_IDENTITY_LOCKBOX_INDEX => {
-                        let val = IdentityLockboxRef::from_bytes(&bytes)
+                        let val = IdentityLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::IdentityLockbox(val))
                     }
                     FOG_TYPE_ENUM_STREAM_LOCKBOX_INDEX => {
-                        let val = StreamLockboxRef::from_bytes(&bytes)
+                        let val = StreamLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::StreamLockbox(val))
                     }
                     FOG_TYPE_ENUM_LOCK_LOCKBOX_INDEX => {
-                        let val = LockLockboxRef::from_bytes(&bytes)
+                        let val = LockLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::LockLockbox(val))
                     }

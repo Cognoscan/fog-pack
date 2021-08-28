@@ -308,7 +308,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                         }
                         mem::swap(&mut new_key, &mut *last_key);
                     } else {
-                        last_key = Some(mem::replace(&mut new_key, String::new()));
+                        last_key = Some(mem::take(&mut new_key));
                     }
                     v.serialize(&mut *self)?;
                 }
@@ -404,7 +404,7 @@ impl<'a> SeqSerializer<'a> {
         } else {
             se.depth_tracking
                 .update_elem(&Element::Array(MAX_DOC_SIZE))?;
-            let enc = mem::replace(&mut se.buf, Vec::new());
+            let enc = mem::take(&mut se.buf);
             Ok(Self {
                 se,
                 unknown_len: Some((0, enc)),
@@ -538,7 +538,7 @@ impl<'a> MapSerializer<'a> {
             se.depth_tracking
                 .update_elem(&Element::Map(MAX_DOC_SIZE >> 1))?;
             if se.must_be_ordered {
-                let buf = mem::replace(&mut se.buf, Vec::new());
+                let buf = mem::take(&mut se.buf);
                 Ok(MapSerializer::UnsizedOrdered {
                     se,
                     last_key: None,
@@ -584,7 +584,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                     mem::swap(new_key, last_key);
                 } else {
                     // Replace new_key with a new string, and load the last key into memory
-                    *last_key = Some(mem::replace(new_key, String::new()));
+                    *last_key = Some(mem::take(new_key));
                 }
             }
             MapSerializer::SizedUnordered { pending_key, .. } => {
@@ -613,7 +613,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                     mem::swap(new_key, last_key);
                 } else {
                     // Replace new_key with a new string, and load the last key into memory
-                    *last_key = Some(mem::replace(new_key, String::new()));
+                    *last_key = Some(mem::take(new_key));
                 }
             }
             MapSerializer::UnsizedUnordered { pending_key, .. } => {
@@ -635,12 +635,12 @@ impl<'a> SerializeMap for MapSerializer<'a> {
             } => {
                 // Slot in buffer, fill it like we're writing to the actual buffer, then store it
                 // off for later reordering
-                let buf = mem::replace(&mut se.buf, Vec::new());
+                let buf = mem::take(&mut se.buf);
                 se.encode_element(Element::Str(pending_key))?;
                 value.serialize(&mut **se)?;
                 // Replace buffers & store off in BTreeMap
                 let buf = mem::replace(&mut se.buf, buf);
-                let key = mem::replace(pending_key, String::new());
+                let key = mem::take(pending_key);
                 if map.insert(key, buf).is_some() {
                     return Err(Error::SerdeFail("map has repeated keys".into()));
                 }
@@ -655,12 +655,12 @@ impl<'a> SerializeMap for MapSerializer<'a> {
             } => {
                 // Slot in buffer, fill it like we're writing to the actual buffer, then store it
                 // off for later reordering
-                let buf = mem::replace(&mut se.buf, Vec::new());
+                let buf = mem::take(&mut se.buf);
                 se.encode_element(Element::Str(pending_key))?;
                 value.serialize(&mut **se)?;
                 // Replace buffers & store off in BTreeMap
                 let buf = mem::replace(&mut se.buf, buf);
-                let key = mem::replace(pending_key, String::new());
+                let key = mem::take(pending_key);
                 if map.insert(key, buf).is_some() {
                     return Err(Error::SerdeFail("map has repeated keys".into()));
                 }
@@ -681,7 +681,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
             MapSerializer::SizedUnordered { se, map, .. } => {
                 // Flush all buffers, in order, out to the main one
                 for (_, vec) in map.iter() {
-                    se.buf.extend_from_slice(&vec);
+                    se.buf.extend_from_slice(vec);
                 }
             }
             MapSerializer::UnsizedOrdered { se, len, buf, .. } => {
@@ -697,7 +697,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 // flush all buffers, in order, out to the main one
                 serialize_elem(&mut se.buf, Element::Map(map.len()));
                 for (_, vec) in map.iter() {
-                    se.buf.extend_from_slice(&vec);
+                    se.buf.extend_from_slice(vec);
                 }
                 se.depth_tracking.early_end();
             }
@@ -753,7 +753,7 @@ impl<'a> StructSerializer<'a> {
             StructSerializer::Unordered { se, map } => {
                 // Slot in buffer, fill it like we're writing to the actual buffer, then store it
                 // off for later reordering
-                let buf = mem::replace(&mut se.buf, Vec::new());
+                let buf = mem::take(&mut se.buf);
                 se.encode_element(Element::Str(field))?;
                 value.serialize(&mut **se)?;
                 // Replace buffers & store off in BTreeMap
@@ -769,7 +769,7 @@ impl<'a> StructSerializer<'a> {
             StructSerializer::Ordered { .. } => (),
             StructSerializer::Unordered { se, map } => {
                 for (_, vec) in map.iter() {
-                    se.buf.extend_from_slice(&vec);
+                    se.buf.extend_from_slice(vec);
                 }
             }
         }
@@ -1526,9 +1526,10 @@ mod test {
 
     #[test]
     fn ser_bin() {
-        let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
-        test_cases.push((0, vec![0xc4, 0x00]));
-        test_cases.push((1, vec![0xc4, 0x01, 0x00]));
+        let mut test_cases: Vec<(usize, Vec<u8>)> = vec![
+            (0, vec![0xc4, 0x00]),
+            (1, vec![0xc4, 0x01, 0x00]),
+        ];
         let mut case = vec![0xc4, 0xff];
         case.resize(255 + 2, 0u8);
         test_cases.push((255, case));
@@ -1560,9 +1561,10 @@ mod test {
 
     #[test]
     fn ser_str() {
-        let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
-        test_cases.push((0, vec![0xa0]));
-        test_cases.push((1, vec![0xa1, 0x00]));
+        let mut test_cases: Vec<(usize, Vec<u8>)> = vec![
+            (0, vec![0xa0]),
+            (1, vec![0xa1, 0x00]),
+        ];
         let mut case = vec![0xbf];
         case.resize(32, 0u8);
         test_cases.push((31, case));
@@ -1857,17 +1859,14 @@ mod test {
         let mut ser = FogSerializer::default();
         let to_ser = EnumerateThis::Null;
         to_ser.serialize(&mut ser).unwrap();
-        let mut expected = Vec::new();
-        expected.push(0xa4);
+        let mut expected = vec![0xa4];
         expected.extend_from_slice("Null".as_bytes());
         assert_eq!(ser.buf, expected);
 
         let mut ser = FogSerializer::default();
         let to_ser = EnumerateThis::Newtype('🙃'); // Encodes as "f0 9f 99 83"
         to_ser.serialize(&mut ser).unwrap();
-        let mut expected = Vec::new();
-        expected.push(0x81);
-        expected.push(0xa7);
+        let mut expected = vec![0x81, 0xa7];
         expected.extend_from_slice("Newtype".as_bytes());
         expected.extend_from_slice(&[0xa4, 0xf0, 0x9f, 0x99, 0x83]);
         assert_eq!(ser.buf, expected);
@@ -1875,9 +1874,7 @@ mod test {
         let mut ser = FogSerializer::default();
         let to_ser = EnumerateThis::Tuple('🙃', 4);
         to_ser.serialize(&mut ser).unwrap();
-        let mut expected = Vec::new();
-        expected.push(0x81);
-        expected.push(0xa5);
+        let mut expected = vec![0x81, 0xa5];
         expected.extend_from_slice("Tuple".as_bytes());
         expected.extend_from_slice(&[0x92, 0xa4, 0xf0, 0x9f, 0x99, 0x83, 0x04]);
         assert_eq!(ser.buf, expected);
@@ -1885,9 +1882,7 @@ mod test {
         let mut ser = FogSerializer::default();
         let to_ser = EnumerateThis::Struct { b: '🙃', a: 4 };
         to_ser.serialize(&mut ser).unwrap();
-        let mut expected = Vec::new();
-        expected.push(0x81);
-        expected.push(0xa6);
+        let mut expected = vec![0x81, 0xa6];
         expected.extend_from_slice("Struct".as_bytes());
         expected.push(0x82);
         // map a

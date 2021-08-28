@@ -207,6 +207,7 @@ pub mod schema;
 pub mod validator;
 
 use types::*;
+pub use document::get_doc_schema;
 
 /// Various fog-pack content types.
 ///

@@ -26,12 +26,25 @@ use fog_crypto::{
 use futures_core::{ready, FusedStream, Stream};
 use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use std::{
     convert::TryFrom,
     fmt,
     pin::Pin,
     task::{Context, Poll},
 };
+
+/// Attempt to get the schema for a raw document. Fails if the raw byte slice doesn't conform to 
+/// the right format, or if the hash is invalid.
+pub fn get_doc_schema(doc: &[u8]) -> Result<Option<Hash>> {
+    let hash_raw = SplitDoc::split(doc)?.hash_raw;
+    if hash_raw.is_empty() {
+        Ok(None)
+    }
+    else {
+        Ok(Some(hash_raw.try_into()?))
+    }
+}
 
 // Header format:
 //  1. Compression Type marker

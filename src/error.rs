@@ -7,7 +7,7 @@ use serde::{de, ser};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[derive(Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Error {
     /// Occurs when a subtype is using a version format that is no longer accepted. This is mainly
     /// for recognizing when the Cryptographic types and signatures use old, no longer accepted

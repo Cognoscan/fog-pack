@@ -75,6 +75,7 @@ struct EntrySchema {
 ///
 /// As schemaless documents cannot have attached entries, `NoSchema` does not do any entry
 /// encode/decode.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoSchema;
 
 impl NoSchema {
@@ -283,6 +284,7 @@ fn decompress_entry(compress: Vec<u8>, compression: &Compress) -> Result<Vec<u8>
 /// A schema can be directly made from any document, but it's generally much easier to construct
 /// them from [`Validator`][crate::validator::Validator] structs and turn the result into a
 /// Document.
+#[derive(Clone, Debug)]
 pub struct SchemaBuilder {
     inner: InnerSchema,
 }
@@ -371,6 +373,7 @@ impl SchemaBuilder {
 ///
 /// A schema must come from a Document. To create one directly, use the [`SchemaBuilder`], then
 /// decode the resulting Document into a schema.
+#[derive(Clone, Debug)]
 pub struct Schema {
     hash: Hash,
     inner: InnerSchema,

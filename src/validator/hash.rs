@@ -64,7 +64,7 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// In addition, if there is a validator for `link`, it is validated against the schema validator's
 /// `link` validator.
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct HashValidator {
     /// An optional comment explaining the validator.
@@ -97,21 +97,6 @@ pub struct HashValidator {
     /// If true, queries against matching spots may have values in the `schema` list.
     #[serde(skip_serializing_if = "is_false")]
     pub schema_ok: bool,
-}
-
-impl Default for HashValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            link: None,
-            schema: Vec::new(),
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            query: false,
-            link_ok: false,
-            schema_ok: false,
-        }
-    }
 }
 
 impl HashValidator {

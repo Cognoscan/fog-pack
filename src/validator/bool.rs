@@ -22,7 +22,7 @@ fn is_false(v: &bool) -> bool {
 /// - nin_list: empty
 /// - query: false
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct BoolValidator {
     /// An optional comment explaining the validator.
@@ -37,17 +37,6 @@ pub struct BoolValidator {
     /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
-}
-
-impl std::default::Default for BoolValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            query: false,
-        }
-    }
 }
 
 impl BoolValidator {

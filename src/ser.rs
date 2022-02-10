@@ -177,7 +177,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
     }
 
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
-        mut self,
+        self,
         name: &'static str,
         variant_index: u32,
         variant: &'static str,
@@ -188,7 +188,7 @@ impl<'a> Serializer for &'a mut FogSerializer {
                 .map_err(|_| Error::SerdeFail("unrecognized FogPack variant".to_string()))?;
             let ext = ExtType::from_u8(index)
                 .ok_or_else(|| Error::SerdeFail("unrecognized FogPack variant".to_string()))?;
-            let mut ext_se = ExtSerializer::new(ext, &mut self);
+            let mut ext_se = ExtSerializer::new(ext, self);
             value.serialize(&mut ext_se)
         } else {
             self.encode_element(Element::Map(1))?;

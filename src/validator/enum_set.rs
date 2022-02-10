@@ -74,14 +74,8 @@ use std::default::Default;
 /// # }
 /// ```
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EnumValidator(pub BTreeMap<String, Option<Validator>>);
-
-impl Default for EnumValidator {
-    fn default() -> Self {
-        Self(BTreeMap::new())
-    }
-}
 
 impl EnumValidator {
     /// Make a new validator with the default configuration.

@@ -8,6 +8,11 @@ use std::default::Default;
 /// This validator will accept any value that passes at least one of its contained validators. This
 /// can be used like an "any of" operator, or a logical OR of validators.
 ///
+/// When this validator is used, the contained validators are checked in order, passing when the 
+/// first contained validator passes. When performing [`Entry`] validation, this can mean that a 
+/// linked document may be added to the list of documents needed for final validation, even if 
+/// another contained validator (later in the list) would also pass without it.
+///
 /// When going through the contained validators, some rules are followed to avoid possible cyclic
 /// references:
 ///
@@ -23,14 +28,8 @@ use std::default::Default;
 /// Multi-validator. Contained validators that violate the cyclic reference rules are skipped (see
 /// above).
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MultiValidator(pub Vec<Validator>);
-
-impl Default for MultiValidator {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
 
 impl MultiValidator {
     /// Make a new validator with the default configuration.

@@ -153,7 +153,6 @@
 //! };
 //! let my_blog = NewDocument::new(my_blog, Some(schema.hash()))?.sign(&my_key)?;
 //! let my_blog = schema.validate_new_doc(my_blog)?;
-//! let blog_hash = my_blog.hash();
 //!
 //! // First post!
 //! let new_post = Post {
@@ -161,7 +160,8 @@
 //!     title: Some("My first post".into()),
 //!     content: "I'm making my first post using fog-pack!".into(),
 //! };
-//! let new_post = NewEntry::new(new_post, "post", &blog_hash)?.sign(&my_key)?;
+//! let new_post = NewEntry::new(new_post, "post", &my_blog)?.sign(&my_key)?;
+//! let new_post = schema.validate_new_entry(new_post)?.complete()?;
 //!
 //! // We can find entries using a Query:
 //! let query = NewQuery::new("post", MapValidator::new()
@@ -173,14 +173,14 @@
 //! // more time:
 //! let (blog_hash, encoded_blog): (Hash, Vec<u8>) =
 //!     schema.encode_doc(my_blog)?;
-//! let (post_hash, encoded_post): (Hash, Vec<u8>) =
-//!     schema.encode_new_entry(new_post)?.complete()?;
+//! let (post_hash, encoded_post, _): (Hash, Vec<u8>, Vec<Hash>) =
+//!     schema.encode_entry(new_post)?;
 //! let encoded_query =
 //!     schema.encode_query(query)?;
 //!
 //! // Decoding is also done via the schema:
 //! let my_blog = schema.decode_doc(encoded_blog)?;
-//! let new_post = schema.decode_entry(encoded_post, "post", &blog_hash)?;
+//! let new_post = schema.decode_entry(encoded_post, "post", &my_blog)?;
 //! let query = schema.decode_query(encoded_query)?;
 //!
 //! # Ok(())

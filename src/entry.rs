@@ -7,6 +7,7 @@
 
 use crate::error::{Error, Result};
 use crate::{
+    document::Document,
     compress::CompressType,
     de::FogDeserializer,
     element::{serialize_elem, Element},
@@ -62,27 +63,143 @@ impl<'a> SplitEntry<'a> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct EntryInner {
+    buf: Vec<u8>,
+    /// Working memory for hash calculations. Should only be created by signing or new(), and only 
+    /// modified & read within signing operations.
+    hash_state: Option<HashState>,
+    key: String,
+    parent_hash: Hash,
+    schema_hash: Hash,
+    this_hash: Hash,
+    signer: Option<Identity>,
+    set_compress: Option<Option<u8>>,
+}
+
+impl EntryInner {
+
+    fn data(&self) -> &[u8] {
+        SplitEntry::split(&self.buf).unwrap().data
+    }
+
+    /// Get the hash of the Entry's parent [`Document`][crate::document::Document].
+    fn parent(&self) -> &Hash {
+        &self.parent_hash
+    }
+
+    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent 
+    /// [`Document`][crate::document::Document].
+    fn schema_hash(&self) -> &Hash {
+        &self.schema_hash
+    }
+
+    /// Get the Entry's string key.
+    fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// Get the Identity of the signer of this entry, if the entry is signed.
+    fn signer(&self) -> Option<&Identity> {
+        self.signer.as_ref()
+    }
+
+    /// Get the hash of the complete entry. This can change if the entry is signed again with the
+    /// [`sign`][Self::sign] function.
+    fn hash(&self) -> &Hash {
+        &self.this_hash
+    }
+
+    /// Deserialize the entry's contained data into a value.
+    fn deserialize<'de, D: Deserialize<'de>>(&'de self) -> Result<D> {
+        let buf = self.data();
+        let mut de = FogDeserializer::new(buf);
+        D::deserialize(&mut de)
+    }
+
+    /// Override the default compression settings. `None` will disable compression. `Some(level)`
+    /// will compress with the provided level as the setting for the algorithm.
+    fn compression(&mut self, setting: Option<u8>) -> &mut Self {
+        self.set_compress = Some(setting);
+        self
+    }
+
+    /// Set up the hash state for an entry. The data passed in must not include the prefix bytes.
+    fn setup_hash_state(parent_hash: Hash, key: &str, data: &[u8]) -> HashState {
+        let mut hash_state = HashState::new();
+        let mut prefix = Vec::new();
+        serialize_elem(&mut prefix, Element::Hash(parent_hash));
+        serialize_elem(&mut prefix, Element::Str(key));
+        hash_state.update(&prefix);
+        hash_state.update(data);
+        hash_state
+    }
+
+    /// Sign the entry, or or replace the existing signature if one exists already. Fails if the
+    /// signature would grow the entry size beyond the maximum allowed. In the event of a failure.
+    /// the entry is dropped.
+    fn sign(mut self, key: &IdentityKey) -> Result<Self> {
+
+        // If a signature already exists, reload the hash state
+        let pre_sign_len = if self.signer.is_some() {
+            let split = SplitEntry::split(&self.buf).unwrap();
+            let new_len = split.data.len() + ENTRY_PREFIX_LEN;
+            self.hash_state = Some(Self::setup_hash_state(self.parent_hash.clone(), &self.key, split.data));
+            new_len
+        }
+        else {
+            self.buf.len()
+        };
+
+        // Load the hash state
+        if self.hash_state.is_none() {
+            let split = SplitEntry::split(&self.buf).unwrap();
+            let state = Self::setup_hash_state(self.parent_hash.clone(), &self.key, split.data);
+            self.hash_state = Some(state);
+        }
+        let hash_state = self.hash_state.as_mut().unwrap();
+
+        // Hash state does not yet contain the signature - thus, it holds the hash we're going to 
+        // sign
+        let entry_hash = hash_state.hash();
+
+        // Sign and check for size violation
+        let signature = key.sign(&entry_hash);
+        let new_len = pre_sign_len + signature.size();
+        if new_len > MAX_ENTRY_SIZE {
+            return Err(Error::LengthTooLong {
+                max: MAX_ENTRY_SIZE,
+                actual: self.buf.len(),
+            });
+        }
+
+        // Append the signature and update the hasher
+        self.buf.resize(pre_sign_len, 0);
+        signature.encode_vec(&mut self.buf);
+        hash_state.update(&self.buf[pre_sign_len..]);
+        self.this_hash = hash_state.hash();
+        self.signer = Some(key.id().clone());
+        Ok(self)
+    }
+
+    fn complete(self) -> (Hash, String, Vec<u8>, Option<Option<u8>>) {
+        (self.this_hash, self.key, self.buf, self.set_compress)
+    }
+}
+
 /// A new Entry that has not yet been validated.
 ///
 /// This struct acts like an Entry, but cannot be decoded until it has passed through a
 /// [`Schema`][crate::schema::Schema].
-pub struct NewEntry {
-    buf: Vec<u8>,
-    hash_state: HashState,
-    key: String,
-    parent_hash: Hash,
-    entry_hash: Hash,
-    has_signature: bool,
-    set_compress: Option<Option<u8>>,
-}
+pub struct NewEntry(EntryInner);
 
 impl NewEntry {
-    fn new_from<F>(key: &str, parent: &Hash, encoder: F) -> Result<Self>
+    fn new_from<F>(key: &str, parent: &Document, encoder: F) -> Result<Self>
     where
         F: FnOnce(Vec<u8>) -> Result<Vec<u8>>,
     {
         // Serialize the data
-        let buf: Vec<u8> = vec![CompressType::NoCompress.into(), 0u8, 0u8];
+        let buf: Vec<u8> = vec![CompressType::None.into(), 0u8, 0u8];
         let mut buf = encoder(buf)?;
 
         // Check the total size and update the data length
@@ -96,28 +213,30 @@ impl NewEntry {
         buf[1] = data_len[0];
         buf[2] = data_len[1];
 
-        // Create and update the Hasher
-        let mut hash_state = HashState::new();
-        let mut prefix = Vec::new();
-        serialize_elem(&mut prefix, Element::Hash(parent.clone()));
-        serialize_elem(&mut prefix, Element::Str(key));
-        hash_state.update(&prefix);
-        hash_state.update(&buf[ENTRY_PREFIX_LEN..]);
-        let entry_hash = hash_state.hash();
+        // Create and update the Hash state
+        let hash_state = EntryInner::setup_hash_state(parent.hash().clone(), key, &buf[ENTRY_PREFIX_LEN..]);
+        let this_hash = hash_state.hash();
 
-        Ok(Self {
+        let schema_hash = match parent.schema_hash() {
+            Some(h) => h.clone(),
+            None => return Err(Error::FailValidate(
+                    "Entries can only be created for documents that use a schema.".into())),
+        };
+
+        Ok(Self(EntryInner {
             buf,
-            hash_state,
+            hash_state: Some(hash_state),
             key: key.to_owned(),
-            parent_hash: parent.to_owned(),
-            entry_hash,
-            has_signature: false,
+            parent_hash: parent.hash().clone(),
+            schema_hash,
+            this_hash,
+            signer: None,
             set_compress: None,
-        })
+        }))
     }
 
     /// Create a new Entry from any serializable data, a key, and the Hash of the parent document.
-    pub fn new<S: Serialize>(data: S, key: &str, parent: &Hash) -> Result<Self> {
+    pub fn new<S: Serialize>(data: S, key: &str, parent: &Document) -> Result<Self> {
         Self::new_from(key, parent, |buf| {
             // Serialize the data
             let mut ser = FogSerializer::from_vec(buf, false);
@@ -131,10 +250,10 @@ impl NewEntry {
     /// lexicographic order. For maps, this means a `BTreeMap` type must be used, whose keys are
     /// ordered such that they serialize to lexicographically ordered strings. All sub-structs and
     /// sub-maps must be similarly ordered.
-    pub fn new_ordered<S: Serialize>(data: S, key: &str, parent: &Hash) -> Result<Self> {
+    pub fn new_ordered<S: Serialize>(data: S, key: &str, parent: &Document) -> Result<Self> {
         Self::new_from(key, parent, |buf| {
             // Serialize the data
-            let mut ser = FogSerializer::from_vec(buf, false);
+            let mut ser = FogSerializer::from_vec(buf, true);
             data.serialize(&mut ser)?;
             Ok(ser.finish())
         })
@@ -143,92 +262,56 @@ impl NewEntry {
     /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm.
     pub fn compression(mut self, setting: Option<u8>) -> Self {
-        self.set_compress = Some(setting);
+        self.0.compression(setting);
         self
     }
 
     /// Sign the document, or or replace the existing signature if one exists already. Fails if the
     /// signature would grow the document size beyond the maximum allowed.
-    pub fn sign(mut self, key: &IdentityKey) -> Result<Self> {
-        // Sign and check for size violation
-        let signature = key.sign(&self.entry_hash);
-        let new_len = if self.has_signature {
-            self.buf.len() - self.split().signature_raw.len() + signature.size()
-        } else {
-            self.buf.len() + signature.size()
-        };
-        if new_len > MAX_ENTRY_SIZE {
-            return Err(Error::LengthTooLong {
-                max: MAX_ENTRY_SIZE,
-                actual: self.buf.len(),
-            });
-        }
-
-        if self.has_signature {
-            let split = SplitEntry::split(&self.buf).unwrap();
-            let new_len = split.data.len() + ENTRY_PREFIX_LEN;
-            let mut hash_state = HashState::new();
-            let mut prefix = Vec::new();
-            serialize_elem(&mut prefix, Element::Hash(self.parent_hash.clone()));
-            serialize_elem(&mut prefix, Element::Str(&self.key));
-            hash_state.update(&prefix);
-            hash_state.update(split.data);
-            self.buf.resize(new_len, 0);
-            self.hash_state = hash_state;
-        }
-
-        // Append the signature and update the hasher
-        let pre_len = self.buf.len();
-        signature.encode_vec(&mut self.buf);
-        self.hash_state.update(&self.buf[pre_len..]);
-        self.has_signature = true;
-        Ok(self)
+    pub fn sign(self, key: &IdentityKey) -> Result<Self> {
+        Ok(Self(self.0.sign(key)?))
     }
 
     /// Get what the document's hash will be, given its current state
-    pub fn hash(&self) -> Hash {
-        self.hash_state.hash()
-    }
-
-    pub(crate) fn split(&self) -> SplitEntry {
-        SplitEntry::split(&self.buf).unwrap()
+    pub fn hash(&self) -> &Hash {
+        self.0.hash()
     }
 
     pub(crate) fn data(&self) -> &[u8] {
-        self.split().data
+        self.0.data()
     }
 
     /// Get the hash of the Entry's parent [`Document`][crate::document::Document].
     pub fn parent(&self) -> &Hash {
-        &self.parent_hash
+        self.0.parent()
+    }
+
+    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent 
+    /// [`Document`][crate::document::Document].
+    pub fn schema_hash(&self) -> &Hash {
+        self.0.schema_hash()
     }
 
     /// Get the Entry's string key.
     pub fn key(&self) -> &str {
-        &self.key
+        self.0.key()
     }
 
-    pub(crate) fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
-        (self.hash_state.finalize(), self.buf, self.set_compress)
-    }
 }
 
 /// Holds serialized data associated with a parent document and a key string.
 ///
 /// An Entry holds a piece of serialized data, which may be deserialized by calling
 /// [`deserialize`][Entry::deserialize].
-pub struct Entry {
-    buf: Vec<u8>,
-    hash_state: HashState,
-    key: String,
-    parent_hash: Hash,
-    entry_hash: Hash,
-    signer: Option<Identity>,
-    set_compress: Option<Option<u8>>,
-}
+pub struct Entry(EntryInner);
 
 impl Entry {
-    pub(crate) fn new(buf: Vec<u8>, key: &str, parent: &Hash) -> Result<Self> {
+
+    pub(crate) fn from_new(entry: NewEntry) -> Entry {
+        Self(entry.0)
+    }
+
+    pub(crate) fn trusted_new(buf: Vec<u8>, key: &str, parent: &Document, entry: &Hash) -> Result<Self> {
         if buf.len() > MAX_ENTRY_SIZE {
             return Err(Error::LengthTooLong {
                 max: MAX_ENTRY_SIZE,
@@ -238,14 +321,47 @@ impl Entry {
 
         let split = SplitEntry::split(&buf)?;
 
-        let mut hash_state = HashState::new();
-        let mut prefix = Vec::new();
-        serialize_elem(&mut prefix, Element::Hash(parent.clone()));
-        serialize_elem(&mut prefix, Element::Str(key));
-        hash_state.update(&prefix);
-        hash_state.update(split.data);
+        let signer = if !split.signature_raw.is_empty() {
+            let unverified =
+                fog_crypto::identity::UnverifiedSignature::try_from(split.signature_raw)?;
+            Some(unverified.signer().clone())
+        }
+        else {
+            None
+        };
+
+        let schema_hash = match parent.schema_hash() {
+            Some(h) => h.clone(),
+            None => return Err(Error::FailValidate(
+                    "Entries can only be created for documents that use a schema.".into())),
+        };
+
+        Ok(Self(EntryInner {
+            buf,
+            hash_state: None,
+            key: key.to_owned(),
+            parent_hash: parent.hash().to_owned(),
+            schema_hash,
+            this_hash: entry.to_owned(),
+            signer,
+            set_compress: None,
+        }))
+    }
+
+    pub(crate) fn new(buf: Vec<u8>, key: &str, parent: &Document) -> Result<Self> {
+        if buf.len() > MAX_ENTRY_SIZE {
+            return Err(Error::LengthTooLong {
+                max: MAX_ENTRY_SIZE,
+                actual: buf.len(),
+            });
+        }
+
+        let split = SplitEntry::split(&buf)?;
+
+        let mut hash_state = EntryInner::setup_hash_state(parent.hash().clone(), key, split.data);
         let entry_hash = hash_state.hash();
-        hash_state.update(split.signature_raw);
+        if !split.signature_raw.is_empty() { hash_state.update(split.signature_raw); }
+        let this_hash = hash_state.hash();
 
         let signer = if !split.signature_raw.is_empty() {
             let unverified =
@@ -256,100 +372,75 @@ impl Entry {
             None
         };
 
-        Ok(Self {
+        let schema_hash = match parent.schema_hash() {
+            Some(h) => h.clone(),
+            None => return Err(Error::FailValidate(
+                    "Entries can only be created for documents that use a schema.".into())),
+        };
+
+        Ok(Self(EntryInner {
             buf,
-            hash_state,
+            hash_state: Some(hash_state),
             key: key.to_owned(),
-            parent_hash: parent.to_owned(),
-            entry_hash,
+            parent_hash: parent.hash().to_owned(),
+            schema_hash,
+            this_hash,
             signer,
             set_compress: None,
-        })
-    }
-
-    pub(crate) fn split(&self) -> SplitEntry {
-        SplitEntry::split(&self.buf).unwrap()
+        }))
     }
 
     pub(crate) fn data(&self) -> &[u8] {
-        self.split().data
+        self.0.data()
     }
 
     /// Get the hash of the Entry's parent [`Document`][crate::document::Document].
     pub fn parent(&self) -> &Hash {
-        &self.parent_hash
+        self.0.parent()
+    }
+
+    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent 
+    /// [`Document`][crate::document::Document].
+    pub fn schema_hash(&self) -> &Hash {
+        self.0.schema_hash()
     }
 
     /// Get the Entry's string key.
     pub fn key(&self) -> &str {
-        &self.key
+        self.0.key()
     }
 
-    /// Get the Identity of the signer of this document, if the document is signed.
+    /// Get the Identity of the signer of this entry, if the entry is signed.
     pub fn signer(&self) -> Option<&Identity> {
-        self.signer.as_ref()
+        self.0.signer()
     }
 
     /// Get the hash of the complete entry. This can change if the entry is signed again with the
     /// [`sign`][Self::sign] function.
-    pub fn hash(&self) -> Hash {
-        self.hash_state.hash()
+    pub fn hash(&self) -> &Hash {
+        self.0.hash()
     }
 
     /// Deserialize the entry's contained data into a value.
     pub fn deserialize<'de, D: Deserialize<'de>>(&'de self) -> Result<D> {
-        let buf = self.data();
-        let mut de = FogDeserializer::new(buf);
-        D::deserialize(&mut de)
+        self.0.deserialize()
     }
 
     /// Override the default compression settings. `None` will disable compression. `Some(level)`
     /// will compress with the provided level as the setting for the algorithm.
     pub fn compression(mut self, setting: Option<u8>) -> Self {
-        self.set_compress = Some(setting);
+        self.0.compression(setting);
         self
     }
 
     /// Sign the entry, or or replace the existing signature if one exists already. Fails if the
     /// signature would grow the entry size beyond the maximum allowed. In the event of a failure.
     /// the entry is unmodified.
-    pub fn sign(mut self, key: &IdentityKey) -> Result<Self> {
-        // Sign and check for size violation
-        let signature = key.sign(&self.entry_hash);
-        let new_len = if self.signer.is_some() {
-            self.buf.len() - self.split().signature_raw.len() + signature.size()
-        } else {
-            self.buf.len() + signature.size()
-        };
-        if new_len > MAX_ENTRY_SIZE {
-            return Err(Error::LengthTooLong {
-                max: MAX_ENTRY_SIZE,
-                actual: self.buf.len(),
-            });
-        }
-
-        if self.signer.is_some() {
-            let split = SplitEntry::split(&self.buf).unwrap();
-            let new_len = split.data.len() + ENTRY_PREFIX_LEN;
-            let mut hash_state = HashState::new();
-            let mut prefix = Vec::new();
-            serialize_elem(&mut prefix, Element::Hash(self.parent_hash.clone()));
-            serialize_elem(&mut prefix, Element::Str(&self.key));
-            hash_state.update(&prefix);
-            hash_state.update(split.data);
-            self.buf.resize(new_len, 0);
-            self.hash_state = hash_state;
-        }
-
-        // Append the signature and update the hasher
-        let pre_len = self.buf.len();
-        signature.encode_vec(&mut self.buf);
-        self.hash_state.update(&self.buf[pre_len..]);
-        self.signer = Some(key.id().clone());
-        Ok(self)
+    pub fn sign(self, key: &IdentityKey) -> Result<Self> {
+        Ok(Self(self.0.sign(key)?))
     }
 
-    pub(crate) fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
-        (self.hash_state.finalize(), self.buf, self.set_compress)
+    pub(crate) fn complete(self) -> (Hash, String, Vec<u8>, Option<Option<u8>>) {
+        self.0.complete()
     }
 }

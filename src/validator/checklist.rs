@@ -70,7 +70,7 @@ struct InnerListItem<'a> {
 }
 
 impl<'a> InnerListItem<'a> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             schema: Vec::new(),
             link: Vec::new(),
@@ -139,7 +139,7 @@ impl<'a> Checklist<'a> {
 
     /// Iterate through the whole checklist, going through one item at a time. Each item should be
     /// checked; see [`ListItem`] for details.
-    fn iter(&mut self) -> impl Iterator<Item = (Hash, ListItem)> {
+    pub(crate) fn iter(&mut self) -> impl Iterator<Item = (Hash, ListItem)> {
         let schema = self.schema;
         let types = self.types;
         self.list.drain().map(move |(doc, inner)| {
@@ -156,8 +156,8 @@ impl<'a> Checklist<'a> {
 
     fn check(&mut self, doc: &Document) -> Result<()> {
         self.list
-            .remove(&doc.hash())
-            .ok_or_else(|| Error::FailValidate("provided document wasn't in checlist".into()))
+            .remove(doc.hash())
+            .ok_or_else(|| Error::FailValidate("provided document wasn't in checklist".into()))
             .and_then(|inner| {
                 let item = ListItem {
                     inner,
@@ -213,21 +213,21 @@ mod test {
         let types = BTreeMap::new();
         let mut checklist = Checklist::new(schema1.hash(), &types);
         let validator = Validator::Int(IntValidator {
-            min: Integer::from(0),
+            min: Integer::from(0u32),
             ..IntValidator::default()
         });
         let schema2_schema = [Some(schema2.hash().clone())];
-        checklist.insert(doc1.hash(), None, Some(&validator));
-        checklist.insert(doc2.hash(), None, Some(&validator));
-        checklist.insert(doc3.hash(), Some(&[None]), None);
-        checklist.insert(doc4.hash(), Some(&schema2_schema), Some(&validator));
+        checklist.insert(doc1.hash().clone(), None, Some(&validator));
+        checklist.insert(doc2.hash().clone(), None, Some(&validator));
+        checklist.insert(doc3.hash().clone(), Some(&[None]), None);
+        checklist.insert(doc4.hash().clone(), Some(&schema2_schema), Some(&validator));
         let mut checklist = DataChecklist::from_checklist(checklist, ());
 
         let mut map = HashMap::new();
-        map.insert(doc1.hash(), doc1);
-        map.insert(doc2.hash(), doc2);
-        map.insert(doc3.hash(), doc3);
-        map.insert(doc4.hash(), doc4);
+        map.insert(doc1.hash().clone(), doc1);
+        map.insert(doc2.hash().clone(), doc2);
+        map.insert(doc3.hash().clone(), doc3);
+        map.insert(doc4.hash().clone(), doc4);
 
         checklist
             .iter()

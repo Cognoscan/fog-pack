@@ -115,6 +115,7 @@ struct DocumentInner {
     hash_state: HashState,
     schema_hash: Option<Hash>,
     doc_hash: Hash,
+    this_hash: Hash,
     signer: Option<Identity>,
     set_compress: Option<Option<u8>>,
 }
@@ -172,12 +173,13 @@ impl DocumentInner {
         signature.encode_vec(&mut self.buf);
         self.hash_state.update(&self.buf[pre_len..]);
         self.signer = Some(key.id().clone());
+        self.this_hash = self.hash_state.hash();
         Ok(self)
     }
 
     /// Get what the document's hash will be, given its current state
-    fn hash(&self) -> Hash {
-        self.hash_state.hash()
+    fn hash(&self) -> &Hash {
+        &self.this_hash
     }
 
     fn split(&self) -> SplitDoc {
@@ -189,7 +191,7 @@ impl DocumentInner {
     }
 
     fn complete(self) -> (Hash, Vec<u8>, Option<Option<u8>>) {
-        (self.hash_state.finalize(), self.buf, self.set_compress)
+        (self.this_hash, self.buf, self.set_compress)
     }
 }
 
@@ -529,7 +531,7 @@ impl NewDocument {
         F: FnOnce(Vec<u8>) -> Result<Vec<u8>>,
     {
         // Create the header
-        let mut buf: Vec<u8> = vec![CompressType::NoCompress.into()];
+        let mut buf: Vec<u8> = vec![CompressType::None.into()];
         if let Some(ref hash) = schema {
             let hash_len = hash.as_ref().len();
             assert!(hash_len < 128);
@@ -564,10 +566,12 @@ impl NewDocument {
         }
         hash_state.update(&buf[start..]);
         let doc_hash = hash_state.hash();
+        let this_hash = doc_hash.clone();
 
         Ok(NewDocument(DocumentInner {
             buf,
             hash_state,
+            this_hash,
             schema_hash: schema.cloned(),
             doc_hash,
             set_compress: None,
@@ -618,7 +622,7 @@ impl NewDocument {
     }
 
     /// Get what the document's hash will be, given its current state
-    pub fn hash(&self) -> Hash {
+    pub fn hash(&self) -> &Hash {
         self.0.hash()
     }
 
@@ -665,6 +669,7 @@ impl Document {
         hash_state.update(split.data);
         let doc_hash = hash_state.hash();
         hash_state.update(split.signature_raw);
+        let this_hash = hash_state.hash();
 
         let signer = if !split.signature_raw.is_empty() {
             let unverified =
@@ -679,6 +684,7 @@ impl Document {
             buf,
             schema_hash,
             hash_state,
+            this_hash,
             doc_hash,
             signer,
             set_compress: None,
@@ -701,7 +707,7 @@ impl Document {
 
     /// Get the hash of the complete document. This can change if the document is signed again with
     /// the [`sign`][Self::sign] function.
-    pub fn hash(&self) -> Hash {
+    pub fn hash(&self) -> &Hash {
         self.0.hash()
     }
 
@@ -744,7 +750,7 @@ mod test {
         let new_doc = NewDocument::new(&1u8, None).unwrap();
         assert!(new_doc.schema_hash().is_none());
         let expected_hash = Hash::new(&[0u8, 1u8]);
-        assert_eq!(new_doc.hash(), expected_hash);
+        assert_eq!(new_doc.hash(), &expected_hash);
         assert_eq!(new_doc.data(), &[1u8]);
         let expected = vec![0u8, 0u8, 1u8, 0u8, 0u8, 1u8];
         let (doc_hash, doc_vec, doc_compress) = Document::from_new(new_doc).complete();
@@ -758,7 +764,7 @@ mod test {
         let encoded = vec![0u8, 0u8, 1u8, 0u8, 0u8, 1u8];
         let doc = Document::new(encoded.clone()).unwrap();
         let expected_hash = Hash::new(&[0u8, 1u8]);
-        assert_eq!(doc.hash(), expected_hash);
+        assert_eq!(doc.hash(), &expected_hash);
         assert_eq!(doc.data(), &[1u8]);
         let val: u8 = doc.deserialize().unwrap();
         assert_eq!(val, 1u8);
@@ -879,7 +885,7 @@ mod test {
         let (doc_hash, doc_vec, _) = Document::from_new(new_doc).complete();
         let doc = Document::new(doc_vec).unwrap();
         let val: u8 = doc.deserialize().unwrap();
-        assert_eq!(doc_hash, doc.hash());
+        assert_eq!(&doc_hash, doc.hash());
         assert_eq!(val, 1u8);
         assert_eq!(doc.signer().unwrap(), key.id());
     }

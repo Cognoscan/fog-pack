@@ -79,9 +79,9 @@ struct EntrySchema {
 pub struct NoSchema;
 
 impl NoSchema {
-    /// Encode a [`NewDocument`], returning the resulting Document's hash and fully encoded format.
-    /// Fails if the internal data isn't actually valid fog-pack, which can sometimes happen with a
-    /// bad Serialize implementation for the data.
+    /// Validate a [`NewDocument`], turning it into a [`Document`]. Fails if the internal data 
+    /// isn't actually valid fog-pack, which can sometimes happen with a bad Serialize 
+    /// implementation for the data.
     pub fn validate_new_doc(doc: NewDocument) -> Result<Document> {
         // Check that this document doesn't have a schema
         if let Some(schema) = doc.schema_hash() {
@@ -202,7 +202,7 @@ fn decompress_doc(compress: Vec<u8>, compression: &Compress) -> Result<Vec<u8>> 
     let split = SplitDoc::split(&compress)?;
     let marker = CompressType::try_from(split.compress_raw)
         .map_err(|m| Error::BadHeader(format!("unrecognized compression marker 0x{:x}", m)))?;
-    if let CompressType::NoCompress = marker {
+    if let CompressType::None = marker {
         return Ok(compress);
     }
     let header_len = compress.len() - split.data.len() - split.signature_raw.len();
@@ -218,7 +218,7 @@ fn decompress_doc(compress: Vec<u8>, compression: &Compress) -> Result<Vec<u8>> 
         MAX_DOC_SIZE,
     )?;
     let data_len = (doc.len() - header_len).to_le_bytes();
-    doc[0] = CompressType::NoCompress.into();
+    doc[0] = CompressType::None.into();
     doc[header_len - 3] = data_len[0];
     doc[header_len - 2] = data_len[1];
     doc[header_len - 1] = data_len[2];
@@ -257,7 +257,7 @@ fn decompress_entry(compress: Vec<u8>, compression: &Compress) -> Result<Vec<u8>
     let split = SplitEntry::split(&compress)?;
     let marker = CompressType::try_from(split.compress_raw)
         .map_err(|m| Error::BadHeader(format!("unrecognized compression marker 0x{:x}", m)))?;
-    if let CompressType::NoCompress = marker {
+    if let CompressType::None = marker {
         return Ok(compress);
     }
 
@@ -272,7 +272,7 @@ fn decompress_entry(compress: Vec<u8>, compression: &Compress) -> Result<Vec<u8>
         MAX_ENTRY_SIZE,
     )?;
     let data_len = (entry.len() - ENTRY_PREFIX_LEN).to_le_bytes();
-    entry[0] = CompressType::NoCompress.into();
+    entry[0] = CompressType::None.into();
     entry[1] = data_len[0];
     entry[2] = data_len[1];
     entry.extend_from_slice(split.signature_raw);
@@ -383,7 +383,7 @@ impl Schema {
     /// Attempt to create a schema from a given document. Fails if the document isn't a schema.
     pub fn from_doc(doc: &Document) -> Result<Self> {
         let inner = doc.deserialize()?;
-        let hash = doc.hash();
+        let hash = doc.hash().clone();
         Ok(Self { hash, inner })
     }
 
@@ -393,8 +393,7 @@ impl Schema {
     }
 
     /// Validate a [`NewDocument`], turning it into a [`Document`]. Fails if the document doesn't
-    /// use this schema, or if it doesn't meet this schema's
-    /// requirements.
+    /// use this schema, or if it doesn't meet this schema's requirements.
     pub fn validate_new_doc(&self, doc: NewDocument) -> Result<Document> {
         // Check that the document uses this schema
         match doc.schema_hash() {
@@ -402,7 +401,7 @@ impl Schema {
             actual => {
                 return Err(Error::SchemaMismatch {
                     actual: actual.cloned(),
-                    expected: None,
+                    expected: Some(self.hash.clone()),
                 })
             }
         }
@@ -424,7 +423,7 @@ impl Schema {
             actual => {
                 return Err(Error::SchemaMismatch {
                     actual: actual.cloned(),
-                    expected: None,
+                    expected: Some(self.hash.clone()),
                 })
             }
         }
@@ -493,12 +492,20 @@ impl Schema {
         Ok(doc)
     }
 
-    /// Encode a [`NewEntry`], returning the resulting Entry's hash and fully encoded format.  
-    /// Fails if the entry key isn't in the schema, or it doesn't meet the requirements.
-    /// The resulting entry is stored in a [`DataChecklist`] that must be iterated over in order to
-    /// finish verification and get the resulting data.
-    pub fn encode_new_entry(&self, entry: NewEntry) -> Result<DataChecklist<(Hash, Vec<u8>)>> {
-        // Validate the data, getting a checklist of any further validation needed
+    /// Validate a [`NewEntry`], turning it into a [`Entry`]. Fails if provided the wrong parent 
+    /// document, the parent document doesn't use this schema, or the entry doesn't meet the schema 
+    /// requirements. The resulting Entry is stored in a [`DataChecklist`] that must be iterated 
+    /// over in order to finish validation.
+    pub fn validate_new_entry(&self, entry: NewEntry) -> Result<DataChecklist<Entry>> {
+        // Check that the entry's parent document uses this schema
+        if entry.schema_hash() != &self.hash {
+            return Err(Error::SchemaMismatch {
+                actual: Some(entry.schema_hash().clone()),
+                expected: Some(self.hash.clone()),
+            });
+        }
+
+        // Validate the data and generate a checklist of remaining documents to check
         let parser = Parser::new(entry.data());
         let entry_schema = self.inner.entries.get(entry.key()).ok_or_else(|| {
             Error::FailValidate(format!("entry key \"{:?}\" is not in schema", entry.key()))
@@ -510,49 +517,48 @@ impl Schema {
                 .validate(&self.inner.types, parser, checklist)?;
         parser.finish()?;
 
-        // Compress the document
-        let (hash, entry, compression) = entry.complete();
-        let entry = match compression {
-            None => compress_entry(entry, &entry_schema.compress),
-            Some(None) => entry,
-            Some(Some(level)) => compress_doc(
-                entry,
-                &Compress::General {
-                    algorithm: 0,
-                    level,
-                },
-            ),
-        };
-
         Ok(DataChecklist::from_checklist(
-            checklist.unwrap(),
-            (hash, entry),
+                checklist.unwrap(),
+                Entry::from_new(entry)
         ))
     }
 
-    /// Encode an [`Entry`], returning the resulting Entry's hash and fully encoded format.  
-    /// Fails if the entry key isn't in the schema, or it doesn't meet the requirements.
-    /// The resulting entry is stored in a [`DataChecklist`] that must be iterated over in order to
-    /// finish verification and get the resulting data.
-    pub fn encode_entry(&self, entry: Entry) -> Result<DataChecklist<(Hash, Vec<u8>)>> {
-        // Validate the data, getting a checklist of any further validation needed
-        let parser = Parser::new(entry.data());
+    /// Encode an [`Entry`], returning the resulting Entry's hash, key, fully encoded format, and a
+    /// list of Hashes of the Documents it needs for validation.
+    /// Fails if provided the wrong parent document or the parent document doesn't use this schema.
+    pub fn encode_entry(&self, entry: Entry) -> Result<(Hash, String, Vec<u8>, Vec<Hash>)> {
+        // Check that the entry's parent document uses this schema
+        if entry.schema_hash() != &self.hash {
+            return Err(Error::SchemaMismatch {
+                actual: Some(entry.schema_hash().clone()),
+                expected: Some(self.hash.clone()),
+            });
+        }
+
+        // We re-run validation here just to collect the hashes of documents needed for validation 
+        // (i.e. the documents that would need to be provided with this entry if it were 
+        // transferred or stored)
+        //
+        // At some point, it's plausible this could be performed with a more minimal validation 
+        // check. 
         let entry_schema = self.inner.entries.get(entry.key()).ok_or_else(|| {
             Error::FailValidate(format!("entry key \"{:?}\" is not in schema", entry.key()))
         })?;
+        let parser = Parser::new(entry.data());
         let checklist = Some(Checklist::new(&self.hash, &self.inner.types));
         let (parser, checklist) =
             entry_schema
                 .entry
                 .validate(&self.inner.types, parser, checklist)?;
         parser.finish()?;
+        let needed_docs: Vec<Hash> = checklist.unwrap().iter().map(|(hash, _)| hash).collect();
 
-        // Compress the document
-        let (hash, entry, compression) = entry.complete();
+        // Compress the entry
+        let (hash, key, entry, compression) = entry.complete();
         let entry = match compression {
             None => compress_entry(entry, &entry_schema.compress),
             Some(None) => entry,
-            Some(Some(level)) => compress_doc(
+            Some(Some(level)) => compress_entry(
                 entry,
                 &Compress::General {
                     algorithm: 0,
@@ -561,10 +567,7 @@ impl Schema {
             ),
         };
 
-        Ok(DataChecklist::from_checklist(
-            checklist.unwrap(),
-            (hash, entry),
-        ))
+        Ok((hash, key, entry, needed_docs))
     }
 
     /// Decode an entry, given the key and parent Hash. Result is in a [`DataChecklist`] that must
@@ -573,8 +576,19 @@ impl Schema {
         &self,
         entry: Vec<u8>,
         key: &str,
-        parent: &Hash,
+        parent: &Document,
     ) -> Result<DataChecklist<Entry>> {
+        // Check that the entry's parent document uses this schema
+        match parent.schema_hash() {
+            Some(hash) if hash == &self.hash => (),
+            actual => {
+                return Err(Error::SchemaMismatch {
+                    actual: actual.cloned(),
+                    expected: Some(self.hash.clone()),
+                })
+            }
+        }
+
         // Find the entry
         let entry_schema = self.inner.entries.get(key).ok_or_else(|| {
             Error::FailValidate(format!("entry key \"{:?}\" is not in schema", key))
@@ -599,21 +613,38 @@ impl Schema {
         Ok(DataChecklist::from_checklist(checklist.unwrap(), entry))
     }
 
-    /// Decode a Entry, skipping any checks of the data. This should only be run when the raw
+    /// Decode a Entry, skipping most checks of the data. This should only be run when the raw
     /// entry has definitely been passed through validation before, i.e. if it is stored in a
     /// local database after going through [`encode_entry`][Self::encode_entry] or
     /// [`encode_new_entry`][Self::encode_new_entry].
-    pub fn trusted_decode_entry(&self, entry: Vec<u8>, key: &str, parent: &Hash) -> Result<Entry> {
+    pub fn trusted_decode_entry(
+        &self,
+        entry: Vec<u8>,
+        key: &str,
+        parent: &Document,
+        entry_hash: &Hash,
+    ) -> Result<Entry> {
+        // Check that the entry's parent document uses this schema
+        match parent.schema_hash() {
+            Some(hash) if hash == &self.hash => (),
+            actual => {
+                return Err(Error::SchemaMismatch {
+                    actual: actual.cloned(),
+                    expected: Some(self.hash.clone()),
+                })
+            }
+        }
         // Find the entry
         let entry_schema = self.inner.entries.get(key).ok_or_else(|| {
             Error::FailValidate(format!("entry key \"{:?}\" is not in schema", key))
         })?;
 
         // Decompress
-        let entry = Entry::new(
+        let entry = Entry::trusted_new(
             decompress_entry(entry, &entry_schema.compress)?,
             key,
             parent,
+            entry_hash,
         )?;
         Ok(entry)
     }

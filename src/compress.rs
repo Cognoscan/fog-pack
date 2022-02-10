@@ -12,19 +12,19 @@ pub const ALGORITHM_ZSTD: u8 = 0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CompressType {
     /// No compression
-    NoCompress,
+    None,
     /// Standard Compression
-    Compress,
+    General,
     /// Dictionary compression
-    DictCompress,
+    Dict,
 }
 
 impl CompressType {
     pub fn type_of(compress: &Compress) -> Self {
         match compress {
-            Compress::None => CompressType::NoCompress,
-            Compress::General { .. } => CompressType::Compress,
-            Compress::Dict(_) => CompressType::DictCompress,
+            Compress::None => CompressType::None,
+            Compress::General { .. } => CompressType::General,
+            Compress::Dict(_) => CompressType::Dict,
         }
     }
 }
@@ -32,9 +32,9 @@ impl CompressType {
 impl From<CompressType> for u8 {
     fn from(val: CompressType) -> u8 {
         match val {
-            CompressType::NoCompress => 0,
-            CompressType::Compress => 1,
-            CompressType::DictCompress => 2,
+            CompressType::None => 0,
+            CompressType::General => 1,
+            CompressType::Dict => 2,
         }
     }
 }
@@ -43,9 +43,9 @@ impl TryFrom<u8> for CompressType {
     type Error = u8;
     fn try_from(val: u8) -> Result<CompressType, u8> {
         match val {
-            0 => Ok(CompressType::NoCompress),
-            1 => Ok(CompressType::Compress),
-            2 => Ok(CompressType::DictCompress),
+            0 => Ok(CompressType::None),
+            1 => Ok(CompressType::General),
+            2 => Ok(CompressType::Dict),
             _ => Err(val),
         }
     }
@@ -85,43 +85,37 @@ impl Compress {
             Compress::General { level, .. } => {
                 let dest_len = dest.len();
                 let max_len = zstd_safe::compress_bound(src.len());
-                dest.reserve(max_len);
-                unsafe {
-                    dest.set_len(dest_len + max_len);
-                    match zstd_safe::compress(&mut dest[dest_len..], src, *level as i32) {
-                        Ok(len) if len < src.len() => {
-                            dest.truncate(dest_len + len);
-                            Ok(dest)
-                        }
-                        _ => Err(()),
+                dest.resize(dest_len + max_len, 0);
+                match zstd_safe::compress(&mut dest[dest_len..], src, *level as i32) {
+                    Ok(len) if len < src.len() => {
+                        dest.truncate(dest_len + len);
+                        Ok(dest)
                     }
+                    _ => Err(()),
                 }
             }
             Compress::Dict(dict) => {
                 let dest_len = dest.len();
                 let max_len = zstd_safe::compress_bound(src.len());
-                dest.reserve(max_len);
-                unsafe {
-                    dest.set_len(dest_len + max_len);
-                    match &dict.0 {
-                        DictionaryPrivate::Unknown { level, .. } => {
-                            match zstd_safe::compress(&mut dest[dest_len..], src, *level as i32) {
-                                Ok(len) if len < src.len() => {
-                                    dest.truncate(dest_len + len);
-                                    Ok(dest)
-                                }
-                                _ => Err(()),
+                dest.resize(dest_len + max_len, 0u8);
+                match &dict.0 {
+                    DictionaryPrivate::Unknown { level, .. } => {
+                        match zstd_safe::compress(&mut dest[dest_len..], src, *level as i32) {
+                            Ok(len) if len < src.len() => {
+                                dest.truncate(dest_len + len);
+                                Ok(dest)
                             }
+                            _ => Err(()),
                         }
-                        DictionaryPrivate::Zstd { cdict, .. } => {
-                            let mut ctx = zstd_safe::create_cctx();
-                            match ctx.compress_using_cdict(&mut dest[dest_len..], src, cdict) {
-                                Ok(len) if len < src.len() => {
-                                    dest.truncate(dest_len + len);
-                                    Ok(dest)
-                                }
-                                _ => Err(()),
+                    }
+                    DictionaryPrivate::Zstd { cdict, .. } => {
+                        let mut ctx = zstd_safe::create_cctx();
+                        match ctx.compress_using_cdict(&mut dest[dest_len..], src, cdict) {
+                            Ok(len) if len < src.len() => {
+                                dest.truncate(dest_len + len);
+                                Ok(dest)
                             }
+                            _ => Err(()),
                         }
                     }
                 }
@@ -140,7 +134,7 @@ impl Compress {
         max_size: usize,
     ) -> Result<Vec<u8>> {
         match marker {
-            CompressType::NoCompress => {
+            CompressType::None => {
                 if dest.len() + src.len() + extra_size > max_size {
                     Err(Error::FailDecompress(format!(
                         "Decompressed length {} would be larger than maximum of {}",
@@ -153,8 +147,8 @@ impl Compress {
                     Ok(dest)
                 }
             }
-            CompressType::Compress => {
-                // Prep for decomressed data
+            CompressType::General => {
+                // Prep for decompressed data
                 let header_len = dest.len();
                 let expected_len = zstd_safe::get_frame_content_size(src);
                 if expected_len > (max_size - header_len) as u64 {
@@ -166,22 +160,20 @@ impl Compress {
                 }
                 let expected_len = expected_len as usize;
                 dest.reserve(expected_len + extra_size);
+                dest.resize(header_len + expected_len, 0u8);
 
                 // Safety: Immediately before this, we reserve enough space for the header and the
                 // expected length, so setting the length is OK. The decompress function overwrites
                 // data and returns the new valid length, so no data is uninitialized after this
                 // block completes. In the event of a failure, the vec is freed, so it is never
                 // returned in an invalid state.
-                unsafe {
-                    dest.set_len(header_len + expected_len);
-                    let len = zstd_safe::decompress(&mut dest[header_len..], src).map_err(|e| {
-                        Error::FailDecompress(format!("Failed Decompression, zstd error = {}", e))
-                    })?;
-                    dest.truncate(header_len + len);
-                }
+                let len = zstd_safe::decompress(&mut dest[header_len..], src).map_err(|e| {
+                    Error::FailDecompress(format!("Failed Decompression, zstd error = {}", e))
+                })?;
+                dest.truncate(header_len + len);
                 Ok(dest)
             }
-            CompressType::DictCompress => {
+            CompressType::Dict => {
                 // Fetch dictionary
                 let ddict = if let Compress::Dict(Dictionary(DictionaryPrivate::Zstd {
                     ddict,
@@ -206,25 +198,23 @@ impl Compress {
                 }
                 let expected_len = expected_len as usize;
                 dest.reserve(expected_len + extra_size);
+                dest.resize(header_len + expected_len, 0u8);
 
                 // Safety: Immediately before this, we reserve enough space for the header and the
                 // expected length, so setting the length is OK. The decompress function overwrites
                 // data and returns the new valid length, so no data is uninitialized after this
                 // block completes. In the event of a failure, the vec is freed, so it is never
                 // returned in an invalid state.
-                unsafe {
-                    dest.set_len(header_len + expected_len);
-                    let mut dctx = zstd_safe::create_dctx();
-                    let len = dctx
-                        .decompress_using_ddict(&mut dest[header_len..], src, ddict)
-                        .map_err(|e| {
-                            Error::FailDecompress(format!(
+                let mut dctx = zstd_safe::create_dctx();
+                let len = dctx
+                    .decompress_using_ddict(&mut dest[header_len..], src, ddict)
+                    .map_err(|e| {
+                        Error::FailDecompress(format!(
                                 "Failed Decompression, zstd error = {}",
                                 e
-                            ))
-                        })?;
-                    dest.truncate(header_len + len);
-                }
+                        ))
+                    })?;
+                dest.truncate(header_len + len);
                 Ok(dest)
             }
         }

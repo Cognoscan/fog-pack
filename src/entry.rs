@@ -63,16 +63,31 @@ impl<'a> SplitEntry<'a> {
     }
 }
 
+/// A reference triplet to an [`Entry`], containing the hash of the entry's parent document, the 
+/// key string for the entry, and the hash of the entry itself. Note that the entry hash is still 
+/// formed in a way the includes the parent & key, so changing either means the entry hash would 
+/// also change.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct EntryRef {
+    pub parent: Hash,
+    pub key: String,
+    pub hash: Hash,
+}
+
+impl std::fmt::Display for EntryRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}-{}", self.parent, self.key, self.hash)
+    }
+}
+
 #[derive(Clone, Debug)]
-pub struct EntryInner {
+struct EntryInner {
     buf: Vec<u8>,
     /// Working memory for hash calculations. Should only be created by signing or new(), and only 
     /// modified & read within signing operations.
     hash_state: Option<HashState>,
-    key: String,
-    parent_hash: Hash,
+    id: EntryRef,
     schema_hash: Hash,
-    this_hash: Hash,
     signer: Option<Identity>,
     set_compress: Option<Option<u8>>,
 }
@@ -85,7 +100,7 @@ impl EntryInner {
 
     /// Get the hash of the Entry's parent [`Document`][crate::document::Document].
     fn parent(&self) -> &Hash {
-        &self.parent_hash
+        &self.id.parent
     }
 
     /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent 
@@ -96,7 +111,7 @@ impl EntryInner {
 
     /// Get the Entry's string key.
     fn key(&self) -> &str {
-        &self.key
+        &self.id.key
     }
 
     /// Get the Identity of the signer of this entry, if the entry is signed.
@@ -107,7 +122,11 @@ impl EntryInner {
     /// Get the hash of the complete entry. This can change if the entry is signed again with the
     /// [`sign`][Self::sign] function.
     fn hash(&self) -> &Hash {
-        &self.this_hash
+        &self.id.hash
+    }
+
+    fn reference(&self) -> &EntryRef {
+        &self.id
     }
 
     /// Deserialize the entry's contained data into a value.
@@ -144,7 +163,7 @@ impl EntryInner {
         let pre_sign_len = if self.signer.is_some() {
             let split = SplitEntry::split(&self.buf).unwrap();
             let new_len = split.data.len() + ENTRY_PREFIX_LEN;
-            self.hash_state = Some(Self::setup_hash_state(self.parent_hash.clone(), &self.key, split.data));
+            self.hash_state = Some(Self::setup_hash_state(self.id.parent.clone(), &self.id.key, split.data));
             new_len
         }
         else {
@@ -154,7 +173,7 @@ impl EntryInner {
         // Load the hash state
         if self.hash_state.is_none() {
             let split = SplitEntry::split(&self.buf).unwrap();
-            let state = Self::setup_hash_state(self.parent_hash.clone(), &self.key, split.data);
+            let state = Self::setup_hash_state(self.id.parent.clone(), &self.id.key, split.data);
             self.hash_state = Some(state);
         }
         let hash_state = self.hash_state.as_mut().unwrap();
@@ -177,13 +196,13 @@ impl EntryInner {
         self.buf.resize(pre_sign_len, 0);
         signature.encode_vec(&mut self.buf);
         hash_state.update(&self.buf[pre_sign_len..]);
-        self.this_hash = hash_state.hash();
+        self.id.hash = hash_state.hash();
         self.signer = Some(key.id().clone());
         Ok(self)
     }
 
-    fn complete(self) -> (Hash, String, Vec<u8>, Option<Option<u8>>) {
-        (self.this_hash, self.key, self.buf, self.set_compress)
+    fn complete(self) -> (EntryRef, Vec<u8>, Option<Option<u8>>) {
+        (self.id, self.buf, self.set_compress)
     }
 }
 
@@ -226,10 +245,12 @@ impl NewEntry {
         Ok(Self(EntryInner {
             buf,
             hash_state: Some(hash_state),
-            key: key.to_owned(),
-            parent_hash: parent.hash().clone(),
+            id: EntryRef {
+                parent: parent.hash().clone(),
+                key: key.to_owned(),
+                hash: this_hash,
+            },
             schema_hash,
-            this_hash,
             signer: None,
             set_compress: None,
         }))
@@ -297,6 +318,11 @@ impl NewEntry {
         self.0.key()
     }
 
+    /// Get a [`EntryRef`] containing a full reference to the entry.
+    pub fn reference(&self) -> &EntryRef {
+        self.0.reference()
+    }
+
 }
 
 /// Holds serialized data associated with a parent document and a key string.
@@ -339,10 +365,12 @@ impl Entry {
         Ok(Self(EntryInner {
             buf,
             hash_state: None,
-            key: key.to_owned(),
-            parent_hash: parent.hash().to_owned(),
+            id: EntryRef {
+                parent: parent.hash().to_owned(),
+                key: key.to_owned(),
+                hash: entry.to_owned(),
+            },
             schema_hash,
-            this_hash: entry.to_owned(),
             signer,
             set_compress: None,
         }))
@@ -381,10 +409,12 @@ impl Entry {
         Ok(Self(EntryInner {
             buf,
             hash_state: Some(hash_state),
-            key: key.to_owned(),
-            parent_hash: parent.hash().to_owned(),
+            id: EntryRef {
+                parent: parent.hash().to_owned(),
+                key: key.to_owned(),
+                hash: this_hash,
+            },
             schema_hash,
-            this_hash,
             signer,
             set_compress: None,
         }))
@@ -408,6 +438,11 @@ impl Entry {
     /// Get the Entry's string key.
     pub fn key(&self) -> &str {
         self.0.key()
+    }
+
+    /// Get a [`EntryRef`] containing a full reference to the entry.
+    pub fn reference(&self) -> &EntryRef {
+        self.0.reference()
     }
 
     /// Get the Identity of the signer of this entry, if the entry is signed.
@@ -440,7 +475,7 @@ impl Entry {
         Ok(Self(self.0.sign(key)?))
     }
 
-    pub(crate) fn complete(self) -> (Hash, String, Vec<u8>, Option<Option<u8>>) {
+    pub(crate) fn complete(self) -> (EntryRef, Vec<u8>, Option<Option<u8>>) {
         self.0.complete()
     }
 }

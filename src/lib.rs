@@ -173,14 +173,14 @@
 //! // more time:
 //! let (blog_hash, encoded_blog): (Hash, Vec<u8>) =
 //!     schema.encode_doc(my_blog)?;
-//! let (post_hash, encoded_post, _): (Hash, Vec<u8>, Vec<Hash>) =
+//! let (post_ref, encoded_post, _): (EntryRef, Vec<u8>, Vec<Hash>) =
 //!     schema.encode_entry(new_post)?;
 //! let encoded_query =
 //!     schema.encode_query(query)?;
 //!
 //! // Decoding is also done via the schema:
 //! let my_blog = schema.decode_doc(encoded_blog)?;
-//! let new_post = schema.decode_entry(encoded_post, "post", &my_blog)?;
+//! let new_post = schema.decode_entry(encoded_post, &post_ref.key, &my_blog)?;
 //! let query = schema.decode_query(encoded_query)?;
 //!
 //! # Ok(())

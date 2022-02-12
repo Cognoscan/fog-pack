@@ -523,10 +523,10 @@ impl Schema {
         ))
     }
 
-    /// Encode an [`Entry`], returning the resulting Entry's hash, key, fully encoded format, and a
-    /// list of Hashes of the Documents it needs for validation.
+    /// Encode an [`Entry`], returning the resulting Entry's reference, its fully encoded format, 
+    /// and a list of Hashes of the Documents it needs for validation.
     /// Fails if provided the wrong parent document or the parent document doesn't use this schema.
-    pub fn encode_entry(&self, entry: Entry) -> Result<(Hash, String, Vec<u8>, Vec<Hash>)> {
+    pub fn encode_entry(&self, entry: Entry) -> Result<(EntryRef, Vec<u8>, Vec<Hash>)> {
         // Check that the entry's parent document uses this schema
         if entry.schema_hash() != &self.hash {
             return Err(Error::SchemaMismatch {
@@ -554,7 +554,7 @@ impl Schema {
         let needed_docs: Vec<Hash> = checklist.unwrap().iter().map(|(hash, _)| hash).collect();
 
         // Compress the entry
-        let (hash, key, entry, compression) = entry.complete();
+        let (entry_ref, entry, compression) = entry.complete();
         let entry = match compression {
             None => compress_entry(entry, &entry_schema.compress),
             Some(None) => entry,
@@ -567,7 +567,7 @@ impl Schema {
             ),
         };
 
-        Ok((hash, key, entry, needed_docs))
+        Ok((entry_ref, entry, needed_docs))
     }
 
     /// Decode an entry, given the key and parent Hash. Result is in a [`DataChecklist`] that must

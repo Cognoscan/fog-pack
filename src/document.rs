@@ -580,7 +580,7 @@ impl NewDocument {
     }
 
     /// Create a new Entry from any serializable data, a key, and the Hash of the parent document.
-    pub fn new<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
+    pub fn new<S: Serialize>(schema: Option<&Hash>, data: S) -> Result<Self> {
         Self::new_from(schema, |buf| {
             // Encode the data
             let mut ser = FogSerializer::from_vec(buf, false);
@@ -747,7 +747,7 @@ mod test {
 
     #[test]
     fn create_new() {
-        let new_doc = NewDocument::new(&1u8, None).unwrap();
+        let new_doc = NewDocument::new(None, &1u8).unwrap();
         assert!(new_doc.schema_hash().is_none());
         let expected_hash = Hash::new(&[0u8, 1u8]);
         assert_eq!(new_doc.hash(), &expected_hash);
@@ -784,7 +784,7 @@ mod test {
         // Should be large enough to include the signature
         let sign_len = key.sign(&Hash::new(b"meh")).size();
         let new_doc =
-            NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 9 - sign_len)]), None).unwrap();
+            NewDocument::new(None, Bytes::new(&vec[..(MAX_DOC_SIZE - 9 - sign_len)])).unwrap();
         let signed_doc = new_doc.clone().sign(&key).unwrap();
         assert_eq!(
             &signed_doc.0.buf[..(signed_doc.0.buf.len() - sign_len)],
@@ -792,21 +792,21 @@ mod test {
         );
 
         // Should be just large enough
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 10)]), None).unwrap();
+        let new_doc = NewDocument::new(None, Bytes::new(&vec[..(MAX_DOC_SIZE - 10)])).unwrap();
         let mut expected = vec![0x00, 0x00];
         expected.extend_from_slice(&(MAX_DOC_SIZE - 6).to_le_bytes()[..3]);
         assert_eq!(new_doc.0.buf[0..5], expected);
-        let new_doc = NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 9)]), None).unwrap();
+        let new_doc = NewDocument::new(None, Bytes::new(&vec[..(MAX_DOC_SIZE - 9)])).unwrap();
         let mut expected = vec![0x00, 0x00];
         expected.extend_from_slice(&(MAX_DOC_SIZE - 5).to_le_bytes()[..3]);
         assert_eq!(new_doc.0.buf[0..5], expected);
         new_doc.sign(&key).unwrap_err(); // We have no space for a signature
 
         // Should fail by virtue of being too large
-        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 8)]), None).unwrap_err();
-        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 7)]), None).unwrap_err();
-        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 6)]), None).unwrap_err();
-        NewDocument::new(Bytes::new(&vec[..(MAX_DOC_SIZE - 5)]), None).unwrap_err();
+        NewDocument::new(None, Bytes::new(&vec[..(MAX_DOC_SIZE - 8)])).unwrap_err();
+        NewDocument::new(None, Bytes::new(&vec[..(MAX_DOC_SIZE - 7)])).unwrap_err();
+        NewDocument::new(None, Bytes::new(&vec[..(MAX_DOC_SIZE - 6)])).unwrap_err();
+        NewDocument::new(None, Bytes::new(&vec[..(MAX_DOC_SIZE - 5)])).unwrap_err();
     }
 
     #[test]
@@ -821,8 +821,8 @@ mod test {
         // Should be large enough to include the signature
         let sign_len = key.sign(&Hash::new(b"meh")).size();
         let new_doc = NewDocument::new(
-            Bytes::new(&vec[..(MAX_DOC_SIZE - 9 - sign_len - hash_len)]),
             Some(&schema_hash),
+            Bytes::new(&vec[..(MAX_DOC_SIZE - 9 - sign_len - hash_len)]),
         )
         .unwrap();
         let signed_doc = new_doc.clone().sign(&key).unwrap();
@@ -833,8 +833,8 @@ mod test {
 
         // Should be 1 byte below max - check against expected format
         let new_doc = NewDocument::new(
-            Bytes::new(&vec[..(MAX_DOC_SIZE - 10 - hash_len)]),
             Some(&schema_hash),
+            Bytes::new(&vec[..(MAX_DOC_SIZE - 10 - hash_len)]),
         )
         .unwrap();
         let mut expected = vec![0x00, hash_len as u8];
@@ -844,8 +844,8 @@ mod test {
 
         // Should be at max - check against expected format
         let new_doc = NewDocument::new(
-            Bytes::new(&vec[..(MAX_DOC_SIZE - 9 - hash_len)]),
             Some(&schema_hash),
+            Bytes::new(&vec[..(MAX_DOC_SIZE - 9 - hash_len)]),
         )
         .unwrap();
         let mut expected = vec![0x00, hash_len as u8];
@@ -856,23 +856,23 @@ mod test {
 
         // Should fail by virtue of being too large
         NewDocument::new(
+            Some(&schema_hash),
             Bytes::new(&vec[..(MAX_DOC_SIZE - 8 - hash_len)]),
-            Some(&schema_hash),
         )
         .unwrap_err();
         NewDocument::new(
+            Some(&schema_hash),
             Bytes::new(&vec[..(MAX_DOC_SIZE - 7 - hash_len)]),
-            Some(&schema_hash),
         )
         .unwrap_err();
         NewDocument::new(
+            Some(&schema_hash),
             Bytes::new(&vec[..(MAX_DOC_SIZE - 6 - hash_len)]),
-            Some(&schema_hash),
         )
         .unwrap_err();
         NewDocument::new(
-            Bytes::new(&vec[..(MAX_DOC_SIZE - 5 - hash_len)]),
             Some(&schema_hash),
+            Bytes::new(&vec[..(MAX_DOC_SIZE - 5 - hash_len)]),
         )
         .unwrap_err();
     }
@@ -880,7 +880,7 @@ mod test {
     #[test]
     fn sign_roundtrip() {
         let key = IdentityKey::new_temp(&mut rand::rngs::OsRng);
-        let new_doc = NewDocument::new(&1u8, None).unwrap().sign(&key).unwrap();
+        let new_doc = NewDocument::new(None, &1u8).unwrap().sign(&key).unwrap();
         assert_eq!(new_doc.data(), &[1u8]);
         let (doc_hash, doc_vec, _) = Document::from_new(new_doc).complete();
         let doc = Document::new(doc_vec).unwrap();

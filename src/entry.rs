@@ -257,7 +257,7 @@ impl NewEntry {
     }
 
     /// Create a new Entry from any serializable data, a key, and the Hash of the parent document.
-    pub fn new<S: Serialize>(data: S, key: &str, parent: &Document) -> Result<Self> {
+    pub fn new<S: Serialize>(key: &str, parent: &Document, data: S) -> Result<Self> {
         Self::new_from(key, parent, |buf| {
             // Serialize the data
             let mut ser = FogSerializer::from_vec(buf, false);

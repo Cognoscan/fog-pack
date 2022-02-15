@@ -359,7 +359,7 @@ impl SchemaBuilder {
 
     /// Build the Schema, compiling the result into a Document
     pub fn build(self) -> Result<Document> {
-        let doc = NewDocument::new(self.inner, None)?;
+        let doc = NewDocument::new(None, self.inner)?;
         NoSchema::validate_new_doc(doc)
     }
 }

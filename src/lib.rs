@@ -151,7 +151,7 @@
 //!     author: "ElectricCogs".into(),
 //!     link: Some("https://cognoscan.github.io/".into()),
 //! };
-//! let my_blog = NewDocument::new(my_blog, Some(schema.hash()))?.sign(&my_key)?;
+//! let my_blog = NewDocument::new(Some(schema.hash()), my_blog)?.sign(&my_key)?;
 //! let my_blog = schema.validate_new_doc(my_blog)?;
 //!
 //! // First post!
@@ -160,7 +160,7 @@
 //!     title: Some("My first post".into()),
 //!     content: "I'm making my first post using fog-pack!".into(),
 //! };
-//! let new_post = NewEntry::new(new_post, "post", &my_blog)?.sign(&my_key)?;
+//! let new_post = NewEntry::new("post", &my_blog, new_post)?.sign(&my_key)?;
 //! let new_post = schema.validate_new_entry(new_post)?.complete()?;
 //!
 //! // We can find entries using a Query:

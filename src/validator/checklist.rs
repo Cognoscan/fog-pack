@@ -201,13 +201,13 @@ mod test {
             .unwrap();
         let schema2 = Schema::from_doc(&schema2).unwrap();
 
-        let doc1 = NoSchema::validate_new_doc(NewDocument::new(0u8, None).unwrap()).unwrap();
-        let doc2 = NoSchema::validate_new_doc(NewDocument::new(1u8, None).unwrap()).unwrap();
+        let doc1 = NoSchema::validate_new_doc(NewDocument::new(None, 0u8).unwrap()).unwrap();
+        let doc2 = NoSchema::validate_new_doc(NewDocument::new(None, 1u8).unwrap()).unwrap();
         let doc3 = schema1
-            .validate_new_doc(NewDocument::new(0u8, Some(schema1.hash())).unwrap())
+            .validate_new_doc(NewDocument::new(Some(schema1.hash()), 0u8).unwrap())
             .unwrap();
         let doc4 = schema2
-            .validate_new_doc(NewDocument::new(0u8, Some(schema2.hash())).unwrap())
+            .validate_new_doc(NewDocument::new(Some(schema2.hash()), 0u8).unwrap())
             .unwrap();
 
         let types = BTreeMap::new();

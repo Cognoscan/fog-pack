@@ -181,9 +181,23 @@ impl<'a> ValueRef<'a> {
         }
     }
 
+    pub fn as_f32(&self) -> Option<f32> {
+        match *self {
+            ValueRef::F32(n) => Some(n),
+            _ => None,
+        }
+    }
+
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
-            ValueRef::F32(n) => Some(From::from(n)),
+            ValueRef::F64(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    pub fn as_floating(&self) -> Option<f64> {
+        match *self {
+            ValueRef::F32(n) => Some(n.into()),
             ValueRef::F64(n) => Some(n),
             _ => None,
         }
@@ -704,49 +718,57 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
             fn visit_enum<A: EnumAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
                 let (variant, access) = access.variant()?;
                 use fog_crypto::serde::*;
-                use serde_bytes::Bytes;
-                let bytes: &Bytes = access.newtype_variant()?;
+                use serde_bytes::{Bytes, ByteBuf};
                 match variant {
                     FOG_TYPE_ENUM_TIME_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = Timestamp::try_from(bytes.as_ref()).map_err(A::Error::custom)?;
                         Ok(ValueRef::Timestamp(val))
                     }
                     FOG_TYPE_ENUM_HASH_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = Hash::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::Hash(val))
                     }
                     FOG_TYPE_ENUM_IDENTITY_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = Identity::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::Identity(val))
                     }
                     FOG_TYPE_ENUM_LOCK_ID_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = LockId::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::LockId(val))
                     }
                     FOG_TYPE_ENUM_STREAM_ID_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = StreamId::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::StreamId(val))
                     }
                     FOG_TYPE_ENUM_DATA_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = DataLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::DataLockbox(val))
                     }
                     FOG_TYPE_ENUM_IDENTITY_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = IdentityLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::IdentityLockbox(val))
                     }
                     FOG_TYPE_ENUM_STREAM_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = StreamLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::StreamLockbox(val))
                     }
                     FOG_TYPE_ENUM_LOCK_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = LockLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::LockLockbox(val))
@@ -759,3 +781,126 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
         deserializer.deserialize_any(ValueVisitor)
     }
 }
+#[cfg(test)]
+mod test {
+    use crate::{document::NewDocument, schema::NoSchema};
+
+    use super::*;
+
+    #[test]
+    fn hash() {
+        let obj = Hash::new(b"Just some test hash");
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_hash(), Some(&obj));
+    }
+
+    #[test]
+    fn null() {
+        let obj = ();
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert!(decode.is_nil());
+    }
+
+    #[test]
+    fn int() {
+        let list: Vec<Integer> = vec![
+            i64::MIN.into(), i32::MIN.into(), i16::MIN.into(), i8::MIN.into(), (-1i8).into(),
+            0u8.into(), 1u8.into(), u8::MAX.into(), u16::MAX.into(), u32::MAX.into(), u64::MAX.into()];
+        for obj in list {
+            let doc = NewDocument::new(None, &obj).unwrap();
+            let doc = NoSchema::validate_new_doc(doc).unwrap();
+            let decode: ValueRef = doc.deserialize().unwrap();
+            assert_eq!(decode.as_int(), Some(obj));
+        }
+    }
+
+    #[test]
+    fn bool() {
+        let list = vec![false, true];
+        for obj in list {
+            let doc = NewDocument::new(None, &obj).unwrap();
+            let doc = NoSchema::validate_new_doc(doc).unwrap();
+            let decode: ValueRef = doc.deserialize().unwrap();
+            assert_eq!(decode.as_bool(), Some(obj));
+        }
+    }
+
+    #[test]
+    fn str() {
+        let list = vec!["", "\0", "a string", "😄"];
+        for obj in list {
+            let doc = NewDocument::new(None, &obj).unwrap();
+            let doc = NoSchema::validate_new_doc(doc).unwrap();
+            let decode: ValueRef = doc.deserialize().unwrap();
+            assert_eq!(decode.as_str(), Some(obj));
+        }
+    }
+
+    #[test]
+    fn f32() {
+        let list = vec![0.0f32, f32::MIN, f32::MAX];
+        for obj in list {
+            let doc = NewDocument::new(None, &obj).unwrap();
+            let doc = NoSchema::validate_new_doc(doc).unwrap();
+            let decode: ValueRef = doc.deserialize().unwrap();
+            assert_eq!(decode.as_f32(), Some(obj));
+        }
+    }
+
+    #[test]
+    fn f64() {
+        let list = vec![0.0f64, f64::MIN, f64::MAX];
+        for obj in list {
+            let doc = NewDocument::new(None, &obj).unwrap();
+            let doc = NoSchema::validate_new_doc(doc).unwrap();
+            let decode: ValueRef = doc.deserialize().unwrap();
+            assert_eq!(decode.as_f64(), Some(obj));
+        }
+    }
+
+    #[test]
+    fn bin() {
+        use serde_bytes::ByteBuf;
+        let list = vec![vec![], vec![0u8], vec![0u8,1u8,2u8]];
+        for obj in list {
+            let obj = ByteBuf::from(obj);
+            let doc = NewDocument::new(None, &obj).unwrap();
+            let doc = NoSchema::validate_new_doc(doc).unwrap();
+            let decode: ValueRef = doc.deserialize().unwrap();
+            assert_eq!(decode.as_slice(), Some(obj.as_slice()));
+        }
+    }
+
+    #[test]
+    fn array() {
+        let obj = Value::from(vec![
+            Value::from(true),
+            Value::from(1u64),
+            Value::from("hi"),
+            Value::from(vec![0u8,1u8,2u8])
+        ]);
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        match (decode.as_array(), obj.as_array()) {
+            (Some(x), Some(y)) => assert!(x==y),
+            _ => panic!("Expected both to be arrays"),
+        }
+    }
+
+    //Map(BTreeMap<&'a str, ValueRef<'a>>),
+    //Identity(Identity),
+    //StreamId(StreamId),
+    //LockId(LockId),
+    //Timestamp(Timestamp),
+    //DataLockbox(&'a DataLockboxRef),
+    //IdentityLockbox(&'a IdentityLockboxRef),
+    //StreamLockbox(&'a StreamLockboxRef),
+    //LockLockbox(&'a LockLockboxRef),
+
+}
+

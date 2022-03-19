@@ -183,9 +183,23 @@ impl Value {
         }
     }
 
+    pub fn as_f32(&self) -> Option<f32> {
+        match *self {
+            Value::F32(n) => Some(n),
+            _ => None,
+        }
+    }
+
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
-            Value::F32(n) => Some(From::from(n)),
+            Value::F64(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    pub fn as_floating(&self) -> Option<f64> {
+        match *self {
+            Value::F32(n) => Some(n.into()),
             Value::F64(n) => Some(n),
             _ => None,
         }

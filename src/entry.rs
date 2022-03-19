@@ -67,7 +67,7 @@ impl<'a> SplitEntry<'a> {
 /// key string for the entry, and the hash of the entry itself. Note that the entry hash is still 
 /// formed in a way the includes the parent & key, so changing either means the entry hash would 
 /// also change.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct EntryRef {
     pub parent: Hash,
     pub key: String,

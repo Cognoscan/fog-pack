@@ -53,7 +53,7 @@ impl<'a> ValueRef<'a> {
         }
     }
 
-    pub fn is_nil(&self) -> bool {
+    pub fn is_null(&self) -> bool {
         matches!(self, ValueRef::Null)
     }
 
@@ -211,7 +211,7 @@ impl<'a> ValueRef<'a> {
         }
     }
 
-    pub fn as_slice(&self) -> Option<&[u8]> {
+    pub fn as_bin(&self) -> Option<&[u8]> {
         if let ValueRef::Bin(val) = *self {
             Some(val)
         } else {
@@ -783,26 +783,20 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
 }
 #[cfg(test)]
 mod test {
+    use fog_crypto::{identity::IdentityKey, stream::StreamKey, lock::LockKey};
+
     use crate::{document::NewDocument, schema::NoSchema};
 
     use super::*;
 
     #[test]
-    fn hash() {
-        let obj = Hash::new(b"Just some test hash");
-        let doc = NewDocument::new(None, &obj).unwrap();
-        let doc = NoSchema::validate_new_doc(doc).unwrap();
-        let decode: ValueRef = doc.deserialize().unwrap();
-        assert_eq!(decode.as_hash(), Some(&obj));
-    }
-
-    #[test]
     fn null() {
-        let obj = ();
+        let obj = ValueRef::from(());
+        assert!(obj.is_null());
         let doc = NewDocument::new(None, &obj).unwrap();
         let doc = NoSchema::validate_new_doc(doc).unwrap();
         let decode: ValueRef = doc.deserialize().unwrap();
-        assert!(decode.is_nil());
+        assert!(decode.is_null());
     }
 
     #[test]
@@ -811,10 +805,11 @@ mod test {
             i64::MIN.into(), i32::MIN.into(), i16::MIN.into(), i8::MIN.into(), (-1i8).into(),
             0u8.into(), 1u8.into(), u8::MAX.into(), u16::MAX.into(), u32::MAX.into(), u64::MAX.into()];
         for obj in list {
+            let obj = ValueRef::from(obj);
             let doc = NewDocument::new(None, &obj).unwrap();
             let doc = NoSchema::validate_new_doc(doc).unwrap();
             let decode: ValueRef = doc.deserialize().unwrap();
-            assert_eq!(decode.as_int(), Some(obj));
+            assert_eq!(decode.as_int(), obj.as_int());
         }
     }
 
@@ -822,10 +817,12 @@ mod test {
     fn bool() {
         let list = vec![false, true];
         for obj in list {
+            let obj = ValueRef::from(obj);
+            assert!(obj.is_bool());
             let doc = NewDocument::new(None, &obj).unwrap();
             let doc = NoSchema::validate_new_doc(doc).unwrap();
             let decode: ValueRef = doc.deserialize().unwrap();
-            assert_eq!(decode.as_bool(), Some(obj));
+            assert_eq!(decode.as_bool(), obj.as_bool());
         }
     }
 
@@ -833,10 +830,12 @@ mod test {
     fn str() {
         let list = vec!["", "\0", "a string", "😄"];
         for obj in list {
+            let obj = ValueRef::from(obj);
+            assert!(obj.is_str());
             let doc = NewDocument::new(None, &obj).unwrap();
             let doc = NoSchema::validate_new_doc(doc).unwrap();
             let decode: ValueRef = doc.deserialize().unwrap();
-            assert_eq!(decode.as_str(), Some(obj));
+            assert_eq!(decode.as_str(), obj.as_str());
         }
     }
 
@@ -844,10 +843,12 @@ mod test {
     fn f32() {
         let list = vec![0.0f32, f32::MIN, f32::MAX];
         for obj in list {
+            let obj = ValueRef::from(obj);
+            assert!(obj.is_f32());
             let doc = NewDocument::new(None, &obj).unwrap();
             let doc = NoSchema::validate_new_doc(doc).unwrap();
             let decode: ValueRef = doc.deserialize().unwrap();
-            assert_eq!(decode.as_f32(), Some(obj));
+            assert_eq!(decode.as_f32(), obj.as_f32());
         }
     }
 
@@ -855,23 +856,25 @@ mod test {
     fn f64() {
         let list = vec![0.0f64, f64::MIN, f64::MAX];
         for obj in list {
+            let obj = ValueRef::from(obj);
+            assert!(obj.is_f64());
             let doc = NewDocument::new(None, &obj).unwrap();
             let doc = NoSchema::validate_new_doc(doc).unwrap();
             let decode: ValueRef = doc.deserialize().unwrap();
-            assert_eq!(decode.as_f64(), Some(obj));
+            assert_eq!(decode.as_f64(), obj.as_f64());
         }
     }
 
     #[test]
     fn bin() {
-        use serde_bytes::ByteBuf;
         let list = vec![vec![], vec![0u8], vec![0u8,1u8,2u8]];
         for obj in list {
-            let obj = ByteBuf::from(obj);
+            let obj = ValueRef::from(obj.as_slice());
+            assert!(obj.is_bin());
             let doc = NewDocument::new(None, &obj).unwrap();
             let doc = NoSchema::validate_new_doc(doc).unwrap();
             let decode: ValueRef = doc.deserialize().unwrap();
-            assert_eq!(decode.as_slice(), Some(obj.as_slice()));
+            assert_eq!(decode.as_bin(), obj.as_bin());
         }
     }
 
@@ -883,6 +886,8 @@ mod test {
             Value::from("hi"),
             Value::from(vec![0u8,1u8,2u8])
         ]);
+        let obj: ValueRef = obj.as_ref();
+        assert!(obj.is_array());
         let doc = NewDocument::new(None, &obj).unwrap();
         let doc = NoSchema::validate_new_doc(doc).unwrap();
         let decode: ValueRef = doc.deserialize().unwrap();
@@ -892,15 +897,138 @@ mod test {
         }
     }
 
-    //Map(BTreeMap<&'a str, ValueRef<'a>>),
-    //Identity(Identity),
-    //StreamId(StreamId),
-    //LockId(LockId),
-    //Timestamp(Timestamp),
-    //DataLockbox(&'a DataLockboxRef),
-    //IdentityLockbox(&'a IdentityLockboxRef),
-    //StreamLockbox(&'a StreamLockboxRef),
-    //LockLockbox(&'a LockLockboxRef),
+    #[test]
+    fn map() {
+        let mut map = BTreeMap::new();
+        map.insert("a", ValueRef::from(true));
+        map.insert("b", ValueRef::from(1u64));
+        map.insert("c", ValueRef::from("hi"));
+        let obj: ValueRef = ValueRef::from(map);
+        assert!(obj.is_map());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        match (decode.as_map(), obj.as_map()) {
+            (Some(x), Some(y)) => assert!(x==y),
+            _ => panic!("Expected both to be map"),
+        }
+    }
+
+    #[test]
+    fn hash() {
+        let obj = Hash::new(b"Just some test hash");
+        let obj = ValueRef::from(obj);
+        assert!(obj.is_hash());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_hash(), obj.as_hash());
+    }
+
+    #[test]
+    fn identity() {
+        let mut rng = rand::thread_rng();
+        let key = IdentityKey::new_temp(&mut rng);
+        let obj = key.id().clone();
+        let obj = ValueRef::from(obj);
+        assert!(obj.is_identity());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_identity(), obj.as_identity());
+    }
+
+    #[test]
+    fn stream_id() {
+        let mut rng = rand::thread_rng();
+        let key = StreamKey::new_temp(&mut rng);
+        let obj = key.id().clone();
+        let obj = ValueRef::from(obj);
+        assert!(obj.is_stream_id());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_stream_id(), obj.as_stream_id());
+    }
+
+    #[test]
+    fn lock_id() {
+        let mut rng = rand::thread_rng();
+        let key = LockKey::new_temp(&mut rng);
+        let obj = key.id().clone();
+        let obj = ValueRef::from(obj);
+        assert!(obj.is_lock_id());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_lock_id(), obj.as_lock_id());
+    }
+
+    #[test]
+    fn timestamp() {
+        let obj = Timestamp::from_utc(1647740000, 0).unwrap();
+        let obj = ValueRef::from(obj);
+        assert!(obj.is_timestamp());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_timestamp(), obj.as_timestamp());
+    }
+
+    #[test]
+    fn data_lockbox() {
+        let mut rng = rand::thread_rng();
+        let key = StreamKey::new_temp(&mut rng);
+        let obj = key.encrypt_data(&mut rng, b"my secret squirrel data");
+        let obj = ValueRef::from(DataLockboxRef::from_bytes(obj.as_bytes()).unwrap());
+        assert!(obj.is_data_lockbox());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_data_lockbox(), obj.as_data_lockbox());
+    }
+
+    #[test]
+    fn identity_lockbox() {
+        let mut rng = rand::thread_rng();
+        let to_encrypt = IdentityKey::new_temp(&mut rng);
+        let key = StreamKey::new_temp(&mut rng);
+        let lockbox = to_encrypt.export_for_stream(&mut rng, &key).unwrap();
+        let obj = ValueRef::from(IdentityLockboxRef::from_bytes(lockbox.as_bytes()).unwrap());
+        assert!(obj.is_identity_lockbox());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_identity_lockbox(), obj.as_identity_lockbox());
+    }
+
+    #[test]
+    fn stream_lockbox() {
+        let mut rng = rand::thread_rng();
+        let to_encrypt = StreamKey::new_temp(&mut rng);
+        let key = StreamKey::new_temp(&mut rng);
+        let lockbox = to_encrypt.export_for_stream(&mut rng, &key).unwrap();
+        let obj = ValueRef::from(StreamLockboxRef::from_bytes(lockbox.as_bytes()).unwrap());
+        assert!(obj.is_stream_lockbox());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_stream_lockbox(), obj.as_stream_lockbox());
+    }
+
+    #[test]
+    fn lock_lockbox() {
+        let mut rng = rand::thread_rng();
+        let to_encrypt = LockKey::new_temp(&mut rng);
+        let key = StreamKey::new_temp(&mut rng);
+        let lockbox = to_encrypt.export_for_stream(&mut rng, &key).unwrap();
+        let obj = ValueRef::from(LockLockboxRef::from_bytes(lockbox.as_bytes()).unwrap());
+        assert!(obj.is_lock_lockbox());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_lock_lockbox(), obj.as_lock_lockbox());
+    }
 
 }
 

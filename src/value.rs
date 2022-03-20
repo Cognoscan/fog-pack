@@ -55,7 +55,7 @@ impl Value {
         }
     }
 
-    pub fn is_nil(&self) -> bool {
+    pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
     }
 
@@ -757,52 +757,60 @@ impl<'de> serde::Deserialize<'de> for Value {
             fn visit_enum<A: EnumAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
                 let (variant, access) = access.variant()?;
                 use fog_crypto::serde::*;
-                use serde_bytes::Bytes;
-                let bytes: &Bytes = access.newtype_variant()?;
+                use serde_bytes::{Bytes, ByteBuf};
                 match variant {
                     FOG_TYPE_ENUM_TIME_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = Timestamp::try_from(bytes.as_ref()).map_err(A::Error::custom)?;
                         Ok(Value::Timestamp(val))
                     }
                     FOG_TYPE_ENUM_HASH_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = Hash::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::Hash(val))
                     }
                     FOG_TYPE_ENUM_IDENTITY_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = Identity::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::Identity(val))
                     }
                     FOG_TYPE_ENUM_LOCK_ID_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = LockId::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::LockId(val))
                     }
                     FOG_TYPE_ENUM_STREAM_ID_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
                         let val = StreamId::try_from(bytes.as_ref())
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(Value::StreamId(val))
                     }
                     FOG_TYPE_ENUM_DATA_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = DataLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::DataLockbox(val))
                     }
                     FOG_TYPE_ENUM_IDENTITY_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = IdentityLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::IdentityLockbox(val))
                     }
                     FOG_TYPE_ENUM_STREAM_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = StreamLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::StreamLockbox(val))
                     }
                     FOG_TYPE_ENUM_LOCK_LOCKBOX_INDEX => {
+                        let bytes: &Bytes = access.newtype_variant()?;
                         let val = LockLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();

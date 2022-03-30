@@ -615,8 +615,7 @@ impl Schema {
 
     /// Decode a Entry, skipping most checks of the data. This should only be run when the raw
     /// entry has definitely been passed through validation before, i.e. if it is stored in a
-    /// local database after going through [`encode_entry`][Self::encode_entry] or
-    /// [`encode_new_entry`][Self::encode_new_entry].
+    /// local database after going through [`encode_entry`][Self::encode_entry].
     pub fn trusted_decode_entry(
         &self,
         entry: Vec<u8>,

@@ -9,7 +9,7 @@ use std::default::Default;
 /// can be used like an "any of" operator, or a logical OR of validators.
 ///
 /// When this validator is used, the contained validators are checked in order, passing when the 
-/// first contained validator passes. When performing [`Entry`] validation, this can mean that a 
+/// first contained validator passes. When performing [`Entry`][crate::entry::Entry] validation, this can mean that a 
 /// linked document may be added to the list of documents needed for final validation, even if 
 /// another contained validator (later in the list) would also pass without it.
 ///

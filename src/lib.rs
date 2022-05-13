@@ -255,7 +255,7 @@ pub mod types {
 
 /// The maximum nesting depth allowed for any fog-pack value. No encoded document will ever nest
 /// Map/Array markers deeper than this.
-pub const MAX_DEPTH: usize = 100;
+pub const MAX_DEPTH: usize = 200;
 /// The maximum allowed size of a raw document, including signatures, is 1 MiB. No encoded document
 /// will ever be equal to or larger than this size.
 pub const MAX_DOC_SIZE: usize = (1usize << 20) - 1; // 1 MiB

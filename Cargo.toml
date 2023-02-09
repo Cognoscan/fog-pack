@@ -11,10 +11,10 @@ documentation = "https://docs.rs/fog-pack"
 license = "MIT OR Apache-2.0"
 description = "Binary Data format supporting immutable references, schema, and compression"
 exclude = [ "media/*", "misc_docs/*" ]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-fog-crypto = "0.4"
+fog-crypto = "0.4.3"
 byteorder = "1"
 regex = "1"
 zstd-safe = "3.0"

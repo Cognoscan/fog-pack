@@ -221,7 +221,7 @@ impl<'a> ValueRef<'a> {
 
     pub fn as_array(&self) -> Option<&[ValueRef<'a>]> {
         if let ValueRef::Array(ref array) = *self {
-            Some(&*array)
+            Some(array)
         } else {
             None
         }

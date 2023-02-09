@@ -213,7 +213,7 @@ impl Query {
         let inner = InnerQuery::deserialize(&mut de)?;
         Ok(Self {
             inner,
-            schema: Hash::new(&[]),
+            schema: Hash::new([]),
             types: BTreeMap::new(),
         })
     }

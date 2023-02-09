@@ -231,7 +231,7 @@ impl Value {
 
     pub fn as_array(&self) -> Option<&[Value]> {
         if let Value::Array(ref array) = *self {
-            Some(&*array)
+            Some(array)
         } else {
             None
         }

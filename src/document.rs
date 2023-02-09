@@ -160,7 +160,7 @@ impl DocumentInner {
             let new_len = split.hash_raw.len() + split.data.len() + 5;
             let mut hash_state = HashState::new();
             match self.schema_hash {
-                None => hash_state.update(&[0u8]),
+                None => hash_state.update([0u8]),
                 Some(ref hash) => hash_state.update(hash),
             }
             hash_state.update(split.data);
@@ -561,7 +561,7 @@ impl NewDocument {
         // Set up the hasher
         let mut hash_state = HashState::new();
         match schema {
-            None => hash_state.update(&[0u8]),
+            None => hash_state.update([0u8]),
             Some(hash) => hash_state.update(hash),
         }
         hash_state.update(&buf[start..]);
@@ -663,7 +663,7 @@ impl Document {
 
         let mut hash_state = HashState::new();
         match schema_hash {
-            None => hash_state.update(&[0u8]),
+            None => hash_state.update([0u8]),
             Some(ref hash) => hash_state.update(hash.as_ref()),
         }
         hash_state.update(split.data);

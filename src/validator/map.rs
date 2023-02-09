@@ -533,7 +533,7 @@ impl MapValidator {
                     v
                 })
                 .or_else(|| self.opt.get(key))
-                .or_else(|| self.values.as_deref())
+                .or(self.values.as_deref())
             {
                 validator.validate(types, parser, checklist)?
             } else {
@@ -585,7 +585,7 @@ impl MapValidator {
                 self.req
                     .get(ko)
                     .or_else(|| self.opt.get(ko))
-                    .or_else(|| self.values.as_deref())
+                    .or(self.values.as_deref())
                     .map(|v| v.query_check(types, kv))
                     .unwrap_or(false)
             });
@@ -596,7 +596,7 @@ impl MapValidator {
                 self.req
                     .get(ko)
                     .or_else(|| self.opt.get(ko))
-                    .or_else(|| self.values.as_deref())
+                    .or(self.values.as_deref())
                     .map(|v| v.query_check(types, kv))
                     .unwrap_or(false)
             });

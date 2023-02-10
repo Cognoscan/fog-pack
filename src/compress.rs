@@ -109,7 +109,7 @@ impl Compress {
                         }
                     }
                     DictionaryPrivate::Zstd { cdict, .. } => {
-                        let mut ctx = zstd_safe::create_cctx();
+                        let mut ctx = zstd_safe::CCtx::create();
                         match ctx.compress_using_cdict(&mut dest[dest_len..], src, cdict) {
                             Ok(len) if len < src.len() => {
                                 dest.truncate(dest_len + len);
@@ -150,7 +150,9 @@ impl Compress {
             CompressType::General => {
                 // Prep for decompressed data
                 let header_len = dest.len();
-                let expected_len = zstd_safe::get_frame_content_size(src);
+                let Ok(Some(expected_len)) = zstd_safe::get_frame_content_size(src) else {
+                    return Err(Error::FailDecompress("Compression frame header is invalid".into()));
+                };
                 if expected_len > (max_size - header_len) as u64 {
                     return Err(Error::FailDecompress(format!(
                         "Decompressed length {} would be larger than maximum of {}",
@@ -188,7 +190,9 @@ impl Compress {
 
                 // Prep for decompressed data
                 let header_len = dest.len();
-                let expected_len = zstd_safe::get_frame_content_size(src);
+                let Ok(Some(expected_len)) = zstd_safe::get_frame_content_size(src) else {
+                    return Err(Error::FailDecompress("Compression frame header is invalid".into()));
+                };
                 if expected_len > (max_size - header_len) as u64 {
                     return Err(Error::FailDecompress(format!(
                         "Decompressed length {} would be larger than maximum of {}",
@@ -205,7 +209,7 @@ impl Compress {
                 // data and returns the new valid length, so no data is uninitialized after this
                 // block completes. In the event of a failure, the vec is freed, so it is never
                 // returned in an invalid state.
-                let mut dctx = zstd_safe::create_dctx();
+                let mut dctx = zstd_safe::DCtx::create();
                 let len = dctx
                     .decompress_using_ddict(&mut dest[header_len..], src, ddict)
                     .map_err(|e| {

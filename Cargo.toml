@@ -17,7 +17,7 @@ edition = "2021"
 fog-crypto = "0.4.3"
 byteorder = "1"
 regex = "1"
-zstd-safe = "3.0"
+zstd-safe = "6"
 bytecount = "0.6.0"
 unicode-normalization = "0.1"
 serde = { version = "1.0", features = ["derive"] }

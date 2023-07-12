@@ -1,6 +1,6 @@
 [package]
 name = "fog-pack"
-version = "0.3"
+version = "0.3.0"
 authors = ["Scott Teal"]
 readme = "README.md"
 keywords = [ "fog-pack", "validator", "serialization", "deserialization" ]

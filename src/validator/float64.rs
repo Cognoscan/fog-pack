@@ -149,6 +149,11 @@ impl F64Validator {
         self
     }
 
+    /// Build this into a [`Validator`] enum.
+    pub fn build(self) -> Validator {
+        Validator::F64(self)
+    }
+
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()

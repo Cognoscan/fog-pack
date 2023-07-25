@@ -149,6 +149,11 @@ impl F32Validator {
         self
     }
 
+    /// Build this into a [`Validator`] enum.
+    pub fn build(self) -> Validator {
+        Validator::F32(self)
+    }
+
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {
         let elem = parser
             .next()

@@ -3,8 +3,9 @@ use crate::*;
 use std::ops::Index;
 use std::{collections::BTreeMap, fmt::Debug};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum ValueRef<'a> {
+    #[default]
     Null,
     Bool(bool),
     Int(Integer),
@@ -321,14 +322,10 @@ impl<'a> ValueRef<'a> {
     }
 }
 
-impl<'a> std::default::Default for ValueRef<'a> {
-    fn default() -> Self {
-        ValueRef::Null
-    }
-}
-
 static NULL_REF: ValueRef<'static> = ValueRef::Null;
 
+/// Support indexing into arrays. If the index is out of range or the value isn't an array, this 
+/// returns a [`ValueRef::Null`].
 impl<'a> Index<usize> for ValueRef<'a> {
     type Output = ValueRef<'a>;
 
@@ -339,6 +336,8 @@ impl<'a> Index<usize> for ValueRef<'a> {
     }
 }
 
+/// Support indexing into maps. If the index string is not in the map, this returns a 
+/// [`ValueRef::Null`].
 impl<'a> Index<&str> for ValueRef<'a> {
     type Output = ValueRef<'a>;
 

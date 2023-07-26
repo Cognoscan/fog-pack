@@ -4,8 +4,9 @@ use std::borrow::Cow;
 use std::ops::Index;
 use std::{collections::BTreeMap, fmt::Debug};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Value {
+    #[default]
     Null,
     Bool(bool),
     Int(Integer),
@@ -332,14 +333,10 @@ impl Value {
     }
 }
 
-impl std::default::Default for Value {
-    fn default() -> Self {
-        Value::Null
-    }
-}
-
 static NULL: Value = Value::Null;
 
+/// Support indexing into arrays. If the index is out of range or the value isn't an array, this 
+/// returns a [`Value::Null`].
 impl Index<usize> for Value {
     type Output = Value;
 
@@ -348,6 +345,8 @@ impl Index<usize> for Value {
     }
 }
 
+/// Support indexing into maps. If the index string is not in the map, this returns a 
+/// [`Value::Null`].
 impl Index<&str> for Value {
     type Output = Value;
 

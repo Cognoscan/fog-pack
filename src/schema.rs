@@ -357,6 +357,12 @@ impl SchemaBuilder {
         self
     }
 
+    /// Set the maximum number of regexes allowed in a query.
+    pub fn regexes(mut self, max_regex: u8) -> Self {
+        self.inner.max_regex = max_regex;
+        self
+    }
+
     /// Build the Schema, compiling the result into a Document
     pub fn build(self) -> Result<Document> {
         let doc = NewDocument::new(None, self.inner)?;

@@ -1,7 +1,6 @@
 use super::*;
 use crate::error::{Error, Result};
 use crate::{de::FogDeserializer, element::*, value::Value, value_ref::ValueRef};
-use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::default::Default;
 
@@ -25,183 +24,14 @@ fn normalize_is_none(v: &Normalize) -> bool {
     matches!(v, Normalize::None)
 }
 
-#[inline]
-fn key_validator_is_default(v: &KeyValidator) -> bool {
-    v.matches.is_none()
-        && normalize_is_none(&v.normalize)
-        && u32_is_max(&v.max_len)
-        && u32_is_zero(&v.min_len)
+fn get_str_validator<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Box<StrValidator>>, D::Error> {
+    // Decode the validator. If this function is called, there should be an actual validator
+    // present. Otherwise we fail. In other words, no `null` allowed.
+    Ok(Some(Box::new(StrValidator::deserialize(deserializer)?)))
 }
 
-/// Special validator for the keys in a Map. Used by MapValidator.
-///
-/// This validator type will only pass UTF-8 strings as map keys. Validation passes if:
-///
-/// - The number of bytes in the string is less than or equal to `max_len`.
-/// - The number of bytes in the string is greater than or equal to `min_len`.
-/// - If a regular expression is present in `matches`, the possibly-normalized string must match
-///     against the expression.
-///
-/// The `normalize` field sets any Unicode normalization that should be applied to the string. See
-/// [`StrValidator`]'s documentation for details.
-///
-/// # Defaults
-///
-/// Fields that aren't specified for the validator use their defaults instead. The defaults for
-/// each field are:
-///
-/// - comment: ""
-/// - matches: None
-/// - normalize: Normalize::None
-/// - max_len: u32::MAX
-/// - min_len: 0
-///
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct KeyValidator {
-    /// A regular expression that the value must match against.
-    #[serde(skip_serializing_if = "Option::is_none", with = "serde_regex")]
-    pub matches: Option<Box<Regex>>,
-    /// The Unicode normalization setting.
-    #[serde(skip_serializing_if = "normalize_is_none")]
-    pub normalize: Normalize,
-    /// The maximum allowed number of bytes in the string value.
-    #[serde(skip_serializing_if = "u32_is_max")]
-    pub max_len: u32,
-    /// The minimum allowed number of bytes in the string value.
-    #[serde(skip_serializing_if = "u32_is_zero")]
-    pub min_len: u32,
-}
-
-impl KeyValidator {
-    /// Make a new validator with the default configuration.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the regular expression to check against.
-    pub fn matches(mut self, matches: Regex) -> Self {
-        self.matches = Some(Box::new(matches));
-        self
-    }
-
-    /// Set the unicode normalization form to use for `in`, `nin`, and `matches` checks.
-    pub fn normalize(mut self, normalize: Normalize) -> Self {
-        self.normalize = normalize;
-        self
-    }
-
-    /// Set the maximum number of allowed bytes.
-    pub fn max_len(mut self, max_len: u32) -> Self {
-        self.max_len = max_len;
-        self
-    }
-
-    /// Set the minimum number of allowed bytes.
-    pub fn min_len(mut self, min_len: u32) -> Self {
-        self.min_len = min_len;
-        self
-    }
-
-    fn validate<'a>(&self, parser: &mut Parser<'a>) -> Result<&'a str> {
-        // Get element
-        let elem = parser
-            .next()
-            .ok_or_else(|| Error::FailValidate("expected a key string".to_string()))??;
-        let val = if let Element::Str(v) = elem {
-            v
-        } else {
-            return Err(Error::FailValidate(format!(
-                "expected Str key, got {}",
-                elem.name()
-            )));
-        };
-
-        // Length Checks
-        if (val.len() as u32) > self.max_len {
-            return Err(Error::FailValidate(
-                "Key is longer than max_len".to_string(),
-            ));
-        }
-        if (val.len() as u32) < self.min_len {
-            return Err(Error::FailValidate(
-                "Key is shorter than min_len".to_string(),
-            ));
-        }
-
-        // Content checks
-        use unicode_normalization::{
-            is_nfc_quick, is_nfkc_quick, IsNormalized, UnicodeNormalization,
-        };
-        if let Some(ref regex) = self.matches {
-            match self.normalize {
-                Normalize::None => {
-                    if !regex.is_match(val) {
-                        return Err(Error::FailValidate(
-                            "Key doesn't match regular expression".to_string(),
-                        ));
-                    }
-                }
-                Normalize::NFC => {
-                    let temp_string: String;
-                    let val = match is_nfc_quick(val.chars()) {
-                        IsNormalized::Yes => val,
-                        _ => {
-                            temp_string = val.nfc().collect::<String>();
-                            temp_string.as_str()
-                        }
-                    };
-                    if !regex.is_match(val) {
-                        return Err(Error::FailValidate(
-                            "Key doesn't match regular expression".to_string(),
-                        ));
-                    }
-                }
-                Normalize::NFKC => {
-                    let temp_string: String;
-                    let val = match is_nfkc_quick(val.chars()) {
-                        IsNormalized::Yes => val,
-                        _ => {
-                            temp_string = val.nfkc().collect::<String>();
-                            temp_string.as_str()
-                        }
-                    };
-                    if !regex.is_match(val) {
-                        return Err(Error::FailValidate(
-                            "Key doesn't match regular expression".to_string(),
-                        ));
-                    }
-                }
-            }
-        }
-        Ok(val)
-    }
-}
-
-impl PartialEq for KeyValidator {
-    fn eq(&self, rhs: &Self) -> bool {
-        (self.normalize == rhs.normalize)
-            && (self.max_len == rhs.max_len)
-            && (self.min_len == rhs.min_len)
-            && match (&self.matches, &rhs.matches) {
-                (None, None) => true,
-                (Some(_), None) => false,
-                (None, Some(_)) => false,
-                (Some(lhs), Some(rhs)) => lhs.as_str() == rhs.as_str(),
-            }
-    }
-}
-
-impl Default for KeyValidator {
-    fn default() -> Self {
-        Self {
-            matches: None,
-            max_len: u32::MAX,
-            min_len: u32::MIN,
-            normalize: Normalize::None,
-        }
-    }
-}
 
 fn get_validator<'de, D: Deserializer<'de>>(
     deserializer: D,
@@ -220,16 +50,15 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// - The array must not be among the arrays in the `nin` list.
 /// - The number of key-value pairs in the map is less than or equal to the value in `max_len`.
 /// - The number of key-value pairs in the map is greater than or equal to the value in `min_len`.
-/// - Each key passes the [`KeyValidator`] in `keys`.
-/// - Each key is not among the strings in the `ban` list.
 /// - There must be a matching key-value in the map for each key-validator pair in `req` .
 /// - For each key-value pair in the map:
 ///     1. If the key is in `req`, the corresponding validator is used to validate the value.
 ///     2. If the key is not in `req` but is in `opt`, the corresponding validator is used to
 ///        validate the value.
 ///     3. if the key is not in `req` or `opt`, the validator for `values` is used to validate the
-///        value.
-///     4. If there is no validator for `values`, validation does not pass.
+///        value, and the validator for `keys` (if present) is used to validate the key.
+///         1. If no validator is present for `keys`, the key passes.
+///         2. If there is no validator for `values`, validation does not pass.
 ///
 /// Note how each key-value pair must be validated, so an unlimited collection of key-value pairs
 /// isn't allowed unless there is a validator present in `values`.
@@ -242,11 +71,10 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// - comment: ""
 /// - max_len: u32::MAX
 /// - min_len: u32::MIN
-/// - keys: KeyValidator::default()
+/// - keys: None
 /// - values: None
 /// - req: empty
 /// - opt: empty
-/// - ban: empty
 /// - in_list: empty
 /// - nin_list: empty
 /// - query: false
@@ -262,13 +90,14 @@ fn get_validator<'de, D: Deserializer<'de>>(
 ///
 /// - query: `in` and `nin` lists
 /// - size: `max_len` and `min_len`
-/// - map_ok: `req`, `opt`, `ban`, and `values`
-/// - match_keys: `matches` in `KeyValidator`
-/// - len_keys: `max_len` and `min_len` in `KeyValidator`
+/// - map_ok: `req`, `opt`, `keys`, and `values`
 ///
 /// In addition, sub-validators in the query are matched against the schema's sub-validators:
 ///
-/// - The `values` validator is checked against the schema's `values` validator.
+/// - The `values` validator is checked against the schema's `values` validator. If no schema 
+///     validator is present, the query is invalid.
+/// - The `keys` string validator is checked against the schema's `keys` string validator. If no 
+///     schema validator is present, the query is invalid.
 /// - The `req` validators are checked against the schema's `req`/`opt`/`values` validators,
 ///     choosing whichever validator is found first. If no validator is found, the check fails.
 /// - The `opt` validators are checked against the schema's `req`/`opt`/`values` validators,
@@ -286,9 +115,12 @@ pub struct MapValidator {
     /// The minimum allowed number of key-value pairs in the map.
     #[serde(skip_serializing_if = "u32_is_zero")]
     pub min_len: u32,
-    /// The sub-validator for keys in the map.
-    #[serde(skip_serializing_if = "key_validator_is_default")]
-    pub keys: KeyValidator,
+    /// The optional sub-validator for unknown keys in the map.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "get_str_validator"
+    )]
+    pub keys: Option<Box<StrValidator>>,
     /// An optional validator that each value in the map must pass, unless it is instead checked by
     /// a validator in `req` or `opt`. Unchecked values cause the map to fail validation.
     #[serde(
@@ -305,9 +137,6 @@ pub struct MapValidator {
     /// validator in `req`.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub opt: BTreeMap<String, Validator>,
-    /// A list of keys that may not be present in the map.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ban: Vec<String>,
     /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
     #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
     pub in_list: Vec<BTreeMap<String, Value>>,
@@ -320,15 +149,9 @@ pub struct MapValidator {
     /// If true, queries against matching spots may use `max_len` and `min_len`.
     #[serde(skip_serializing_if = "is_false")]
     pub size: bool,
-    /// If true, queries against matching spots may use `req`, `opt`, `ban`, and `values`.
+    /// If true, queries against matching spots may use `req`, `opt`, `keys`, and `values`.
     #[serde(skip_serializing_if = "is_false")]
     pub map_ok: bool,
-    /// If true, queries against matching spots may use `matches` in the Key Validator.
-    #[serde(skip_serializing_if = "is_false")]
-    pub match_keys: bool,
-    /// If true, queries against matching spots may use `max_len` and `min_len` in the Key Validator.
-    #[serde(skip_serializing_if = "is_false")]
-    pub len_keys: bool,
 }
 
 impl Default for MapValidator {
@@ -337,18 +160,15 @@ impl Default for MapValidator {
             comment: String::new(),
             max_len: u32::MAX,
             min_len: u32::MIN,
-            keys: KeyValidator::default(),
+            keys: None,
             values: None,
             req: BTreeMap::new(),
             opt: BTreeMap::new(),
-            ban: Vec::new(),
             in_list: Vec::new(),
             nin_list: Vec::new(),
             query: false,
             size: false,
             map_ok: false,
-            match_keys: false,
-            len_keys: false,
         }
     }
 }
@@ -383,15 +203,9 @@ impl MapValidator {
         self
     }
 
-    /// Add a new key to the `ban` list.
-    pub fn ban_add(mut self, ban: impl Into<String>) -> Self {
-        self.ban.push(ban.into());
-        self
-    }
-
     /// Set the Key Validator.
-    pub fn keys(mut self, keys: KeyValidator) -> Self {
-        self.keys = keys;
+    pub fn keys(mut self, keys: StrValidator) -> Self {
+        self.keys = Some(Box::new(keys));
         self
     }
 
@@ -434,19 +248,6 @@ impl MapValidator {
     /// Set whether or not queries can use the `req`, `opt`, `ban`, and `values` values.
     pub fn map_ok(mut self, map_ok: bool) -> Self {
         self.map_ok = map_ok;
-        self
-    }
-
-    /// Set whether or not queries can use the `matches` value for the Key Validator.
-    pub fn match_keys(mut self, match_keys: bool) -> Self {
-        self.match_keys = match_keys;
-        self
-    }
-
-    /// Set whether or not queries can use the `max_len` and `min_len` values for the Key
-    /// Validator.
-    pub fn len_keys(mut self, len_keys: bool) -> Self {
-        self.len_keys = len_keys;
         self
     }
 
@@ -518,30 +319,41 @@ impl MapValidator {
         // Loop through each item, verifying it with the appropriate validator
         let mut reqs_found = 0;
         for _ in 0..len {
-            let key = self.keys.validate(&mut parser)?;
-            if self.ban.iter().any(|k| k == key) {
-                return Err(Error::FailValidate(format!(
-                    "Map key {:?} is on the ban list",
-                    key
-                )));
-            }
-            let (p, c) = if let Some(validator) = self
-                .req
-                .get(key)
-                .map(|v| {
-                    reqs_found += 1;
-                    v
-                })
-                .or_else(|| self.opt.get(key))
-                .or(self.values.as_deref())
-            {
-                validator.validate(types, parser, checklist)?
+            // Extract the key
+            let elem = parser
+                .next()
+                .ok_or_else(|| Error::FailValidate("expected a key string".to_string()))??;
+            let key = if let Element::Str(v) = elem {
+                v
             } else {
+                return Err(Error::FailValidate(format!(
+                    "expected Str, got {}",
+                    elem.name()
+                )));
+            };
+
+            // Look up the appropriate validator and use it
+            let (p, c) = if let Some(validator) = self.req.get(key) {
+                reqs_found += 1;
+                validator.validate(types, parser, checklist)?
+            }
+            else if let Some(validator) = self.opt.get(key) {
+                validator.validate(types, parser, checklist)?
+            }
+            else if let Some(validator) = &self.values {
+                // Make sure the key is valid before proceeding
+                if let Some(keys) = &self.keys {
+                    keys.validate_str(key)?;
+                }
+                validator.validate(types, parser, checklist)?
+            }
+            else {
                 return Err(Error::FailValidate(format!(
                     "Map key {:?} has no corresponding validator",
                     key
                 )));
             };
+
             parser = p;
             checklist = c;
         }
@@ -562,16 +374,15 @@ impl MapValidator {
             && (self.map_ok
                 || (other.req.is_empty()
                     && other.opt.is_empty()
-                    && other.ban.is_empty()
-                    && other.values.is_none()))
-            && (self.match_keys || other.keys.matches.is_none())
-            && (self.len_keys
-                || (u32_is_max(&other.keys.max_len) && u32_is_zero(&other.keys.min_len)));
+                    && other.keys.is_none()
+                    && other.values.is_none()));
         if !initial_check {
             return false;
         }
         if self.map_ok {
-            // Make sure `values` is OK, then check the req/opt pairs against matching validators
+            // Make sure `keys` and `values` are OK, then check the req/opt pairs against matching 
+            // validators
+
             let values_ok = match (&self.values, &other.values) {
                 (None, None) => true,
                 (Some(_), None) => true,
@@ -581,6 +392,17 @@ impl MapValidator {
             if !values_ok {
                 return false;
             }
+
+            let keys_ok = match (&self.keys, &other.keys) {
+                (None, None) => true,
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (Some(s), Some(o)) => s.query_check_str(o.as_ref()),
+            };
+            if !keys_ok {
+                return false;
+            }
+
             let req_ok = other.req.iter().all(|(ko, kv)| {
                 self.req
                     .get(ko)
@@ -592,6 +414,7 @@ impl MapValidator {
             if !req_ok {
                 return false;
             }
+
             let opt_ok = other.opt.iter().all(|(ko, kv)| {
                 self.req
                     .get(ko)

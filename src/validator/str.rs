@@ -328,6 +328,10 @@ impl StrValidator {
                 elem.name()
             )));
         };
+        self.validate_str(val)
+    }
+
+    pub(crate) fn validate_str(&self, val: &str) -> Result<()> {
 
         // Length Checks
         if (val.len() as u32) > self.max_len {
@@ -490,7 +494,7 @@ impl StrValidator {
         Ok(())
     }
 
-    fn query_check_str(&self, other: &Self) -> bool {
+    pub(crate) fn query_check_str(&self, other: &Self) -> bool {
         (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
             && (self.regex || other.matches.is_none())
             && (self.ban

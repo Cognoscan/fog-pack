@@ -387,7 +387,44 @@ pub struct Schema {
 
 impl Schema {
     /// Attempt to create a schema from a given document. Fails if the document isn't a schema.
+    ///
+    /// Warnings
+    /// --------
+    ///
+    /// If working with external, untrusted schemas, it's advisable to use 
+    /// [`Schema::from_doc_max_regex`] instead, as regular expressions are hands-down the easiest 
+    /// way to exhaust memory in a system.
     pub fn from_doc(doc: &Document) -> Result<Self> {
+        let inner = doc.deserialize()?;
+        let hash = doc.hash().clone();
+        Ok(Self { hash, inner })
+    }
+
+    /// Attempt to create a schema from a given document, first checking how many regular 
+    /// expressions would be present in the schema and failing out if it's above the provided 
+    /// limit.
+    ///
+    /// For a rough guide of what to set `max_regex` to, know that every regex has an 
+    /// approximate max memory size of 12 MiB, so a malicious schema can use up at least
+    /// `max_regex * 12 MiB` bytes off the heap.
+    pub fn from_doc_max_regex(doc: &Document, max_regex: u8) -> Result<Self> {
+        // Count up all the regular expressions that can be in a schema
+        let regex_check: ValueRef = doc.deserialize()?;
+        let mut regexes = crate::count_regexes(&regex_check["doc"]);
+        if let Some(map) = regex_check["types"].as_map() {
+            regexes += map.values().fold(0, |acc, val| acc + crate::count_regexes(val));
+        }
+        if let Some(map) = regex_check["entries"].as_map() {
+            regexes += map.values().fold(0, |acc, val| acc + crate::count_regexes(&val["entry"]));
+        }
+        
+        if regexes > (max_regex as usize) {
+            return Err(Error::FailValidate(format!(
+                "Found {} regexes in Schema, only {} allowed",
+                regexes, max_regex
+            )));
+        }
+
         let inner = doc.deserialize()?;
         let hash = doc.hash().clone();
         Ok(Self { hash, inner })

@@ -134,73 +134,9 @@ pub struct Query {
 impl Query {
     pub(crate) fn new(buf: Vec<u8>, max_regex: u8) -> Result<Self> {
         // Check to see how many regexes are in the validator
-        fn parse_validator(v: &ValueRef) -> usize {
-            // First, unpack the validator enum
-            if let ValueRef::Map(map) = v {
-                // Enums should be a map with one key-value pair
-                if map.len() > 1 {
-                    return 0;
-                }
-                match map.iter().next() {
-                    // String validator
-                    Some((&"Str", val)) => val["matches"].is_str() as usize,
-                    // Map validator
-                    Some((&"Map", val)) => {
-                        if !val.is_map() {
-                            return 0;
-                        }
-                        let key_matches = if val["keys"]["matches"].is_str() {
-                            1
-                        } else {
-                            0
-                        };
-                        let req_matches = val["req"].as_map().map_or(0, |map| {
-                            map.values().fold(0, |acc, val| acc + parse_validator(val))
-                        });
-                        let opt_matches = val["opt"].as_map().map_or(0, |map| {
-                            map.values().fold(0, |acc, val| acc + parse_validator(val))
-                        });
-                        let values_matches = parse_validator(&val["values"]);
-                        key_matches + req_matches + opt_matches + values_matches
-                    }
-                    // Array validator
-                    Some((&"Array", val)) => {
-                        if !val.is_map() {
-                            return 0;
-                        }
-                        let contains_matches = val["contains"].as_array().map_or(0, |array| {
-                            array.iter().fold(0, |acc, val| acc + parse_validator(val))
-                        });
-                        let items_matches = parse_validator(&val["items"]);
-                        let prefix_matches = val["contains"].as_array().map_or(0, |array| {
-                            array.iter().fold(0, |acc, val| acc + parse_validator(val))
-                        });
-                        contains_matches + items_matches + prefix_matches
-                    }
-                    // Hash validator
-                    Some((&"Hash", val)) => {
-                        if !val.is_map() {
-                            return 0;
-                        }
-                        parse_validator(&val["link"])
-                    }
-                    // Enum validator
-                    Some((&"Enum", val)) => val.as_map().map_or(0, |map| {
-                        map.values().fold(0, |acc, val| acc + parse_validator(val))
-                    }),
-                    // Multi validator
-                    Some((&"Multi", val)) => val.as_array().map_or(0, |array| {
-                        array.iter().fold(0, |acc, val| acc + parse_validator(val))
-                    }),
-                    _ => 0,
-                }
-            } else {
-                0
-            }
-        }
         let mut de = FogDeserializer::new(&buf);
         let regex_check = ValueRef::deserialize(&mut de)?;
-        let regexes = parse_validator(&regex_check["query"]);
+        let regexes = crate::count_regexes(&regex_check["query"]);
         if regexes > (max_regex as usize) {
             return Err(Error::FailValidate(format!(
                 "Found {} regexes in query, only {} allowed",

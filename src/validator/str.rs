@@ -32,15 +32,18 @@ fn normalize_is_none(v: &Normalize) -> bool {
 /// - The value's length in bytes is greater than or equal to the value in `min_len`.
 /// - The value's number of unicode characters is less than or equal to the value in `max_char`.
 /// - The value's number of unicode characters is greater than or equal to the value in `min_char`.
+/// - The value does not begin with any of the prefixes in the `ban_prefix` list.
+/// - The value does not end with any of the suffixes in the `ban_suffix` list.
+/// - The value does not contain any of the characters in the `ban_char` string.
 /// - If a regular expression is present in `matches`, the possibly-normalized value must match
 ///     against the expression.
 /// - If the `in` list is not empty, the possibly-normalized value must be among the values in the list.
 /// - The possibly-normalized value must not be among the values in the `nin` list.
 ///
 /// The `normalize` field may be set to `None`, `NFC`, or `NFKC`, corresponding to Unicode
-/// normalization forms. When checked for `in`, `nin`, and `matches`, the value is first put
-/// into the selected normalization form, and any `in` and `nin` list strings are normalized as
-/// well.
+/// normalization forms. When checked for `in`, `nin`, `ban_prefix`, `ban_suffix`, `ban_char`, and 
+/// `matches`, the value is first put into the selected normalization form, and any `in`, `nin`, 
+/// `ban_prefix`, and `ban_suffix` list strings are normalized as well.
 ///
 /// # Defaults
 ///
@@ -56,6 +59,9 @@ fn normalize_is_none(v: &Normalize) -> bool {
 /// - max_char: u32::MAX
 /// - min_char: 0
 /// - normalize: Normalize::None
+/// - ban_prefix: empty
+/// - ban_suffix: empty
+/// - ban_char: ""
 /// - query: false
 /// - regex: false
 /// - size: false
@@ -66,10 +72,14 @@ fn normalize_is_none(v: &Normalize) -> bool {
 /// sparingly, and should generally be avoided if possible. If they must be used, be aware of their
 /// limitations due to their memory, computation, and general consistency issues.
 ///
+/// Before you use regular expressions or try to work around the look-around limitations, consider 
+/// whether or not your validation requirement can be fulfilled by using some combination of the 
+/// `ban_prefix`, `ban_suffix`, `ban_char`, `in`, and `nin` fields.
+///
 /// Regular expression can rapidly use up a lot of memory when compiled. This is one of the reasons
-/// why it is inadvisable to accept and use unknown schemas. For queries, a schema will have some
-/// upper limit on the number of allowed regular expressions, in order to mitigate possible memory
-/// exhaustion.
+/// why it is inadvisable to accept and use unknown schemas without first checking for regexes. For 
+/// queries, a schema will have some upper limit on the number of allowed regular expressions, in 
+/// order to mitigate possible memory exhaustion.
 ///
 /// Beyond their memory cost, regular expressions have a second problem: there's not really a
 /// universal standard for regular expressions; at least, not one that is rigidly followed in
@@ -123,12 +133,25 @@ pub struct StrValidator {
     /// The Unicode normalization setting.
     #[serde(skip_serializing_if = "normalize_is_none")]
     pub normalize: Normalize,
+    /// Banned string prefixes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ban_prefix: Vec<String>,
+    /// Banned string suffixes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ban_suffix: Vec<String>,
+    /// Banned characters.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub ban_char: String,
     /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
     /// If true, queries against matching spots may use the `matches` value.
     #[serde(skip_serializing_if = "is_false")]
     pub regex: bool,
+    /// If true, queries against matching spots may set the `ban_prefix`, `ban_suffix`, and 
+    /// `ban_char` values to non-defaults.
+    #[serde(skip_serializing_if = "is_false")]
+    pub ban: bool,
     /// If true, queries against matching spots may set the `max_len`, `min_len`, `max_char`, and
     /// `min_char` values to non-defaults.
     #[serde(skip_serializing_if = "is_false")]
@@ -145,9 +168,13 @@ impl PartialEq for StrValidator {
             && (self.max_char == rhs.max_char)
             && (self.min_char == rhs.min_char)
             && (self.normalize == rhs.normalize)
+            && (self.ban_prefix == rhs.ban_prefix)
+            && (self.ban_suffix == rhs.ban_suffix)
+            && (self.ban_char == rhs.ban_char)
             && (self.query == rhs.query)
             && (self.regex == rhs.regex)
             && (self.size == rhs.size)
+            && (self.ban == rhs.ban)
             && match (&self.matches, &rhs.matches) {
                 (None, None) => true,
                 (Some(_), None) => false,
@@ -169,8 +196,12 @@ impl std::default::Default for StrValidator {
             max_char: u32::MAX,
             min_char: u32::MIN,
             normalize: Normalize::None,
+            ban_prefix: Vec::new(),
+            ban_suffix: Vec::new(),
+            ban_char: String::new(),
             query: false,
             regex: false,
+            ban: false,
             size: false,
         }
     }
@@ -236,15 +267,39 @@ impl StrValidator {
         self
     }
 
+    /// Add a value to the `ban_prefix` list.
+    pub fn ban_prefix_add(mut self, add: impl Into<String>) -> Self {
+        self.ban_prefix.push(add.into());
+        self
+    }
+
+    /// Add a value to the `ban_suffix` list.
+    pub fn ban_suffix_add(mut self, add: impl Into<String>) -> Self {
+        self.ban_suffix.push(add.into());
+        self
+    }
+
+    /// Set the `ban_char` string.
+    pub fn ban_char(mut self, ban_char: impl Into<String>) -> Self {
+        self.ban_char = ban_char.into();
+        self
+    }
+
     /// Set whether or not queries can use the `in` and `nin` lists.
     pub fn query(mut self, query: bool) -> Self {
         self.query = query;
         self
     }
 
-    /// Set whether or not queries can use the `bits_clr` and `bits_set` values.
+    /// Set whether or not queries can use the `matches` value.
     pub fn regex(mut self, regex: bool) -> Self {
         self.regex = regex;
+        self
+    }
+
+    /// Set whether or not queries can use the `ban_prefix`, `ban_suffix`, and `ban_char` values.
+    pub fn ban(mut self, ban: bool) -> Self {
+        self.ban = ban;
         self
     }
 
@@ -313,6 +368,17 @@ impl StrValidator {
                 if self.nin_list.iter().any(|v| *v == val) {
                     return Err(Error::FailValidate("String is on `nin` list".to_string()));
                 }
+                if let Some(pre) = self.ban_prefix.iter().find(|v| val.starts_with(*v)) {
+                    return Err(Error::FailValidate(format!("String begins with banned prefix {:?}", pre)));
+                }
+                if let Some(suf) = self.ban_suffix.iter().find(|v| val.ends_with(*v)) {
+                    return Err(Error::FailValidate(format!("String ends with banned suffix {:?}", suf)));
+                }
+                if !self.ban_char.is_empty() {
+                    if let Some(c) = val.chars().find(|c| self.ban_char.contains(*c)) {
+                        return Err(Error::FailValidate(format!("String contains banned character {:?}", c)));
+                    }
+                }
                 if let Some(ref regex) = self.matches {
                     if !regex.is_match(val) {
                         return Err(Error::FailValidate(
@@ -334,11 +400,33 @@ impl StrValidator {
                 if !self.in_list.is_empty() && !self.in_list.iter().any(|v| v.nfc().eq(val.chars()))
                 {
                     return Err(Error::FailValidate(
-                        "String is not on `in` list".to_string(),
+                        "NFC String is not on `in` list".to_string(),
                     ));
                 }
                 if self.nin_list.iter().any(|v| v.nfc().eq(val.chars())) {
-                    return Err(Error::FailValidate("String is on `nin` list".to_string()));
+                    return Err(Error::FailValidate("NFC String is on `nin` list".to_string()));
+                }
+                if let Some(pre) = self.ban_prefix.iter()
+                    .find(|v| v.nfc().zip(val.chars()).all(|(vc, valc)| vc == valc))
+                {
+                    return Err(Error::FailValidate(format!("NFC String begins with banned prefix {:?}", pre)));
+                }
+                if !self.ban_suffix.is_empty() {
+                    let mut temp = String::new();
+                    if self.ban_suffix.iter()
+                        .any(|v| {
+                            temp.clear();
+                            temp.extend(v.nfc());
+                            val.ends_with(&temp)
+                        })
+                    {
+                        return Err(Error::FailValidate(format!("NFC String ends with banned suffix {:?}", temp)));
+                    }
+                }
+                if !self.ban_char.is_empty() {
+                    if let Some(c) = val.chars().find(|c| self.ban_char.contains(*c)) {
+                        return Err(Error::FailValidate(format!("NFC String contains banned character {:?}", c)));
+                    }
                 }
                 if let Some(ref regex) = self.matches {
                     if !regex.is_match(val) {
@@ -362,16 +450,38 @@ impl StrValidator {
                     && !self.in_list.iter().any(|v| v.nfkc().eq(val.chars()))
                 {
                     return Err(Error::FailValidate(
-                        "String is not on `in` list".to_string(),
+                        "NFKC String is not on `in` list".to_string(),
                     ));
                 }
                 if self.nin_list.iter().any(|v| v.nfkc().eq(val.chars())) {
-                    return Err(Error::FailValidate("String is on `nin` list".to_string()));
+                    return Err(Error::FailValidate("NFKC String is on `nin` list".to_string()));
+                }
+                if let Some(pre) = self.ban_prefix.iter()
+                    .find(|v| v.nfkc().zip(val.chars()).all(|(vc, valc)| vc == valc))
+                {
+                    return Err(Error::FailValidate(format!("NFKC String begins with banned prefix {:?}", pre)));
+                }
+                if !self.ban_suffix.is_empty() {
+                    let mut temp = String::new();
+                    if self.ban_suffix.iter()
+                        .any(|v| {
+                            temp.clear();
+                            temp.extend(v.nfkc());
+                            val.ends_with(&temp)
+                        })
+                    {
+                        return Err(Error::FailValidate(format!("NFKC String ends with banned suffix {:?}", temp)));
+                    }
+                }
+                if !self.ban_char.is_empty() {
+                    if let Some(c) = val.chars().find(|c| self.ban_char.contains(*c)) {
+                        return Err(Error::FailValidate(format!("NFKC String contains banned character {:?}", c)));
+                    }
                 }
                 if let Some(ref regex) = self.matches {
                     if !regex.is_match(val) {
                         return Err(Error::FailValidate(
-                            "String doesn't match regular expression".to_string(),
+                            "NFKC String doesn't match regular expression".to_string(),
                         ));
                     }
                 }
@@ -383,6 +493,10 @@ impl StrValidator {
     fn query_check_str(&self, other: &Self) -> bool {
         (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
             && (self.regex || other.matches.is_none())
+            && (self.ban
+                || (other.ban_prefix.is_empty()
+                    && other.ban_suffix.is_empty()
+                    && other.ban_char.is_empty()))
             && (self.size
                 || (u32_is_max(&other.max_len)
                     && u32_is_zero(&other.min_len)

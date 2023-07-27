@@ -500,7 +500,7 @@ pub(crate) enum MapSerializer<'a> {
     },
     SizedUnordered {
         se: &'a mut FogSerializer,
-        map: BTreeMap<String, Vec<u8>>,
+        map: Vec<(String, Vec<u8>)>,
         pending_key: String,
     },
     UnsizedOrdered {
@@ -512,7 +512,7 @@ pub(crate) enum MapSerializer<'a> {
     },
     UnsizedUnordered {
         se: &'a mut FogSerializer,
-        map: BTreeMap<String, Vec<u8>>,
+        map: Vec<(String, Vec<u8>)>,
         pending_key: String,
     },
 }
@@ -530,7 +530,7 @@ impl<'a> MapSerializer<'a> {
             } else {
                 MapSerializer::SizedUnordered {
                     se,
-                    map: BTreeMap::new(),
+                    map: Vec::with_capacity(len),
                     pending_key: String::new(),
                 }
             })
@@ -549,7 +549,7 @@ impl<'a> MapSerializer<'a> {
             } else {
                 Ok(MapSerializer::UnsizedUnordered {
                     se,
-                    map: BTreeMap::new(),
+                    map: Vec::new(),
                     pending_key: String::new(),
                 })
             }
@@ -638,12 +638,10 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 let buf = mem::take(&mut se.buf);
                 se.encode_element(Element::Str(pending_key))?;
                 value.serialize(&mut **se)?;
-                // Replace buffers & store off in BTreeMap
+                // Replace buffers & store off in Vec
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::take(pending_key);
-                if map.insert(key, buf).is_some() {
-                    return Err(Error::SerdeFail("map has repeated keys".into()));
-                }
+                map.push((key, buf));
             }
             MapSerializer::UnsizedOrdered { se, .. } => {
                 value.serialize(&mut **se)?;
@@ -661,9 +659,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 // Replace buffers & store off in BTreeMap
                 let buf = mem::replace(&mut se.buf, buf);
                 let key = mem::take(pending_key);
-                if map.insert(key, buf).is_some() {
-                    return Err(Error::SerdeFail("map has repeated keys".into()));
-                }
+                map.push((key, buf));
                 if map.len() > (MAX_DOC_SIZE >> 1) {
                     return Err(Error::SerdeFail(format!(
                         "map too large: {} pairs",
@@ -678,8 +674,14 @@ impl<'a> SerializeMap for MapSerializer<'a> {
     fn end(self) -> Result<()> {
         match self {
             MapSerializer::SizedOrdered { .. } => (),
-            MapSerializer::SizedUnordered { se, map, .. } => {
+            MapSerializer::SizedUnordered { se, mut map, .. } => {
                 // Flush all buffers, in order, out to the main one
+                map.sort_unstable_by(|a,b| a.0.cmp(&b.0));
+                let len = map.len();
+                map.dedup_by(|a,b| a.0 == b.0);
+                if len != map.len() {
+                    return Err(Error::SerdeFail("map has repeated keys".into()));
+                }
                 for (_, vec) in map.iter() {
                     se.buf.extend_from_slice(vec);
                 }
@@ -692,10 +694,16 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 se.buf.extend_from_slice(&enc);
                 se.depth_tracking.early_end();
             }
-            MapSerializer::UnsizedUnordered { se, map, .. } => {
+            MapSerializer::UnsizedUnordered { se, mut map, .. } => {
                 // Fill in the real map marker, update depth tracking, and
                 // flush all buffers, in order, out to the main one
                 serialize_elem(&mut se.buf, Element::Map(map.len()));
+                map.sort_unstable_by(|a,b| a.0.cmp(&b.0));
+                let len = map.len();
+                map.dedup_by(|a,b| a.0 == b.0);
+                if len != map.len() {
+                    return Err(Error::SerdeFail("map has repeated keys".into()));
+                }
                 for (_, vec) in map.iter() {
                     se.buf.extend_from_slice(vec);
                 }
@@ -1785,7 +1793,8 @@ mod test {
         let mut ser = FogSerializer::default();
         let mut map_ser = ser.serialize_map(None).unwrap();
         map_ser.serialize_entry("itty", &'i').unwrap();
-        map_ser.serialize_entry("itty", &'b').unwrap_err();
+        map_ser.serialize_entry("itty", &'b').unwrap();
+        map_ser.end().unwrap_err();
     }
 
     #[test]
@@ -1801,7 +1810,8 @@ mod test {
         let mut ser = FogSerializer::default();
         let mut map_ser = ser.serialize_map(Some(2)).unwrap();
         map_ser.serialize_entry("itty", &'i').unwrap();
-        map_ser.serialize_entry("itty", &'b').unwrap_err();
+        map_ser.serialize_entry("itty", &'b').unwrap();
+        map_ser.end().unwrap_err();
     }
 
     #[test]

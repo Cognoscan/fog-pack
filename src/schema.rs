@@ -351,6 +351,11 @@ impl SchemaBuilder {
         self
     }
 
+    /// Look up a type that has already been stored.
+    pub fn type_get(&self, type_ref: &str) -> Option<&Validator> {
+        self.inner.types.get(type_ref)
+    }
+
     /// Set the schema version. This is only used for documentation purposes.
     pub fn version<T: Into<Integer>>(mut self, version: T) -> Self {
         self.inner.version = version.into();

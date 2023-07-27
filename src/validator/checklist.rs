@@ -188,15 +188,15 @@ mod test {
     #[test]
     fn runthrough() {
         // Set up the schemas
-        let schema1 = SchemaBuilder::new(Validator::Int(IntValidator::default()))
+        let schema1 = SchemaBuilder::new(IntValidator::default().build())
             .build()
             .unwrap();
         let schema1 = Schema::from_doc(&schema1).unwrap();
         let validator = IntValidator {
             min: Integer::from(0),
             ..IntValidator::default()
-        };
-        let schema2 = SchemaBuilder::new(Validator::Int(validator))
+        }.build();
+        let schema2 = SchemaBuilder::new(validator)
             .build()
             .unwrap();
         let schema2 = Schema::from_doc(&schema2).unwrap();
@@ -212,10 +212,10 @@ mod test {
 
         let types = BTreeMap::new();
         let mut checklist = Checklist::new(schema1.hash(), &types);
-        let validator = Validator::Int(IntValidator {
+        let validator = IntValidator {
             min: Integer::from(0u32),
             ..IntValidator::default()
-        });
+        }.build();
         let schema2_schema = [Some(schema2.hash().clone())];
         checklist.insert(doc1.hash().clone(), None, Some(&validator));
         checklist.insert(doc2.hash().clone(), None, Some(&validator));

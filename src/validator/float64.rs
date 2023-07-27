@@ -151,7 +151,7 @@ impl F64Validator {
 
     /// Build this into a [`Validator`] enum.
     pub fn build(self) -> Validator {
-        Validator::F64(self)
+        Validator::F64(Box::new(self))
     }
 
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {

@@ -75,7 +75,7 @@ impl IdentityValidator {
 
     /// Build this into a [`Validator`] enum.
     pub fn build(self) -> Validator {
-        Validator::Identity(self)
+        Validator::Identity(Box::new(self))
     }
 
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {

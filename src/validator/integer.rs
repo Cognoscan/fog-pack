@@ -197,7 +197,7 @@ impl IntValidator {
 
     /// Build this into a [`Validator`] enum.
     pub fn build(self) -> Validator {
-        Validator::Int(self)
+        Validator::Int(Box::new(self))
     }
 
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {

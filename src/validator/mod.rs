@@ -22,13 +22,13 @@
 //! let dir = MapValidator::new()
 //!     .req_add("created", TimeValidator::new().build())
 //!     .req_add("contents", MapValidator::new()
-//!         .keys(KeyValidator::new()
-//!             .matches(Regex::new(r"^[^/\x00]+$").unwrap())
+//!         .keys(StrValidator::new()
+//!             .nin_add(".")
+//!             .nin_add("..")
+//!             .ban_char("/\0")
 //!             .max_len(255)
 //!             .min_len(1)
 //!         )
-//!         .ban_add(".")
-//!         .ban_add("..")
 //!         .values(HashValidator::new().build())
 //!         .build()
 //!     )
@@ -99,23 +99,23 @@ pub enum Normalize {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Validator {
     Null,
-    Bool(BoolValidator),
-    Int(IntValidator),
-    F32(F32Validator),
-    F64(F64Validator),
-    Bin(BinValidator),
-    Str(StrValidator),
-    Array(ArrayValidator),
-    Map(MapValidator),
-    Time(TimeValidator),
-    Hash(HashValidator),
-    Identity(IdentityValidator),
-    StreamId(StreamIdValidator),
-    LockId(LockIdValidator),
-    DataLockbox(DataLockboxValidator),
-    IdentityLockbox(IdentityLockboxValidator),
-    StreamLockbox(StreamLockboxValidator),
-    LockLockbox(LockLockboxValidator),
+    Bool(Box<BoolValidator>),
+    Int(Box<IntValidator>),
+    F32(Box<F32Validator>),
+    F64(Box<F64Validator>),
+    Bin(Box<BinValidator>),
+    Str(Box<StrValidator>),
+    Array(Box<ArrayValidator>),
+    Map(Box<MapValidator>),
+    Time(Box<TimeValidator>),
+    Hash(Box<HashValidator>),
+    Identity(Box<IdentityValidator>),
+    StreamId(Box<StreamIdValidator>),
+    LockId(Box<LockIdValidator>),
+    DataLockbox(Box<DataLockboxValidator>),
+    IdentityLockbox(Box<IdentityLockboxValidator>),
+    StreamLockbox(Box<StreamLockboxValidator>),
+    LockLockbox(Box<LockLockboxValidator>),
     Ref(String),
     Multi(MultiValidator),
     Enum(EnumValidator),

@@ -75,7 +75,7 @@ impl StreamIdValidator {
 
     /// Build this into a [`Validator`] enum.
     pub fn build(self) -> Validator {
-        Validator::StreamId(self)
+        Validator::StreamId(Box::new(self))
     }
 
     pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {

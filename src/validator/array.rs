@@ -239,7 +239,7 @@ impl ArrayValidator {
 
     /// Build this into a [`Validator`] enum.
     pub fn build(self) -> Validator {
-        Validator::Array(self)
+        Validator::Array(Box::new(self))
     }
 
     pub(crate) fn validate<'de, 'c>(

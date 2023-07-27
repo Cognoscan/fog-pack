@@ -155,7 +155,7 @@ impl HashValidator {
 
     /// Build this into a [`Validator`] enum.
     pub fn build(self) -> Validator {
-        Validator::Hash(self)
+        Validator::Hash(Box::new(self))
     }
 
     pub(crate) fn validate<'c>(
@@ -261,7 +261,7 @@ mod test {
     #[test]
     fn verify_simple() {
         let mut schema = HashValidator {
-            link: Some(Box::new(Validator::Hash(HashValidator::default()))),
+            link: Some(Box::new(HashValidator::default().build())),
             ..HashValidator::default()
         };
         schema

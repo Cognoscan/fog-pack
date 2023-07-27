@@ -180,21 +180,20 @@ impl Query {
 mod test {
     use regex::Regex;
 
-    use crate::validator::{KeyValidator, MapValidator, StrValidator};
+    use crate::validator::{MapValidator, StrValidator};
 
     use super::*;
 
     #[test]
     fn max_regex_in_key() {
-        let map = MapValidator {
-            keys: KeyValidator {
+        let validator = MapValidator {
+            keys: Some(Box::new(StrValidator {
                 matches: Some(Box::new(Regex::new("[a-z]").unwrap())),
                 ..Default::default()
-            },
+            })),
             ..Default::default()
-        };
+        }.build();
 
-        let validator = Validator::Map(map);
         NewQuery::new("test", validator.clone())
             .complete(0)
             .unwrap_err();
@@ -207,10 +206,10 @@ mod test {
     #[test]
     fn max_regex_in_str() {
         let matches = Some(Box::new(Regex::new("[a-z]").unwrap()));
-        let validator = Validator::Str(StrValidator {
+        let validator = StrValidator {
             matches,
             ..Default::default()
-        });
+        }.build();
         NewQuery::new("test", validator.clone())
             .complete(0)
             .unwrap_err();

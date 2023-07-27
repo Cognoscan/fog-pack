@@ -19,11 +19,6 @@ fn u32_is_max(v: &u32) -> bool {
     *v == u32::MAX
 }
 
-#[inline]
-fn normalize_is_none(v: &Normalize) -> bool {
-    matches!(v, Normalize::None)
-}
-
 fn get_str_validator<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Box<StrValidator>>, D::Error> {
@@ -253,7 +248,7 @@ impl MapValidator {
 
     /// Build this into a [`Validator`] enum.
     pub fn build(self) -> Validator {
-        Validator::Map(self)
+        Validator::Map(Box::new(self))
     }
 
     pub(crate) fn validate<'de, 'c>(

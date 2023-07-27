@@ -107,7 +107,7 @@ macro_rules! lockbox_validator {
 
             /// Build this into a [`Validator`] enum.
             pub fn build(self) -> Validator {
-                Validator::$e(self)
+                Validator::$e(Box::new(self))
             }
 
             pub(crate) fn validate(&self, parser: &mut Parser) -> Result<()> {

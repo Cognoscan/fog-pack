@@ -67,7 +67,13 @@ impl NewQuery {
             match v {
                 Validator::Str(val) => val.matches.is_some() as usize,
                 Validator::Map(val) => {
-                    val.keys.matches.is_some() as usize
+                    let key_matches = if let Some(s) = val.keys.as_ref() {
+                        s.matches.is_some() as usize
+                    }
+                    else {
+                        0
+                    };
+                    key_matches
                         + val
                             .req
                             .values()

@@ -395,16 +395,16 @@ mod test {
     use super::*;
 
     fn edge_cases() -> Vec<(usize, Timestamp)> {
-        let mut test_cases = Vec::new();
-        test_cases.push((5, Timestamp::from_utc(0, 0).unwrap()));
-        test_cases.push((5, Timestamp::from_utc(1, 0).unwrap()));
-        test_cases.push((13, Timestamp::from_utc(1, 1).unwrap()));
-        test_cases.push((5, Timestamp::from_utc(u32::MAX as i64 - 1, 0).unwrap()));
-        test_cases.push((5, Timestamp::from_utc(u32::MAX as i64 - 0, 0).unwrap()));
-        test_cases.push((9, Timestamp::from_utc(u32::MAX as i64 + 1, 0).unwrap()));
-        test_cases.push((9, Timestamp::from_utc(i64::MIN, 0).unwrap()));
-        test_cases.push((13, Timestamp::from_utc(i64::MIN, 1).unwrap()));
-        test_cases
+        vec![
+            (5, Timestamp::from_utc(0, 0).unwrap()),
+            (5, Timestamp::from_utc(1, 0).unwrap()),
+            (13, Timestamp::from_utc(1, 1).unwrap()),
+            (5, Timestamp::from_utc(u32::MAX as i64 - 1, 0).unwrap()),
+            (5, Timestamp::from_utc(u32::MAX as i64, 0).unwrap()),
+            (9, Timestamp::from_utc(u32::MAX as i64 + 1, 0).unwrap()),
+            (9, Timestamp::from_utc(i64::MIN, 0).unwrap()),
+            (13, Timestamp::from_utc(i64::MIN, 1).unwrap()),
+        ]
     }
 
     #[test]

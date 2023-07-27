@@ -1381,7 +1381,7 @@ mod test {
         test_cases.push((-2, vec![0xfe]));
         test_cases.push((-32, vec![0xe0]));
         test_cases.push((-33, vec![0xd0, 0xdf]));
-        test_cases.push((i8::MIN as i8, vec![0xd0, 0x80]));
+        test_cases.push((i8::MIN, vec![0xd0, 0x80]));
 
         for (int, enc) in test_cases {
             let to_ser = int;
@@ -1406,7 +1406,7 @@ mod test {
         test_cases.push((-33, vec![0xd0, 0xdf]));
         test_cases.push((i8::MIN as i16, vec![0xd0, 0x80]));
         test_cases.push((i8::MIN as i16 - 1, vec![0xd1, 0x7f, 0xff]));
-        test_cases.push((i16::MIN as i16, vec![0xd1, 0x00, 0x80]));
+        test_cases.push((i16::MIN, vec![0xd1, 0x00, 0x80]));
 
         for (int, enc) in test_cases {
             let to_ser = int;
@@ -1435,7 +1435,7 @@ mod test {
         test_cases.push((i8::MIN as i32 - 1, vec![0xd1, 0x7f, 0xff]));
         test_cases.push((i16::MIN as i32, vec![0xd1, 0x00, 0x80]));
         test_cases.push((i16::MIN as i32 - 1, vec![0xd2, 0xff, 0x7f, 0xff, 0xff]));
-        test_cases.push((i32::MIN as i32, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
+        test_cases.push((i32::MIN, vec![0xd2, 0x00, 0x00, 0x00, 0x80]));
 
         for (int, enc) in test_cases {
             let to_ser = int;

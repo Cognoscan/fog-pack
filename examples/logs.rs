@@ -210,8 +210,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for i in 0..1000 {
         let dec_logs: Vec<Log> = docs
             .iter()
-            .map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
-            .flatten()
+            .flat_map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
             .collect();
         println!("#{}: Decoded {} documents overall", i, dec_logs.len());
         //let sum: usize = docs.iter().map(|doc| {

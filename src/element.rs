@@ -1088,7 +1088,7 @@ mod test {
             let val = result.unwrap();
             assert!(parser.next().is_none());
             if let Element::Bool(val) = val {
-                assert_eq!(val, true);
+                assert!(val);
             } else {
                 panic!("Element wasn't an Integer");
             }
@@ -1107,7 +1107,7 @@ mod test {
             let val = result.unwrap();
             assert!(parser.next().is_none());
             if let Element::Bool(val) = val {
-                assert_eq!(val, false);
+                assert!(!val);
             } else {
                 panic!("Element wasn't an Integer");
             }
@@ -1745,17 +1745,17 @@ mod test {
         }
 
         fn spec_examples() -> Vec<(usize, Vec<u8>)> {
-            let mut test_cases = Vec::new();
-            test_cases.push((0x000000, vec![0x90]));
-            test_cases.push((0x000001, vec![0x91]));
-            test_cases.push((0x00000f, vec![0x9f]));
-            test_cases.push((0x000010, vec![0xd7, 0x10]));
-            test_cases.push((0x0000ff, vec![0xd7, 0xff]));
-            test_cases.push((0x000100, vec![0xd8, 0x00, 0x01]));
-            test_cases.push((0x00ffff, vec![0xd8, 0xff, 0xff]));
-            test_cases.push((0x010000, vec![0xd9, 0x00, 0x00, 0x01]));
-            test_cases.push((0x020000, vec![0xd9, 0x00, 0x00, 0x02]));
-            test_cases
+            vec![
+                (0x000000, vec![0x90]),
+                (0x000001, vec![0x91]),
+                (0x00000f, vec![0x9f]),
+                (0x000010, vec![0xd7, 0x10]),
+                (0x0000ff, vec![0xd7, 0xff]),
+                (0x000100, vec![0xd8, 0x00, 0x01]),
+                (0x00ffff, vec![0xd8, 0xff, 0xff]),
+                (0x010000, vec![0xd9, 0x00, 0x00, 0x01]),
+                (0x020000, vec![0xd9, 0x00, 0x00, 0x02]),
+            ]
         }
 
         #[test]
@@ -1810,19 +1810,21 @@ mod test {
 
         #[test]
         fn not_shortest() {
-            let mut test_cases: Vec<(usize, Vec<u8>)> = Vec::new();
-            test_cases.push((0x0000, vec![0xd7, 0x00]));
-            test_cases.push((0x0001, vec![0xd7, 0x01]));
-            test_cases.push((0x000f, vec![0xd7, 0x0f]));
-            test_cases.push((0x000f, vec![0xd8, 0x0f, 0x00]));
-            test_cases.push((0x0010, vec![0xd8, 0x10, 0x00]));
-            test_cases.push((0x00ff, vec![0xd8, 0xff, 0x00]));
-            test_cases.push((0x000f, vec![0xd9, 0x0f, 0x00, 0x00]));
-            test_cases.push((0x0010, vec![0xd9, 0x10, 0x00, 0x00]));
-            test_cases.push((0x00ff, vec![0xd9, 0xff, 0x00, 0x00]));
-            test_cases.push((0x0100, vec![0xd9, 0x00, 0x01, 0x00]));
-            test_cases.push((0x1000, vec![0xd9, 0x00, 0x10, 0x00]));
-            test_cases.push((0xffff, vec![0xd9, 0xff, 0xff, 0x00]));
+            let mut test_cases: Vec<(usize, Vec<u8>)> = vec![
+                (0x0000, vec![0xd7, 0x00]),
+                (0x0001, vec![0xd7, 0x01]),
+                (0x000f, vec![0xd7, 0x0f]),
+                (0x000f, vec![0xd8, 0x0f, 0x00]),
+                (0x0010, vec![0xd8, 0x10, 0x00]),
+                (0x00ff, vec![0xd8, 0xff, 0x00]),
+                (0x000f, vec![0xd9, 0x0f, 0x00, 0x00]),
+                (0x0010, vec![0xd9, 0x10, 0x00, 0x00]),
+                (0x00ff, vec![0xd9, 0xff, 0x00, 0x00]),
+                (0x0100, vec![0xd9, 0x00, 0x01, 0x00]),
+                (0x1000, vec![0xd9, 0x00, 0x10, 0x00]),
+                (0xffff, vec![0xd9, 0xff, 0xff, 0x00]),
+            ];
+
             for (len, enc) in test_cases.iter_mut() {
                 enc.resize(enc.len() + *len, 0xa0);
             }
@@ -1893,17 +1895,17 @@ mod test {
         }
 
         fn spec_examples() -> Vec<(usize, Vec<u8>)> {
-            let mut test_cases = Vec::new();
-            test_cases.push((0x000000, vec![0x80]));
-            test_cases.push((0x000001, vec![0x81]));
-            test_cases.push((0x00000f, vec![0x8f]));
-            test_cases.push((0x000010, vec![0xda, 0x10]));
-            test_cases.push((0x0000ff, vec![0xda, 0xff]));
-            test_cases.push((0x000100, vec![0xdb, 0x00, 0x01]));
-            test_cases.push((0x00ffff, vec![0xdb, 0xff, 0xff]));
-            test_cases.push((0x010000, vec![0xdc, 0x00, 0x00, 0x01]));
-            test_cases.push((0x020000, vec![0xdc, 0x00, 0x00, 0x02]));
-            test_cases
+            vec![
+                (0x000000, vec![0x80]),
+                (0x000001, vec![0x81]),
+                (0x00000f, vec![0x8f]),
+                (0x000010, vec![0xda, 0x10]),
+                (0x0000ff, vec![0xda, 0xff]),
+                (0x000100, vec![0xdb, 0x00, 0x01]),
+                (0x00ffff, vec![0xdb, 0xff, 0xff]),
+                (0x010000, vec![0xdc, 0x00, 0x00, 0x01]),
+                (0x020000, vec![0xdc, 0x00, 0x00, 0x02]),
+            ]
         }
 
         #[test]
@@ -1959,19 +1961,20 @@ mod test {
 
         #[test]
         fn not_shortest() {
-            let mut test_cases = Vec::new();
-            test_cases.push((0x0000, vec![0xda, 0x00]));
-            test_cases.push((0x0001, vec![0xda, 0x01]));
-            test_cases.push((0x000f, vec![0xda, 0x0f]));
-            test_cases.push((0x000f, vec![0xdb, 0x0f, 0x00]));
-            test_cases.push((0x0010, vec![0xdb, 0x10, 0x00]));
-            test_cases.push((0x00ff, vec![0xdb, 0xff, 0x00]));
-            test_cases.push((0x000f, vec![0xdc, 0x0f, 0x00, 0x00]));
-            test_cases.push((0x0010, vec![0xdc, 0x10, 0x00, 0x00]));
-            test_cases.push((0x00ff, vec![0xdc, 0xff, 0x00, 0x00]));
-            test_cases.push((0x0100, vec![0xdc, 0x00, 0x01, 0x00]));
-            test_cases.push((0x1000, vec![0xdc, 0x00, 0x10, 0x00]));
-            test_cases.push((0xffff, vec![0xdc, 0xff, 0xff, 0x00]));
+            let mut test_cases = vec![
+                (0x0000, vec![0xda, 0x00]),
+                (0x0001, vec![0xda, 0x01]),
+                (0x000f, vec![0xda, 0x0f]),
+                (0x000f, vec![0xdb, 0x0f, 0x00]),
+                (0x0010, vec![0xdb, 0x10, 0x00]),
+                (0x00ff, vec![0xdb, 0xff, 0x00]),
+                (0x000f, vec![0xdc, 0x0f, 0x00, 0x00]),
+                (0x0010, vec![0xdc, 0x10, 0x00, 0x00]),
+                (0x00ff, vec![0xdc, 0xff, 0x00, 0x00]),
+                (0x0100, vec![0xdc, 0x00, 0x01, 0x00]),
+                (0x1000, vec![0xdc, 0x00, 0x10, 0x00]),
+                (0xffff, vec![0xdc, 0xff, 0xff, 0x00]),
+            ];
             for (len, enc) in test_cases.iter_mut() {
                 enc.resize(enc.len() + (*len * 2), 0xa0);
             }
@@ -2078,16 +2081,16 @@ mod test {
         use super::*;
 
         fn edge_cases() -> Vec<(usize, Timestamp)> {
-            let mut test_cases = Vec::new();
-            test_cases.push((5, Timestamp::from_utc(0, 0).unwrap()));
-            test_cases.push((5, Timestamp::from_utc(1, 0).unwrap()));
-            test_cases.push((13, Timestamp::from_utc(1, 1).unwrap()));
-            test_cases.push((5, Timestamp::from_utc(u32::MAX as i64 - 1, 0).unwrap()));
-            test_cases.push((5, Timestamp::from_utc(u32::MAX as i64, 0).unwrap()));
-            test_cases.push((9, Timestamp::from_utc(u32::MAX as i64 + 1, 0).unwrap()));
-            test_cases.push((9, Timestamp::from_utc(i64::MIN, 0).unwrap()));
-            test_cases.push((13, Timestamp::from_utc(i64::MIN, 1).unwrap()));
-            test_cases
+            vec![
+                (5, Timestamp::from_utc(0, 0).unwrap()),
+                (5, Timestamp::from_utc(1, 0).unwrap()),
+                (13, Timestamp::from_utc(1, 1).unwrap()),
+                (5, Timestamp::from_utc(u32::MAX as i64 - 1, 0).unwrap()),
+                (5, Timestamp::from_utc(u32::MAX as i64, 0).unwrap()),
+                (9, Timestamp::from_utc(u32::MAX as i64 + 1, 0).unwrap()),
+                (9, Timestamp::from_utc(i64::MIN, 0).unwrap()),
+                (13, Timestamp::from_utc(i64::MIN, 1).unwrap()),
+            ]
         }
 
         #[test]

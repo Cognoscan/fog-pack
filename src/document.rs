@@ -34,7 +34,7 @@ use std::{
     task::{Context, Poll},
 };
 
-/// Attempt to get the schema for a raw document. Fails if the raw byte slice doesn't conform to 
+/// Attempt to get the schema for a raw document. Fails if the raw byte slice doesn't conform to
 /// the right format, or if the hash is invalid.
 pub fn get_doc_schema(doc: &[u8]) -> Result<Option<Hash>> {
     let hash_raw = SplitDoc::split(doc)?.hash_raw;
@@ -747,9 +747,9 @@ mod test {
 
     #[test]
     fn create_new() {
-        let new_doc = NewDocument::new(None, &1u8).unwrap();
+        let new_doc = NewDocument::new(None, 1u8).unwrap();
         assert!(new_doc.schema_hash().is_none());
-        let expected_hash = Hash::new(&[0u8, 1u8]);
+        let expected_hash = Hash::new([0u8, 1u8]);
         assert_eq!(new_doc.hash(), &expected_hash);
         assert_eq!(new_doc.data(), &[1u8]);
         let expected = vec![0u8, 0u8, 1u8, 0u8, 0u8, 1u8];
@@ -763,7 +763,7 @@ mod test {
     fn create_doc() {
         let encoded = vec![0u8, 0u8, 1u8, 0u8, 0u8, 1u8];
         let doc = Document::new(encoded.clone()).unwrap();
-        let expected_hash = Hash::new(&[0u8, 1u8]);
+        let expected_hash = Hash::new([0u8, 1u8]);
         assert_eq!(doc.hash(), &expected_hash);
         assert_eq!(doc.data(), &[1u8]);
         let val: u8 = doc.deserialize().unwrap();
@@ -880,7 +880,7 @@ mod test {
     #[test]
     fn sign_roundtrip() {
         let key = IdentityKey::new_temp(&mut rand::rngs::OsRng);
-        let new_doc = NewDocument::new(None, &1u8).unwrap().sign(&key).unwrap();
+        let new_doc = NewDocument::new(None, 1u8).unwrap().sign(&key).unwrap();
         assert_eq!(new_doc.data(), &[1u8]);
         let (doc_hash, doc_vec, _) = Document::from_new(new_doc).complete();
         let doc = Document::new(doc_vec).unwrap();
@@ -1169,8 +1169,7 @@ mod test {
             .collect();
         let dec_logs: Vec<Log> = docs
             .iter()
-            .map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
-            .flatten()
+            .flat_map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
             .collect();
         assert!(dec_logs == logs, "Didn't decode identically")
     }
@@ -1242,11 +1241,10 @@ mod test {
         let dec_logs: Vec<Log> = docs
             .iter()
             .map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
-            .map(|doc| {
+            .flat_map(|doc| {
                 println!("Document item count = {}", doc.len());
                 doc
             })
-            .flatten()
             .collect();
         println!("We have a total of {} logs", dec_logs.len());
         println!("We expected a total of {} logs", logs.len());

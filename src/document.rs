@@ -579,7 +579,7 @@ impl NewDocument {
         }))
     }
 
-    /// Create a new Entry from any serializable data, a key, and the Hash of the parent document.
+    /// Create a new Document from any serializable data, optionally adhering to a schema.
     pub fn new<S: Serialize>(schema: Option<&Hash>, data: S) -> Result<Self> {
         Self::new_from(schema, |buf| {
             // Encode the data
@@ -589,10 +589,10 @@ impl NewDocument {
         })
     }
 
-    /// Create a new Entry from any serializable data whose keys are all ordered. For structs, this
-    /// means all fields are declared in lexicographic order. For maps, this means a `BTreeMap`
-    /// type must be used, whose keys are ordered such that they serialize to lexicographically
-    /// ordered strings. All sub-structs and sub-maps must be similarly ordered.
+    /// Create a new Document from any serializable data whose keys are all ordered. For structs,
+    /// this means all fields are declared in lexicographic order. For maps, this means a
+    /// `BTreeMap` type must be used, whose keys are ordered such that they serialize to
+    /// lexicographically ordered strings. All sub-structs and sub-maps must be similarly ordered.
     pub fn new_ordered<S: Serialize>(data: S, schema: Option<&Hash>) -> Result<Self> {
         Self::new_from(schema, |buf| {
             // Encode the data

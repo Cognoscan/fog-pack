@@ -1,7 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use fog_pack::*;
+use fog_pack::{
+    schema::NoSchema,
+    document::*,
+};
 use rand::Rng;
-use std::error::Error;
 use std::mem;
 use std::ops;
 
@@ -196,8 +198,7 @@ impl Generate for Log {
 
 fn read_all_docs(docs: &[Document]) -> Vec<Log> {
     docs.iter()
-        .map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
-        .flatten()
+        .flat_map(|doc| doc.deserialize::<Vec<Log>>().unwrap())
         .collect()
 }
 

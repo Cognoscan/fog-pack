@@ -27,7 +27,6 @@ fn get_str_validator<'de, D: Deserializer<'de>>(
     Ok(Some(Box::new(StrValidator::deserialize(deserializer)?)))
 }
 
-
 fn get_validator<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Box<Validator>>, D::Error> {
@@ -41,8 +40,8 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// This validator will only pass maps, whose keys are strings and values are any valid fog-pack
 /// value. Validation passes if:
 ///
-/// - If the `in` list is not empty, the array must be among the arrays in the list.
-/// - The array must not be among the arrays in the `nin` list.
+/// - If the `in` list is not empty, the map must be among the maps in the list.
+/// - The map must not be among the maps in the `nin` list.
 /// - The number of key-value pairs in the map is less than or equal to the value in `max_len`.
 /// - The number of key-value pairs in the map is greater than or equal to the value in `min_len`.
 /// - There must be a matching key-value in the map for each key-validator pair in `req` .
@@ -54,6 +53,8 @@ fn get_validator<'de, D: Deserializer<'de>>(
 ///        value, and the validator for `keys` (if present) is used to validate the key.
 ///         1. If no validator is present for `keys`, the key passes.
 ///         2. If there is no validator for `values`, validation does not pass.
+/// - If `same_len` is not empty, the keys it lists must either all not exist, or if any of them
+///     exist, they must all exist and their values must all be arrays with the same lengths.
 ///
 /// Note how each key-value pair must be validated, so an unlimited collection of key-value pairs
 /// isn't allowed unless there is a validator present in `values`.
@@ -70,13 +71,13 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// - values: None
 /// - req: empty
 /// - opt: empty
+/// - same_len: empty
 /// - in_list: empty
 /// - nin_list: empty
 /// - query: false
 /// - size: false
 /// - map_ok: false
-/// - match_keys: false
-/// - len_keys: false
+/// - same_len_ok: false
 ///
 /// # Query Checking
 ///
@@ -86,12 +87,13 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// - query: `in` and `nin` lists
 /// - size: `max_len` and `min_len`
 /// - map_ok: `req`, `opt`, `keys`, and `values`
+/// - same_len_ok: `same_len`
 ///
 /// In addition, sub-validators in the query are matched against the schema's sub-validators:
 ///
-/// - The `values` validator is checked against the schema's `values` validator. If no schema 
+/// - The `values` validator is checked against the schema's `values` validator. If no schema
 ///     validator is present, the query is invalid.
-/// - The `keys` string validator is checked against the schema's `keys` string validator. If no 
+/// - The `keys` string validator is checked against the schema's `keys` string validator. If no
 ///     schema validator is present, the query is invalid.
 /// - The `req` validators are checked against the schema's `req`/`opt`/`values` validators,
 ///     choosing whichever validator is found first. If no validator is found, the check fails.
@@ -138,6 +140,10 @@ pub struct MapValidator {
     /// A vector of specific unallowed values, stored under the `nin` field.
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<BTreeMap<String, Value>>,
+    /// A vector of which keys must either not exist, or must all exist and contain arrays of the
+    /// same lengths.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub same_len: Vec<String>,
     /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
@@ -147,6 +153,9 @@ pub struct MapValidator {
     /// If true, queries against matching spots may use `req`, `opt`, `keys`, and `values`.
     #[serde(skip_serializing_if = "is_false")]
     pub map_ok: bool,
+    /// If true, queries against matching spots may use `same_len`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub same_len_ok: bool,
 }
 
 impl Default for MapValidator {
@@ -161,9 +170,11 @@ impl Default for MapValidator {
             opt: BTreeMap::new(),
             in_list: Vec::new(),
             nin_list: Vec::new(),
+            same_len: Vec::new(),
             query: false,
             size: false,
             map_ok: false,
+            same_len_ok: false,
         }
     }
 }
@@ -228,6 +239,12 @@ impl MapValidator {
         self
     }
 
+    /// Add a key to the `same_len` list.
+    pub fn same_len_add(mut self, add: impl Into<String>) -> Self {
+        self.same_len.push(add.into());
+        self
+    }
+
     /// Set whether or not queries can use the `in` and `nin` lists.
     pub fn query(mut self, query: bool) -> Self {
         self.query = query;
@@ -243,6 +260,12 @@ impl MapValidator {
     /// Set whether or not queries can use the `req`, `opt`, `ban`, and `values` values.
     pub fn map_ok(mut self, map_ok: bool) -> Self {
         self.map_ok = map_ok;
+        self
+    }
+
+    /// Set whether or not queries can use the `same_len` value.
+    pub fn same_len_ok(mut self, same_len_ok: bool) -> Self {
+        self.same_len_ok = same_len_ok;
         self
     }
 
@@ -313,6 +336,8 @@ impl MapValidator {
 
         // Loop through each item, verifying it with the appropriate validator
         let mut reqs_found = 0;
+        let mut array_len: Option<usize> = None;
+        let mut array_len_cnt = 0;
         for _ in 0..len {
             // Extract the key
             let elem = parser
@@ -327,22 +352,43 @@ impl MapValidator {
                 )));
             };
 
+            if self.same_len.iter().any(|s| s == key) {
+                // Peek the array and its length
+                let elem = parser.peek().ok_or_else(|| {
+                    Error::FailValidate("expected an array element".to_string())
+                })??;
+                let Element::Array(len) = elem else {
+                    return Err(Error::FailValidate(format!(
+                        "expected array for key {:?}, got {}",
+                        key, elem.name()
+                    )));
+                };
+                if let Some(array_len) = array_len {
+                    if array_len != len {
+                        return Err(Error::FailValidate(format!(
+                            "expected array of length {} for key {:?}, but length was {}",
+                            array_len, key, len
+                        )));
+                    }
+                } else {
+                    array_len = Some(len);
+                }
+                array_len_cnt += 1;
+            }
+
             // Look up the appropriate validator and use it
             let (p, c) = if let Some(validator) = self.req.get(key) {
                 reqs_found += 1;
                 validator.validate(types, parser, checklist)?
-            }
-            else if let Some(validator) = self.opt.get(key) {
+            } else if let Some(validator) = self.opt.get(key) {
                 validator.validate(types, parser, checklist)?
-            }
-            else if let Some(validator) = &self.values {
+            } else if let Some(validator) = &self.values {
                 // Make sure the key is valid before proceeding
                 if let Some(keys) = &self.keys {
                     keys.validate_str(key)?;
                 }
                 validator.validate(types, parser, checklist)?
-            }
-            else {
+            } else {
                 return Err(Error::FailValidate(format!(
                     "Map key {:?} has no corresponding validator",
                     key
@@ -351,6 +397,12 @@ impl MapValidator {
 
             parser = p;
             checklist = c;
+        }
+
+        if array_len.is_some() && array_len_cnt != self.same_len.len() {
+            return Err(Error::FailValidate(
+                "Map had some, but not all, of the keys listed in `same_len`".into(),
+            ));
         }
 
         if reqs_found != self.req.len() {
@@ -366,6 +418,7 @@ impl MapValidator {
     fn query_check_self(&self, types: &BTreeMap<String, Validator>, other: &MapValidator) -> bool {
         let initial_check = (self.query || (other.in_list.is_empty() && other.nin_list.is_empty()))
             && (self.size || (u32_is_max(&other.max_len) && u32_is_zero(&other.min_len)))
+            && (self.same_len_ok || other.same_len.is_empty())
             && (self.map_ok
                 || (other.req.is_empty()
                     && other.opt.is_empty()
@@ -375,7 +428,7 @@ impl MapValidator {
             return false;
         }
         if self.map_ok {
-            // Make sure `keys` and `values` are OK, then check the req/opt pairs against matching 
+            // Make sure `keys` and `values` are OK, then check the req/opt pairs against matching
             // validators
 
             let values_ok = match (&self.values, &other.values) {
@@ -462,5 +515,65 @@ mod test {
         let decoded = MapValidator::deserialize(&mut de).unwrap();
         println!("{}", de.get_debug().unwrap());
         assert_eq!(schema, decoded);
+    }
+
+    #[test]
+    fn same_len() {
+        let schema = MapValidator::new()
+            .values(ArrayValidator::new().build())
+            .same_len_add("a")
+            .same_len_add("b");
+
+        #[derive(Clone, Debug, Serialize, Deserialize)]
+        struct Test {
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            a: Vec<u8>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            b: Vec<u8>,
+        }
+
+        // Passing
+        let test = Test {
+            a: vec![0, 1],
+            b: vec![2, 3],
+        };
+        let mut ser = FogSerializer::default();
+        test.serialize(&mut ser).unwrap();
+        let serialized = ser.finish();
+        let parser = Parser::new(&serialized);
+        assert!(schema.validate(&BTreeMap::new(), parser, None).is_ok());
+
+        // Passing by empty
+        let test = Test {
+            a: vec![],
+            b: vec![],
+        };
+        let mut ser = FogSerializer::default();
+        test.serialize(&mut ser).unwrap();
+        let serialized = ser.finish();
+        let parser = Parser::new(&serialized);
+        assert!(schema.validate(&BTreeMap::new(), parser, None).is_ok());
+
+        // Failing with only one present
+        let test = Test {
+            a: vec![2, 3],
+            b: vec![],
+        };
+        let mut ser = FogSerializer::default();
+        test.serialize(&mut ser).unwrap();
+        let serialized = ser.finish();
+        let parser = Parser::new(&serialized);
+        assert!(schema.validate(&BTreeMap::new(), parser, None).is_err());
+
+        // Failing with only both present but incorrect lengths
+        let test = Test {
+            a: vec![2, 3],
+            b: vec![1, 2, 3],
+        };
+        let mut ser = FogSerializer::default();
+        test.serialize(&mut ser).unwrap();
+        let serialized = ser.finish();
+        let parser = Parser::new(&serialized);
+        assert!(schema.validate(&BTreeMap::new(), parser, None).is_err());
     }
 }

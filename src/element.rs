@@ -475,495 +475,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Given a retrieved marker, try to turn it into the next element, which may move through the
-    // indexed data. If we can't, error. This function *does not* set the the errored flag. That's
-    // up to the caller.
+    /// Peek the next element. This doesn't update any of the internal state
+    /// tracking, which means it also doesn't track the depth or error
+    /// condition.
+    pub fn peek(&self) -> Option<Result<Element<'a>>> {
+        let data: &[u8] = self.data;
+        if self.errored {
+            return None;
+        }
+        let (&marker, mut data) = data.split_first()?;
+        Some(Self::get_element(&mut data, Marker::from_u8(marker)))
+    }
+
     fn parse_element(&mut self, marker: Marker) -> Result<Element<'a>> {
-        use self::Marker::*;
-        let elem =
-            match marker {
-                Reserved => return Err(Error::BadEncode(String::from("Reserved marker found"))),
-                Null => Element::Null,
-                False => Element::Bool(false),
-                True => Element::Bool(true),
-                PosFixInt(v) => Element::Int(v.into()),
-                UInt8 => {
-                    let v = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                        step: "decode UInt8",
-                        actual: 0,
-                        expected: 1,
-                    })?;
-                    if v < 128 {
-                        return Err(Error::BadEncode(format!(
-                            "Got UInt8 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                UInt16 => {
-                    let v = self.data.read_u16::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode UInt16",
-                            actual: self.data.len(),
-                            expected: 2,
-                        }
-                    })?;
-                    if v <= u8::MAX as u16 {
-                        return Err(Error::BadEncode(format!(
-                            "Got UInt16 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                UInt32 => {
-                    let v = self.data.read_u32::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode UInt32",
-                            actual: self.data.len(),
-                            expected: 4,
-                        }
-                    })?;
-                    if v <= u16::MAX as u32 {
-                        return Err(Error::BadEncode(format!(
-                            "Got UInt32 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                UInt64 => {
-                    let v = self.data.read_u64::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode UInt64",
-                            actual: self.data.len(),
-                            expected: 8,
-                        }
-                    })?;
-                    if v <= u32::MAX as u64 {
-                        return Err(Error::BadEncode(format!(
-                            "Got UInt64 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                NegFixInt(v) => Element::Int(v.into()),
-                Int8 => {
-                    let v = self.data.read_i8().map_err(|_| Error::LengthTooShort {
-                        step: "decode UInt8",
-                        actual: 0,
-                        expected: 1,
-                    })?;
-                    if v >= -32 {
-                        return Err(Error::BadEncode(format!(
-                            "Got Int8 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                Int16 => {
-                    let v = self.data.read_i16::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode Int16",
-                            actual: self.data.len(),
-                            expected: 2,
-                        }
-                    })?;
-                    if v >= i8::MIN as i16 {
-                        return Err(Error::BadEncode(format!(
-                            "Got Int16 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                Int32 => {
-                    let v = self.data.read_i32::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode Int32",
-                            actual: self.data.len(),
-                            expected: 4,
-                        }
-                    })?;
-                    if v >= i16::MIN as i32 {
-                        return Err(Error::BadEncode(format!(
-                            "Got Int32 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                Int64 => {
-                    let v = self.data.read_i64::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode Int64",
-                            actual: self.data.len(),
-                            expected: 8,
-                        }
-                    })?;
-                    if v >= i32::MIN as i64 {
-                        return Err(Error::BadEncode(format!(
-                            "Got Int64 with value = {}. This is not the shortest encoding.",
-                            v
-                        )));
-                    }
-                    Element::Int(v.into())
-                }
-                Bin8 => {
-                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                        step: "decode Bin8 length",
-                        actual: 0,
-                        expected: 1,
-                    })? as usize;
-                    if len > self.data.len() {
-                        return Err(Error::LengthTooShort {
-                            step: "get Bin8 content",
-                            actual: self.data.len(),
-                            expected: len,
-                        });
-                    }
-                    let (bytes, data) = self.data.split_at(len);
-                    self.data = data;
-                    Element::Bin(bytes)
-                }
-                Bin16 => {
-                    let len =
-                        self.data
-                            .read_u16::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Bin16 length",
-                                actual: self.data.len(),
-                                expected: 2,
-                            })? as usize;
-                    if len <= (u8::MAX as usize) {
-                        return Err(Error::BadEncode(format!(
-                            "Got Bin16 with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    if len > self.data.len() {
-                        return Err(Error::LengthTooShort {
-                            step: "get Bin16 content",
-                            actual: self.data.len(),
-                            expected: len,
-                        });
-                    }
-                    let (bytes, data) = self.data.split_at(len);
-                    self.data = data;
-                    Element::Bin(bytes)
-                }
-                Bin24 => {
-                    let len =
-                        self.data
-                            .read_u24::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Bin24 length",
-                                actual: self.data.len(),
-                                expected: 3,
-                            })? as usize;
-                    if len <= (u16::MAX as usize) {
-                        return Err(Error::BadEncode(format!(
-                            "Got Bin24 with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    if len > self.data.len() {
-                        return Err(Error::LengthTooShort {
-                            step: "get Bin24 content",
-                            actual: self.data.len(),
-                            expected: len,
-                        });
-                    }
-                    let (bytes, data) = self.data.split_at(len);
-                    self.data = data;
-                    Element::Bin(bytes)
-                }
-                F32 => {
-                    let v = self.data.read_f32::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode F32",
-                            actual: self.data.len(),
-                            expected: 4,
-                        }
-                    })?;
-                    Element::F32(v)
-                }
-                F64 => {
-                    let v = self.data.read_f64::<LittleEndian>().map_err(|_| {
-                        Error::LengthTooShort {
-                            step: "decode F64",
-                            actual: self.data.len(),
-                            expected: 8,
-                        }
-                    })?;
-                    Element::F64(v)
-                }
-                FixStr(len) => {
-                    let len = len as usize;
-                    if len > self.data.len() {
-                        return Err(Error::LengthTooShort {
-                            step: "get FixStr content",
-                            actual: self.data.len(),
-                            expected: len,
-                        });
-                    }
-                    let (string, data) = self.data.split_at(len);
-                    self.data = data;
-                    let string = std::str::from_utf8(string)
-                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                    Element::Str(string)
-                }
-                Str8 => {
-                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                        step: "decode Str8 length",
-                        actual: 0,
-                        expected: 1,
-                    })? as usize;
-                    if len <= 31 {
-                        return Err(Error::BadEncode(format!(
-                            "Got Str8 with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    if len > self.data.len() {
-                        return Err(Error::LengthTooShort {
-                            step: "get Str8 content",
-                            actual: self.data.len(),
-                            expected: len,
-                        });
-                    }
-                    let (string, data) = self.data.split_at(len);
-                    self.data = data;
-                    let string = std::str::from_utf8(string)
-                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                    Element::Str(string)
-                }
-                Str16 => {
-                    let len =
-                        self.data
-                            .read_u16::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Str16 length",
-                                actual: self.data.len(),
-                                expected: 2,
-                            })? as usize;
-                    if len <= (u8::MAX as usize) {
-                        return Err(Error::BadEncode(format!(
-                            "Got Str16 with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    if len > self.data.len() {
-                        return Err(Error::LengthTooShort {
-                            step: "get Str16 content",
-                            actual: self.data.len(),
-                            expected: len,
-                        });
-                    }
-                    let (string, data) = self.data.split_at(len);
-                    self.data = data;
-                    let string = std::str::from_utf8(string)
-                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                    Element::Str(string)
-                }
-                Str24 => {
-                    let len =
-                        self.data
-                            .read_u24::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Str24 length",
-                                actual: self.data.len(),
-                                expected: 3,
-                            })? as usize;
-                    if len <= (u16::MAX as usize) {
-                        return Err(Error::BadEncode(format!(
-                            "Got Str24 with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    if len > self.data.len() {
-                        return Err(Error::LengthTooShort {
-                            step: "get Str24 content",
-                            actual: self.data.len(),
-                            expected: len,
-                        });
-                    }
-                    let (string, data) = self.data.split_at(len);
-                    self.data = data;
-                    let string = std::str::from_utf8(string)
-                        .map_err(|e| Error::BadEncode(format!("{}", e)))?;
-                    Element::Str(string)
-                }
-                FixArray(len) => Element::Array(len as usize),
-                Array8 => {
-                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                        step: "decode Array8 length",
-                        actual: 0,
-                        expected: 1,
-                    })? as usize;
-                    if len <= 15 {
-                        return Err(Error::BadEncode(format!(
-                        "Got Array8 marker with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
-                    }
-                    Element::Array(len)
-                }
-                Array16 => {
-                    let len =
-                        self.data
-                            .read_u16::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Array16 length",
-                                actual: self.data.len(),
-                                expected: 2,
-                            })? as usize;
-                    if len <= u8::MAX as usize {
-                        return Err(Error::BadEncode(format!(
-                        "Got Array16 marker with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
-                    }
-                    if len > self.data.len() {
-                        return Err(Error::BadEncode(format!(
-                        "Got Array16 marker with length = {}, but there are only {} bytes left.",
-                        len, self.data.len()
-                    )));
-                    }
-                    Element::Array(len)
-                }
-                Array24 => {
-                    let len =
-                        self.data
-                            .read_u24::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Array24 length",
-                                actual: self.data.len(),
-                                expected: 3,
-                            })? as usize;
-                    if len <= u16::MAX as usize {
-                        return Err(Error::BadEncode(format!(
-                        "Got Array24 marker with length = {}. This is not the shortest encoding.",
-                        len
-                    )));
-                    }
-                    if len > self.data.len() {
-                        return Err(Error::BadEncode(format!(
-                        "Got Array24 marker with length = {}, but there are only {} bytes left.",
-                        len, self.data.len()
-                    )));
-                    }
-                    Element::Array(len)
-                }
-                FixMap(len) => Element::Map(len as usize),
-                Map8 => {
-                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                        step: "decode Map8 length",
-                        actual: 0,
-                        expected: 1,
-                    })? as usize;
-                    if len <= 15 {
-                        return Err(Error::BadEncode(format!(
-                            "Got Map8 marker with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    Element::Map(len)
-                }
-                Map16 => {
-                    let len =
-                        self.data
-                            .read_u16::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Map16 length",
-                                actual: self.data.len(),
-                                expected: 2,
-                            })? as usize;
-                    if len <= u8::MAX as usize {
-                        return Err(Error::BadEncode(format!(
-                            "Got Map16 marker with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    if 2 * len > self.data.len() {
-                        return Err(Error::BadEncode(format!(
-                            "Got Map16 marker with length = {}, but there are only {} bytes left.",
-                            len,
-                            self.data.len()
-                        )));
-                    }
-                    Element::Map(len)
-                }
-                Map24 => {
-                    let len =
-                        self.data
-                            .read_u24::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Map24 length",
-                                actual: self.data.len(),
-                                expected: 3,
-                            })? as usize;
-                    if len <= u16::MAX as usize {
-                        return Err(Error::BadEncode(format!(
-                            "Got Map24 marker with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    if 2 * len > self.data.len() {
-                        return Err(Error::BadEncode(format!(
-                            "Got Map24 marker with length = {}, but there are only {} bytes left.",
-                            len,
-                            self.data.len()
-                        )));
-                    }
-                    Element::Map(len)
-                }
-                Ext8 => {
-                    let len = self.data.read_u8().map_err(|_| Error::LengthTooShort {
-                        step: "decode Ext8 length",
-                        actual: 0,
-                        expected: 1,
-                    })? as usize;
-                    self.parse_ext(len)?
-                }
-                Ext16 => {
-                    let len =
-                        self.data
-                            .read_u16::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Ext16 length",
-                                actual: self.data.len(),
-                                expected: 2,
-                            })? as usize;
-                    if len <= u8::MAX as usize {
-                        return Err(Error::BadEncode(format!(
-                            "Got Ext16 marker with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    self.parse_ext(len)?
-                }
-                Ext24 => {
-                    let len =
-                        self.data
-                            .read_u24::<LittleEndian>()
-                            .map_err(|_| Error::LengthTooShort {
-                                step: "decode Ext24 length",
-                                actual: self.data.len(),
-                                expected: 3,
-                            })? as usize;
-                    if len <= u16::MAX as usize {
-                        return Err(Error::BadEncode(format!(
-                            "Got Ext24 marker with length = {}. This is not the shortest encoding.",
-                            len
-                        )));
-                    }
-                    self.parse_ext(len)?
-                }
-            };
+        let elem = Self::get_element(&mut self.data, marker)?;
         if let Some(ref mut debug) = self.debug {
             debug.update(&elem);
         }
@@ -971,23 +496,523 @@ impl<'a> Parser<'a> {
         Ok(elem)
     }
 
-    fn parse_ext(&mut self, len: usize) -> Result<Element<'a>> {
-        let ext_type = self.data.read_u8().map_err(|_| Error::LengthTooShort {
+    // Given a retrieved marker, try to turn it into the next element, which may move through the
+    // indexed data. If we can't, error. This function *does not* set the the errored flag. That's
+    // up to the caller.
+    fn get_element(data: &mut &'a [u8], marker: Marker) -> Result<Element<'a>> {
+        use self::Marker::*;
+        Ok(match marker {
+            Reserved => return Err(Error::BadEncode(String::from("Reserved marker found"))),
+            Null => Element::Null,
+            False => Element::Bool(false),
+            True => Element::Bool(true),
+            PosFixInt(v) => Element::Int(v.into()),
+            UInt8 => {
+                let v = data.read_u8().map_err(|_| Error::LengthTooShort {
+                    step: "decode UInt8",
+                    actual: 0,
+                    expected: 1,
+                })?;
+                if v < 128 {
+                    return Err(Error::BadEncode(format!(
+                        "Got UInt8 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            UInt16 => {
+                let v =
+                    data
+                        .read_u16::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode UInt16",
+                            actual: data.len(),
+                            expected: 2,
+                        })?;
+                if v <= u8::MAX as u16 {
+                    return Err(Error::BadEncode(format!(
+                        "Got UInt16 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            UInt32 => {
+                let v =
+                    data
+                        .read_u32::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode UInt32",
+                            actual: data.len(),
+                            expected: 4,
+                        })?;
+                if v <= u16::MAX as u32 {
+                    return Err(Error::BadEncode(format!(
+                        "Got UInt32 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            UInt64 => {
+                let v =
+                    data
+                        .read_u64::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode UInt64",
+                            actual: data.len(),
+                            expected: 8,
+                        })?;
+                if v <= u32::MAX as u64 {
+                    return Err(Error::BadEncode(format!(
+                        "Got UInt64 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            NegFixInt(v) => Element::Int(v.into()),
+            Int8 => {
+                let v = data.read_i8().map_err(|_| Error::LengthTooShort {
+                    step: "decode UInt8",
+                    actual: 0,
+                    expected: 1,
+                })?;
+                if v >= -32 {
+                    return Err(Error::BadEncode(format!(
+                        "Got Int8 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            Int16 => {
+                let v =
+                    data
+                        .read_i16::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Int16",
+                            actual: data.len(),
+                            expected: 2,
+                        })?;
+                if v >= i8::MIN as i16 {
+                    return Err(Error::BadEncode(format!(
+                        "Got Int16 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            Int32 => {
+                let v =
+                    data
+                        .read_i32::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Int32",
+                            actual: data.len(),
+                            expected: 4,
+                        })?;
+                if v >= i16::MIN as i32 {
+                    return Err(Error::BadEncode(format!(
+                        "Got Int32 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            Int64 => {
+                let v =
+                    data
+                        .read_i64::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Int64",
+                            actual: data.len(),
+                            expected: 8,
+                        })?;
+                if v >= i32::MIN as i64 {
+                    return Err(Error::BadEncode(format!(
+                        "Got Int64 with value = {}. This is not the shortest encoding.",
+                        v
+                    )));
+                }
+                Element::Int(v.into())
+            }
+            Bin8 => {
+                let len = data.read_u8().map_err(|_| Error::LengthTooShort {
+                    step: "decode Bin8 length",
+                    actual: 0,
+                    expected: 1,
+                })? as usize;
+                if len > data.len() {
+                    return Err(Error::LengthTooShort {
+                        step: "get Bin8 content",
+                        actual: data.len(),
+                        expected: len,
+                    });
+                }
+                let (bytes, new_data) = data.split_at(len);
+                *data = new_data;
+                Element::Bin(bytes)
+            }
+            Bin16 => {
+                let len =
+                    data
+                        .read_u16::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Bin16 length",
+                            actual: data.len(),
+                            expected: 2,
+                        })? as usize;
+                if len <= (u8::MAX as usize) {
+                    return Err(Error::BadEncode(format!(
+                        "Got Bin16 with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if len > data.len() {
+                    return Err(Error::LengthTooShort {
+                        step: "get Bin16 content",
+                        actual: data.len(),
+                        expected: len,
+                    });
+                }
+                let (bytes, new_data) = data.split_at(len);
+                *data = new_data;
+                Element::Bin(bytes)
+            }
+            Bin24 => {
+                let len =
+                    data
+                        .read_u24::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Bin24 length",
+                            actual: data.len(),
+                            expected: 3,
+                        })? as usize;
+                if len <= (u16::MAX as usize) {
+                    return Err(Error::BadEncode(format!(
+                        "Got Bin24 with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if len > data.len() {
+                    return Err(Error::LengthTooShort {
+                        step: "get Bin24 content",
+                        actual: data.len(),
+                        expected: len,
+                    });
+                }
+                let (bytes, new_data) = data.split_at(len);
+                *data = new_data;
+                Element::Bin(bytes)
+            }
+            F32 => {
+                let v =
+                    data
+                        .read_f32::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode F32",
+                            actual: data.len(),
+                            expected: 4,
+                        })?;
+                Element::F32(v)
+            }
+            F64 => {
+                let v =
+                    data
+                        .read_f64::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode F64",
+                            actual: data.len(),
+                            expected: 8,
+                        })?;
+                Element::F64(v)
+            }
+            FixStr(len) => {
+                let len = len as usize;
+                if len > data.len() {
+                    return Err(Error::LengthTooShort {
+                        step: "get FixStr content",
+                        actual: data.len(),
+                        expected: len,
+                    });
+                }
+                let (string, new_data) = data.split_at(len);
+                *data = new_data;
+                let string =
+                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                Element::Str(string)
+            }
+            Str8 => {
+                let len = data.read_u8().map_err(|_| Error::LengthTooShort {
+                    step: "decode Str8 length",
+                    actual: 0,
+                    expected: 1,
+                })? as usize;
+                if len <= 31 {
+                    return Err(Error::BadEncode(format!(
+                        "Got Str8 with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if len > data.len() {
+                    return Err(Error::LengthTooShort {
+                        step: "get Str8 content",
+                        actual: data.len(),
+                        expected: len,
+                    });
+                }
+                let (string, new_data) = data.split_at(len);
+                *data = new_data;
+                let string =
+                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                Element::Str(string)
+            }
+            Str16 => {
+                let len =
+                    data
+                        .read_u16::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Str16 length",
+                            actual: data.len(),
+                            expected: 2,
+                        })? as usize;
+                if len <= (u8::MAX as usize) {
+                    return Err(Error::BadEncode(format!(
+                        "Got Str16 with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if len > data.len() {
+                    return Err(Error::LengthTooShort {
+                        step: "get Str16 content",
+                        actual: data.len(),
+                        expected: len,
+                    });
+                }
+                let (string, new_data) = data.split_at(len);
+                *data = new_data;
+                let string =
+                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                Element::Str(string)
+            }
+            Str24 => {
+                let len =
+                    data
+                        .read_u24::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Str24 length",
+                            actual: data.len(),
+                            expected: 3,
+                        })? as usize;
+                if len <= (u16::MAX as usize) {
+                    return Err(Error::BadEncode(format!(
+                        "Got Str24 with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if len > data.len() {
+                    return Err(Error::LengthTooShort {
+                        step: "get Str24 content",
+                        actual: data.len(),
+                        expected: len,
+                    });
+                }
+                let (string, new_data) = data.split_at(len);
+                *data = new_data;
+                let string =
+                    std::str::from_utf8(string).map_err(|e| Error::BadEncode(format!("{}", e)))?;
+                Element::Str(string)
+            }
+            FixArray(len) => Element::Array(len as usize),
+            Array8 => {
+                let len = data.read_u8().map_err(|_| Error::LengthTooShort {
+                    step: "decode Array8 length",
+                    actual: 0,
+                    expected: 1,
+                })? as usize;
+                if len <= 15 {
+                    return Err(Error::BadEncode(format!(
+                        "Got Array8 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                Element::Array(len)
+            }
+            Array16 => {
+                let len =
+                    data
+                        .read_u16::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Array16 length",
+                            actual: data.len(),
+                            expected: 2,
+                        })? as usize;
+                if len <= u8::MAX as usize {
+                    return Err(Error::BadEncode(format!(
+                        "Got Array16 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if len > data.len() {
+                    return Err(Error::BadEncode(format!(
+                        "Got Array16 marker with length = {}, but there are only {} bytes left.",
+                        len,
+                        data.len()
+                    )));
+                }
+                Element::Array(len)
+            }
+            Array24 => {
+                let len =
+                    data
+                        .read_u24::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Array24 length",
+                            actual: data.len(),
+                            expected: 3,
+                        })? as usize;
+                if len <= u16::MAX as usize {
+                    return Err(Error::BadEncode(format!(
+                        "Got Array24 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if len > data.len() {
+                    return Err(Error::BadEncode(format!(
+                        "Got Array24 marker with length = {}, but there are only {} bytes left.",
+                        len,
+                        data.len()
+                    )));
+                }
+                Element::Array(len)
+            }
+            FixMap(len) => Element::Map(len as usize),
+            Map8 => {
+                let len = data.read_u8().map_err(|_| Error::LengthTooShort {
+                    step: "decode Map8 length",
+                    actual: 0,
+                    expected: 1,
+                })? as usize;
+                if len <= 15 {
+                    return Err(Error::BadEncode(format!(
+                        "Got Map8 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                Element::Map(len)
+            }
+            Map16 => {
+                let len =
+                    data
+                        .read_u16::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Map16 length",
+                            actual: data.len(),
+                            expected: 2,
+                        })? as usize;
+                if len <= u8::MAX as usize {
+                    return Err(Error::BadEncode(format!(
+                        "Got Map16 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if 2 * len > data.len() {
+                    return Err(Error::BadEncode(format!(
+                        "Got Map16 marker with length = {}, but there are only {} bytes left.",
+                        len,
+                        data.len()
+                    )));
+                }
+                Element::Map(len)
+            }
+            Map24 => {
+                let len =
+                    data
+                        .read_u24::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Map24 length",
+                            actual: data.len(),
+                            expected: 3,
+                        })? as usize;
+                if len <= u16::MAX as usize {
+                    return Err(Error::BadEncode(format!(
+                        "Got Map24 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                if 2 * len > data.len() {
+                    return Err(Error::BadEncode(format!(
+                        "Got Map24 marker with length = {}, but there are only {} bytes left.",
+                        len,
+                        data.len()
+                    )));
+                }
+                Element::Map(len)
+            }
+            Ext8 => {
+                let len = data.read_u8().map_err(|_| Error::LengthTooShort {
+                    step: "decode Ext8 length",
+                    actual: 0,
+                    expected: 1,
+                })? as usize;
+                Self::parse_ext(data, len)?
+            }
+            Ext16 => {
+                let len =
+                    data
+                        .read_u16::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Ext16 length",
+                            actual: data.len(),
+                            expected: 2,
+                        })? as usize;
+                if len <= u8::MAX as usize {
+                    return Err(Error::BadEncode(format!(
+                        "Got Ext16 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                Self::parse_ext(data, len)?
+            }
+            Ext24 => {
+                let len =
+                    data
+                        .read_u24::<LittleEndian>()
+                        .map_err(|_| Error::LengthTooShort {
+                            step: "decode Ext24 length",
+                            actual: data.len(),
+                            expected: 3,
+                        })? as usize;
+                if len <= u16::MAX as usize {
+                    return Err(Error::BadEncode(format!(
+                        "Got Ext24 marker with length = {}. This is not the shortest encoding.",
+                        len
+                    )));
+                }
+                Self::parse_ext(data, len)?
+            }
+        })
+    }
+
+    fn parse_ext(data: &mut &'a [u8], len: usize) -> Result<Element<'a>> {
+        let ext_type = data.read_u8().map_err(|_| Error::LengthTooShort {
             step: "decode Ext type",
-            actual: self.data.len(),
+            actual: data.len(),
             expected: 1,
         })?;
         let ext_type = ExtType::from_u8(ext_type)
             .ok_or_else(|| Error::BadEncode(format!("Got unrecognized Ext type {}.", ext_type)))?;
-        if len > self.data.len() {
+        if len > data.len() {
             return Err(Error::LengthTooShort {
                 step: "get Ext content",
-                actual: self.data.len(),
+                actual: data.len(),
                 expected: len,
             });
         }
-        let (bytes, data) = self.data.split_at(len);
-        self.data = data;
+        let (bytes, new_data) = data.split_at(len);
+        *data = new_data;
         Ok(match ext_type {
             ExtType::Timestamp => {
                 Element::Timestamp(Timestamp::try_from(bytes).map_err(Error::BadEncode)?)

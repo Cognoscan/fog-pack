@@ -1,4 +1,20 @@
-use crate::types::ValueRef;
+use crate::{
+    element::Element,
+    types::{Hash, ValueRef},
+};
+
+/// Find all hashes within a data stream - assuming the data is valid.
+pub(crate) fn find_hashes(data: &[u8]) -> Vec<Hash> {
+    crate::element::Parser::new(data)
+        .filter_map(|e| {
+            if let Ok(Element::Hash(h)) = e {
+                Some(h)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
 pub(crate) fn count_regexes(v: &ValueRef) -> usize {
     // First, unpack the validator enum

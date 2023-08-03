@@ -695,6 +695,11 @@ impl Document {
         self.0.data()
     }
 
+    /// Find all hashes in this document and return them.
+    pub fn find_hashes(&self) -> Vec<Hash> {
+        crate::find_hashes(self.data())
+    }
+
     /// Get the hash of the schema this document adheres to.
     pub fn schema_hash(&self) -> Option<&Hash> {
         self.0.schema_hash()

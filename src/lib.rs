@@ -198,7 +198,7 @@ mod ser;
 mod timestamp;
 mod value;
 mod value_ref;
-mod check_regex;
+mod utils;
 
 pub mod document;
 pub mod entry;
@@ -207,7 +207,7 @@ pub mod query;
 pub mod schema;
 pub mod validator;
 
-use check_regex::count_regexes;
+use utils::*;
 use types::*;
 pub use document::get_doc_schema;
 

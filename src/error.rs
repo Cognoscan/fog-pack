@@ -7,6 +7,47 @@ use serde::{de, ser};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+#[allow(unused)]
+#[derive(Clone, Debug)]
+enum ValidateError {
+    /// Validation failed inside an array
+    InArray {
+        index: usize,
+        err: Box<ValidateError>
+    },
+    /// Validation failed inside a map
+    InMap {
+        key: String,
+        err: Box<ValidateError>
+    },
+    /// Validation failed inside an enum
+    InEnum {
+        name: String,
+        err: Box<ValidateError>,
+    },
+    /// Validation of an array failed at a specific index
+    FailArray {
+        index: usize,
+        err: String,
+    },
+    /// Validation of a map failed at a specific key
+    FailMap {
+        key: String,
+        err: String,
+    },
+    /// All of the available "multi" validators failed
+    FailMulti {
+        errs: Vec<ValidateError>,
+    },
+    /// The core validation error
+    FailValue {
+        failure: String,
+        value: crate::value::Value,
+    },
+    /// Some other fog-pack error occurred in here
+    SubError(Box<Error>),
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Error {
     /// Occurs when a subtype is using a version format that is no longer accepted. This is mainly

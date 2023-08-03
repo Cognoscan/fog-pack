@@ -424,6 +424,11 @@ impl Entry {
         self.0.data()
     }
 
+    /// Find all hashes in this entry and return them.
+    pub fn find_hashes(&self) -> Vec<Hash> {
+        crate::find_hashes(self.data())
+    }
+
     /// Get the hash of the Entry's parent [`Document`][crate::document::Document].
     pub fn parent(&self) -> &Hash {
         self.0.parent()

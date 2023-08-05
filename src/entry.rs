@@ -210,6 +210,7 @@ impl EntryInner {
 ///
 /// This struct acts like an Entry, but cannot be decoded until it has passed through a
 /// [`Schema`][crate::schema::Schema].
+#[derive(Clone, Debug)]
 pub struct NewEntry(EntryInner);
 
 impl NewEntry {
@@ -329,6 +330,7 @@ impl NewEntry {
 ///
 /// An Entry holds a piece of serialized data, which may be deserialized by calling
 /// [`deserialize`][Entry::deserialize].
+#[derive(Clone, Debug)]
 pub struct Entry(EntryInner);
 
 impl Entry {

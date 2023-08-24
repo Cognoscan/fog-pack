@@ -1,3 +1,5 @@
+use fog_crypto::identity::BareIdKey;
+
 use crate::value_ref::ValueRef;
 use crate::*;
 use std::borrow::Cow;
@@ -25,6 +27,7 @@ pub enum Value {
     IdentityLockbox(IdentityLockbox),
     StreamLockbox(StreamLockbox),
     LockLockbox(LockLockbox),
+    BareIdKey(Box<BareIdKey>),
 }
 
 impl Value {
@@ -53,6 +56,7 @@ impl Value {
             Value::IdentityLockbox(ref v) => ValueRef::IdentityLockbox(v.deref()),
             Value::StreamLockbox(ref v) => ValueRef::StreamLockbox(v.deref()),
             Value::LockLockbox(ref v) => ValueRef::LockLockbox(v.deref()),
+            Value::BareIdKey(ref v) => ValueRef::BareIdKey(v.clone()),
         }
     }
 
@@ -152,6 +156,10 @@ impl Value {
 
     pub fn is_lock_lockbox(&self) -> bool {
         matches!(self, Value::LockLockbox(_))
+    }
+
+    pub fn is_bare_id_key(&self) -> bool {
+        matches!(self, Value::BareIdKey(_))
     }
 
     pub fn as_bool(&self) -> Option<bool> {
@@ -331,11 +339,19 @@ impl Value {
             None
         }
     }
+
+    pub fn as_bare_id_key(&self) -> Option<&BareIdKey> {
+        if let Value::BareIdKey(ref key) = *self {
+            Some(key)
+        } else {
+            None
+        }
+    }
 }
 
 static NULL: Value = Value::Null;
 
-/// Support indexing into arrays. If the index is out of range or the value isn't an array, this 
+/// Support indexing into arrays. If the index is out of range or the value isn't an array, this
 /// returns a [`Value::Null`].
 impl Index<usize> for Value {
     type Output = Value;
@@ -345,7 +361,7 @@ impl Index<usize> for Value {
     }
 }
 
-/// Support indexing into maps. If the index string is not in the map, this returns a 
+/// Support indexing into maps. If the index string is not in the map, this returns a
 /// [`Value::Null`].
 impl Index<&str> for Value {
     type Output = Value;
@@ -482,6 +498,13 @@ impl<'a> PartialEq<ValueRef<'a>> for Value {
                     false
                 }
             }
+            Value::BareIdKey(s) => {
+                if let ValueRef::BareIdKey(o) = other {
+                    s == o
+                } else {
+                    false
+                }
+            }
         }
     }
 }
@@ -537,6 +560,12 @@ impl_value_from_integer!(isize);
 impl From<()> for Value {
     fn from((): ()) -> Self {
         Value::Null
+    }
+}
+
+impl From<BareIdKey> for Value {
+    fn from(value: BareIdKey) -> Self {
+        Value::BareIdKey(Box::new(value))
     }
 }
 
@@ -628,6 +657,16 @@ impl_try_from_value_integer!(i32);
 impl_try_from_value_integer!(i64);
 impl_try_from_value_integer!(isize);
 
+impl TryFrom<Value> for BareIdKey {
+    type Error = Value;
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::BareIdKey(v) => Ok(*v),
+            _ => Err(v),
+        }
+    }
+}
+
 impl serde::Serialize for Value {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
@@ -649,6 +688,7 @@ impl serde::Serialize for Value {
             Value::IdentityLockbox(v) => v.serialize(serializer),
             Value::StreamLockbox(v) => v.serialize(serializer),
             Value::LockLockbox(v) => v.serialize(serializer),
+            Value::BareIdKey(v) => v.serialize(serializer),
         }
     }
 }
@@ -814,6 +854,12 @@ impl<'de> serde::Deserialize<'de> for Value {
                             .map_err(|e| A::Error::custom(e.serde_err()))?
                             .to_owned();
                         Ok(Value::LockLockbox(val))
+                    }
+                    FOG_TYPE_ENUM_BARE_ID_KEY_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
+                        let val = BareIdKey::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
+                        Ok(Value::BareIdKey(Box::new(val)))
                     }
                     _ => Err(A::Error::custom("unrecognized fogpack extension type")),
                 }

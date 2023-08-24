@@ -5,6 +5,7 @@ use crate::{
     error::{Error, Result},
     get_int_internal, integer, Integer, Timestamp,
 };
+use fog_crypto::identity::BareIdKey;
 use fog_crypto::{
     hash::Hash,
     identity::Identity,
@@ -15,6 +16,11 @@ use fog_crypto::{
 use serde::de::Unexpected;
 
 use byteorder::{LittleEndian, ReadBytesExt};
+
+fn base64_encode<T: AsRef<[u8]>>(input: T, output_buf: &mut String) {
+    use base64::engine::Engine;
+    base64::engine::general_purpose::STANDARD_NO_PAD.encode_string(input, output_buf)
+}
 
 #[derive(Clone, Debug)]
 pub enum Element<'a> {
@@ -36,6 +42,7 @@ pub enum Element<'a> {
     IdentityLockbox(&'a IdentityLockboxRef),
     StreamLockbox(&'a StreamLockboxRef),
     LockLockbox(&'a LockLockboxRef),
+    BareIdKey(Box<BareIdKey>)
 }
 
 impl<'a> Element<'a> {
@@ -60,6 +67,7 @@ impl<'a> Element<'a> {
             IdentityLockbox(_) => "IdentityLockbox",
             StreamLockbox(_) => "StreamLockbox",
             LockLockbox(_) => "LockLockbox",
+            BareIdKey(_) => "BareIdKey",
         }
     }
 
@@ -78,7 +86,7 @@ impl<'a> Element<'a> {
             Bin(v) => Unexpected::Bytes(v),
             Array(_) => Unexpected::Seq,
             Map(_) => Unexpected::Map,
-            Timestamp(_) => Unexpected::Other("timestamp"),
+            Timestamp(_) => Unexpected::Other("Timestamp"),
             Hash(_) => Unexpected::Other("Hash"),
             Identity(_) => Unexpected::Other("Identity"),
             LockId(_) => Unexpected::Other("LockId"),
@@ -87,6 +95,7 @@ impl<'a> Element<'a> {
             IdentityLockbox(_) => Unexpected::Other("IdentityLockbox"),
             StreamLockbox(_) => Unexpected::Other("StreamLockbox"),
             LockLockbox(_) => Unexpected::Other("LockLockbox"),
+            BareIdKey(_) => Unexpected::Other("BareIdKey"),
         }
     }
 }
@@ -256,6 +265,11 @@ pub fn serialize_elem(buf: &mut Vec<u8>, elem: Element) {
             buf.push(ExtType::LockLockbox.into());
             buf.extend_from_slice(v);
         }
+        BareIdKey(v) => {
+            Marker::encode_ext_marker(buf, v.size());
+            buf.push(ExtType::BareIdKey.into());
+            v.encode_vec(buf);
+        }
     }
 }
 
@@ -311,10 +325,8 @@ impl DebugFormatter {
             Element::F32(v) => write!(self.debug, "{}", v).unwrap(),
             Element::F64(v) => write!(self.debug, "{}", v).unwrap(),
             Element::Bin(v) => {
-                self.debug.push('"');
-                for byte in *v {
-                    write!(self.debug, "{:X}", byte).unwrap();
-                }
+                self.debug.push_str("\"$fog-Bin:");
+                base64_encode(*v, &mut self.debug);
                 self.debug.push('"');
             }
             Element::Array(v) => {
@@ -325,29 +337,30 @@ impl DebugFormatter {
                 self.tracker.push(TrackType::FirstMap(*v * 2));
                 self.debug.push('{');
             }
-            Element::Timestamp(v) => write!(self.debug, "\"{}\"", v).unwrap(),
-            Element::Hash(v) => write!(self.debug, "\"{}\"", v).unwrap(),
-            Element::Identity(v) => write!(self.debug, "\"{}\"", v).unwrap(),
-            Element::LockId(v) => write!(self.debug, "\"{}\"", v).unwrap(),
-            Element::StreamId(v) => write!(self.debug, "\"{}\"", v).unwrap(),
+            Element::Timestamp(v) => write!(self.debug, "\"$fog-Time: {}\"", v).unwrap(),
+            Element::Hash(v) => write!(self.debug, "\"$fog-Hash:{}\"", v).unwrap(),
+            Element::Identity(v) => write!(self.debug, "\"$fog-Identity:{}\"", v).unwrap(),
+            Element::LockId(v) => write!(self.debug, "\"$fog-LockId:{}\"", v).unwrap(),
+            Element::StreamId(v) => write!(self.debug, "\"$fog-StreamId:{}\"", v).unwrap(),
             Element::DataLockbox(v) => {
-                write!(self.debug, "\"<DataLockbox(len={})>\"", v.as_bytes().len()).unwrap()
+                write!(self.debug, "\"$fog-DataLockbox(len={})\"", v.as_bytes().len()).unwrap()
             }
             Element::IdentityLockbox(v) => write!(
                 self.debug,
-                "\"<IdentityLockbox(len={})>\"",
+                "\"$fog-IdentityLockbox(len={})\"",
                 v.as_bytes().len()
             )
             .unwrap(),
             Element::StreamLockbox(v) => write!(
                 self.debug,
-                "\"<StreamLockbox(len={})>\"",
+                "\"$fog-StreamLockbox(len={})\"",
                 v.as_bytes().len()
             )
             .unwrap(),
             Element::LockLockbox(v) => {
-                write!(self.debug, "\"<LockLockbox(len={})>\"", v.as_bytes().len()).unwrap()
+                write!(self.debug, "\"$fog-LockLockbox(len={})\"", v.as_bytes().len()).unwrap()
             }
+            Element::BareIdKey(v) => write!(self.debug, "\"$fog-BareIdKey:{}\"", v.to_base58()).unwrap(),
         }
 
         while let Some(track) = self.tracker.pop() {
@@ -1027,6 +1040,7 @@ impl<'a> Parser<'a> {
             }
             ExtType::StreamLockbox => Element::StreamLockbox(StreamLockboxRef::from_bytes(bytes)?),
             ExtType::LockLockbox => Element::LockLockbox(LockLockboxRef::from_bytes(bytes)?),
+            ExtType::BareIdKey => Element::BareIdKey(Box::new(BareIdKey::try_from(bytes)?)),
         })
     }
 }
@@ -2202,7 +2216,7 @@ mod test {
 
         #[test]
         fn roundtrip() {
-            let identity = fog_crypto::identity::IdentityKey::new_temp(&mut rand::rngs::OsRng)
+            let identity = fog_crypto::identity::IdentityKey::new()
                 .id()
                 .to_owned();
             let elem = Element::Identity(Box::new(identity.clone()));
@@ -2223,7 +2237,7 @@ mod test {
 
         #[test]
         fn too_long() {
-            let identity = fog_crypto::identity::IdentityKey::new_temp(&mut rand::rngs::OsRng)
+            let identity = fog_crypto::identity::IdentityKey::new()
                 .id()
                 .to_owned();
             let elem = Element::Identity(Box::new(identity.clone()));
@@ -2240,7 +2254,7 @@ mod test {
 
         #[test]
         fn too_short() {
-            let identity = fog_crypto::identity::IdentityKey::new_temp(&mut rand::rngs::OsRng)
+            let identity = fog_crypto::identity::IdentityKey::new()
                 .id()
                 .to_owned();
             let elem = Element::Identity(Box::new(identity.clone()));
@@ -2261,7 +2275,7 @@ mod test {
 
         #[test]
         fn roundtrip() {
-            let id = fog_crypto::lock::LockKey::new_temp(&mut rand::rngs::OsRng)
+            let id = fog_crypto::lock::LockKey::new()
                 .id()
                 .to_owned();
             let elem = Element::LockId(Box::new(id.clone()));
@@ -2282,7 +2296,7 @@ mod test {
 
         #[test]
         fn too_long() {
-            let id = fog_crypto::lock::LockKey::new_temp(&mut rand::rngs::OsRng)
+            let id = fog_crypto::lock::LockKey::new()
                 .id()
                 .to_owned();
             let elem = Element::LockId(Box::new(id.clone()));
@@ -2299,7 +2313,7 @@ mod test {
 
         #[test]
         fn too_short() {
-            let id = fog_crypto::lock::LockKey::new_temp(&mut rand::rngs::OsRng)
+            let id = fog_crypto::lock::LockKey::new()
                 .id()
                 .to_owned();
             let elem = Element::LockId(Box::new(id.clone()));
@@ -2320,7 +2334,7 @@ mod test {
 
         #[test]
         fn roundtrip() {
-            let id = fog_crypto::stream::StreamKey::new_temp(&mut rand::rngs::OsRng)
+            let id = fog_crypto::stream::StreamKey::new()
                 .id()
                 .to_owned();
             let elem = Element::StreamId(Box::new(id.clone()));
@@ -2341,7 +2355,7 @@ mod test {
 
         #[test]
         fn too_long() {
-            let id = fog_crypto::stream::StreamKey::new_temp(&mut rand::rngs::OsRng)
+            let id = fog_crypto::stream::StreamKey::new()
                 .id()
                 .to_owned();
             let elem = Element::StreamId(Box::new(id.clone()));
@@ -2358,7 +2372,7 @@ mod test {
 
         #[test]
         fn too_short() {
-            let id = fog_crypto::stream::StreamKey::new_temp(&mut rand::rngs::OsRng)
+            let id = fog_crypto::stream::StreamKey::new()
                 .id()
                 .to_owned();
             let elem = Element::StreamId(Box::new(id.clone()));
@@ -2378,10 +2392,9 @@ mod test {
         use super::*;
 
         fn roundtrip_data_lockbox_len(len: usize) {
-            let mut csprng = rand::rngs::OsRng;
-            let key = fog_crypto::stream::StreamKey::new_temp(&mut csprng);
+            let key = fog_crypto::stream::StreamKey::new();
             let data = vec![0u8; len];
-            let lockbox = key.encrypt_data(&mut csprng, &data);
+            let lockbox = key.encrypt_data(&data);
             let elem = Element::DataLockbox(&lockbox);
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2412,10 +2425,9 @@ mod test {
 
         #[test]
         fn roundtrip_identity_lockbox() {
-            let mut csprng = rand::rngs::OsRng;
-            let key = fog_crypto::stream::StreamKey::new_temp(&mut csprng);
-            let to_send = fog_crypto::identity::IdentityKey::new_temp(&mut csprng);
-            let lockbox = to_send.export_for_stream(&mut csprng, &key).unwrap();
+            let key = fog_crypto::stream::StreamKey::new();
+            let to_send = fog_crypto::identity::IdentityKey::new();
+            let lockbox = to_send.export_for_stream(&key).unwrap();
             let elem = Element::IdentityLockbox(&lockbox);
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2435,10 +2447,9 @@ mod test {
 
         #[test]
         fn roundtrip_stream_lockbox() {
-            let mut csprng = rand::rngs::OsRng;
-            let key = fog_crypto::stream::StreamKey::new_temp(&mut csprng);
-            let to_send = fog_crypto::stream::StreamKey::new_temp(&mut csprng);
-            let lockbox = to_send.export_for_stream(&mut csprng, &key).unwrap();
+            let key = fog_crypto::stream::StreamKey::new();
+            let to_send = fog_crypto::stream::StreamKey::new();
+            let lockbox = to_send.export_for_stream(&key).unwrap();
             let elem = Element::StreamLockbox(&lockbox);
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2458,10 +2469,9 @@ mod test {
 
         #[test]
         fn roundtrip_lock_lockbox() {
-            let mut csprng = rand::rngs::OsRng;
-            let key = fog_crypto::stream::StreamKey::new_temp(&mut csprng);
-            let to_send = fog_crypto::lock::LockKey::new_temp(&mut csprng);
-            let lockbox = to_send.export_for_stream(&mut csprng, &key).unwrap();
+            let key = fog_crypto::stream::StreamKey::new();
+            let to_send = fog_crypto::lock::LockKey::new();
+            let lockbox = to_send.export_for_stream(&key).unwrap();
             let elem = Element::LockLockbox(&lockbox);
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);

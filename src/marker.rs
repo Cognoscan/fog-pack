@@ -163,6 +163,7 @@ pub enum ExtType {
     IdentityLockbox,
     StreamLockbox,
     LockLockbox,
+    BareIdKey,
 }
 
 impl ExtType {
@@ -178,6 +179,7 @@ impl ExtType {
             ExtType::IdentityLockbox => 6,
             ExtType::StreamLockbox => 7,
             ExtType::LockLockbox => 8,
+            ExtType::BareIdKey => 9,
         }
     }
 
@@ -193,6 +195,7 @@ impl ExtType {
             6 => Some(ExtType::IdentityLockbox),
             7 => Some(ExtType::StreamLockbox),
             8 => Some(ExtType::LockLockbox),
+            9 => Some(ExtType::BareIdKey),
             _ => None,
         }
     }

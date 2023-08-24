@@ -911,6 +911,12 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
                         Error::SerdeFail("LockLockbox bytes weren't valid on encode".to_string())
                     })?;
                     Element::LockLockbox(v)
+                },
+                ExtType::BareIdKey => {
+                    let v = fog_crypto::identity::BareIdKey::try_from(v).map_err(|_| {
+                        Error::SerdeFail("BareIdKey bytes weren't valid on encode".to_string())
+                    })?;
+                    Element::BareIdKey(Box::new(v))
                 }
             };
             self.se.encode_element(elem)
@@ -1924,7 +1930,7 @@ mod test {
         // Start of year 2020
         let mut expected = vec![0xc7, 0x05, 0x00, 0x00];
         expected.extend_from_slice(&1577854800u32.to_le_bytes());
-        test_cases.push((Timestamp::from_sec(1577854800), expected));
+        test_cases.push((Timestamp::from_tai_secs(1577854800), expected));
 
         for (time, enc) in test_cases {
             let mut ser = FogSerializer::default();

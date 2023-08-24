@@ -1,3 +1,5 @@
+use fog_crypto::identity::BareIdKey;
+
 use crate::value::Value;
 use crate::*;
 use std::ops::Index;
@@ -24,6 +26,7 @@ pub enum ValueRef<'a> {
     IdentityLockbox(&'a IdentityLockboxRef),
     StreamLockbox(&'a StreamLockboxRef),
     LockLockbox(&'a LockLockboxRef),
+    BareIdKey(Box<BareIdKey>),
 }
 
 impl<'a> ValueRef<'a> {
@@ -51,6 +54,7 @@ impl<'a> ValueRef<'a> {
             ValueRef::IdentityLockbox(v) => Value::IdentityLockbox(v.to_owned()),
             ValueRef::StreamLockbox(v) => Value::StreamLockbox(v.to_owned()),
             ValueRef::LockLockbox(v) => Value::LockLockbox(v.to_owned()),
+            ValueRef::BareIdKey(ref v) => Value::BareIdKey(v.clone()),
         }
     }
 
@@ -150,6 +154,10 @@ impl<'a> ValueRef<'a> {
 
     pub fn is_lock_lockbox(&self) -> bool {
         matches!(self, ValueRef::LockLockbox(_))
+    }
+
+    pub fn is_bare_id_key(&self) -> bool {
+        matches!(self, ValueRef::BareIdKey(_))
     }
 
     pub fn as_bool(&self) -> Option<bool> {
@@ -320,11 +328,19 @@ impl<'a> ValueRef<'a> {
             None
         }
     }
+
+    pub fn as_bare_id_key(&self) -> Option<&BareIdKey> {
+        if let ValueRef::BareIdKey(ref key) = *self {
+            Some(key)
+        } else {
+            None
+        }
+    }
 }
 
 static NULL_REF: ValueRef<'static> = ValueRef::Null;
 
-/// Support indexing into arrays. If the index is out of range or the value isn't an array, this 
+/// Support indexing into arrays. If the index is out of range or the value isn't an array, this
 /// returns a [`ValueRef::Null`].
 impl<'a> Index<usize> for ValueRef<'a> {
     type Output = ValueRef<'a>;
@@ -336,7 +352,7 @@ impl<'a> Index<usize> for ValueRef<'a> {
     }
 }
 
-/// Support indexing into maps. If the index string is not in the map, this returns a 
+/// Support indexing into maps. If the index string is not in the map, this returns a
 /// [`ValueRef::Null`].
 impl<'a> Index<&str> for ValueRef<'a> {
     type Output = ValueRef<'a>;
@@ -475,6 +491,14 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
                     false
                 }
             }
+            ValueRef::BareIdKey(s) => {
+                if let Value::BareIdKey(o) = other {
+                    s == o
+                }
+                else {
+                    false
+                }
+            }
         }
     }
 }
@@ -530,6 +554,12 @@ impl_value_from_integer!(isize);
 impl<'a> From<()> for ValueRef<'a> {
     fn from((): ()) -> Self {
         ValueRef::Null
+    }
+}
+
+impl<'a> From<BareIdKey> for ValueRef<'a> {
+    fn from(value: BareIdKey) -> Self {
+        ValueRef::BareIdKey(Box::new(value))
     }
 }
 
@@ -597,6 +627,16 @@ impl_try_from_value_integer!(i32);
 impl_try_from_value_integer!(i64);
 impl_try_from_value_integer!(isize);
 
+impl<'a> TryFrom<ValueRef<'a>> for BareIdKey {
+    type Error = ValueRef<'a>;
+    fn try_from(v: ValueRef<'a>) -> Result<Self, Self::Error> {
+        match v {
+            ValueRef::BareIdKey(v) => Ok(*v),
+            _ => Err(v),
+        }
+    }
+}
+
 impl<'a> serde::Serialize for ValueRef<'a> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
@@ -618,6 +658,7 @@ impl<'a> serde::Serialize for ValueRef<'a> {
             ValueRef::IdentityLockbox(v) => v.serialize(serializer),
             ValueRef::StreamLockbox(v) => v.serialize(serializer),
             ValueRef::LockLockbox(v) => v.serialize(serializer),
+            ValueRef::BareIdKey(v) => v.serialize(serializer),
         }
     }
 }
@@ -771,6 +812,12 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
                         let val = LockLockboxRef::from_bytes(bytes)
                             .map_err(|e| A::Error::custom(e.serde_err()))?;
                         Ok(ValueRef::LockLockbox(val))
+                    }
+                    FOG_TYPE_ENUM_BARE_ID_KEY_INDEX => {
+                        let bytes: ByteBuf = access.newtype_variant()?;
+                        let val = BareIdKey::try_from(bytes.as_ref())
+                            .map_err(|e| A::Error::custom(e.serde_err()))?;
+                        Ok(ValueRef::BareIdKey(Box::new(val)))
                     }
                     _ => Err(A::Error::custom("unrecognized fogpack extension type")),
                 }
@@ -926,8 +973,7 @@ mod test {
 
     #[test]
     fn identity() {
-        let mut rng = rand::thread_rng();
-        let key = IdentityKey::new_temp(&mut rng);
+        let key = IdentityKey::new();
         let obj = key.id().clone();
         let obj = ValueRef::from(obj);
         assert!(obj.is_identity());
@@ -939,8 +985,7 @@ mod test {
 
     #[test]
     fn stream_id() {
-        let mut rng = rand::thread_rng();
-        let key = StreamKey::new_temp(&mut rng);
+        let key = StreamKey::new();
         let obj = key.id().clone();
         let obj = ValueRef::from(obj);
         assert!(obj.is_stream_id());
@@ -952,8 +997,7 @@ mod test {
 
     #[test]
     fn lock_id() {
-        let mut rng = rand::thread_rng();
-        let key = LockKey::new_temp(&mut rng);
+        let key = LockKey::new();
         let obj = key.id().clone();
         let obj = ValueRef::from(obj);
         assert!(obj.is_lock_id());
@@ -976,9 +1020,8 @@ mod test {
 
     #[test]
     fn data_lockbox() {
-        let mut rng = rand::thread_rng();
-        let key = StreamKey::new_temp(&mut rng);
-        let obj = key.encrypt_data(&mut rng, b"my secret squirrel data");
+        let key = StreamKey::new();
+        let obj = key.encrypt_data(b"my secret squirrel data");
         let obj = ValueRef::from(DataLockboxRef::from_bytes(obj.as_bytes()).unwrap());
         assert!(obj.is_data_lockbox());
         let doc = NewDocument::new(None, &obj).unwrap();
@@ -989,10 +1032,9 @@ mod test {
 
     #[test]
     fn identity_lockbox() {
-        let mut rng = rand::thread_rng();
-        let to_encrypt = IdentityKey::new_temp(&mut rng);
-        let key = StreamKey::new_temp(&mut rng);
-        let lockbox = to_encrypt.export_for_stream(&mut rng, &key).unwrap();
+        let to_encrypt = IdentityKey::new();
+        let key = StreamKey::new();
+        let lockbox = to_encrypt.export_for_stream(&key).unwrap();
         let obj = ValueRef::from(IdentityLockboxRef::from_bytes(lockbox.as_bytes()).unwrap());
         assert!(obj.is_identity_lockbox());
         let doc = NewDocument::new(None, &obj).unwrap();
@@ -1003,10 +1045,9 @@ mod test {
 
     #[test]
     fn stream_lockbox() {
-        let mut rng = rand::thread_rng();
-        let to_encrypt = StreamKey::new_temp(&mut rng);
-        let key = StreamKey::new_temp(&mut rng);
-        let lockbox = to_encrypt.export_for_stream(&mut rng, &key).unwrap();
+        let to_encrypt = StreamKey::new();
+        let key = StreamKey::new();
+        let lockbox = to_encrypt.export_for_stream(&key).unwrap();
         let obj = ValueRef::from(StreamLockboxRef::from_bytes(lockbox.as_bytes()).unwrap());
         assert!(obj.is_stream_lockbox());
         let doc = NewDocument::new(None, &obj).unwrap();
@@ -1017,16 +1058,26 @@ mod test {
 
     #[test]
     fn lock_lockbox() {
-        let mut rng = rand::thread_rng();
-        let to_encrypt = LockKey::new_temp(&mut rng);
-        let key = StreamKey::new_temp(&mut rng);
-        let lockbox = to_encrypt.export_for_stream(&mut rng, &key).unwrap();
+        let to_encrypt = LockKey::new();
+        let key = StreamKey::new();
+        let lockbox = to_encrypt.export_for_stream(&key).unwrap();
         let obj = ValueRef::from(LockLockboxRef::from_bytes(lockbox.as_bytes()).unwrap());
         assert!(obj.is_lock_lockbox());
         let doc = NewDocument::new(None, &obj).unwrap();
         let doc = NoSchema::validate_new_doc(doc).unwrap();
         let decode: ValueRef = doc.deserialize().unwrap();
         assert_eq!(decode.as_lock_lockbox(), obj.as_lock_lockbox());
+    }
+
+    #[test]
+    fn bare_id_key() {
+        let key = BareIdKey::new();
+        let obj = ValueRef::from(key);
+        assert!(obj.is_bare_id_key());
+        let doc = NewDocument::new(None, &obj).unwrap();
+        let doc = NoSchema::validate_new_doc(doc).unwrap();
+        let decode: ValueRef = doc.deserialize().unwrap();
+        assert_eq!(decode.as_bare_id_key(), obj.as_bare_id_key());
     }
 
 }

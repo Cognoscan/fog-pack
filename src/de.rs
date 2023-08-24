@@ -86,6 +86,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut FogDeserializer<'de> {
                 visitor.visit_enum(ExtAccess::new(Element::StreamLockbox(v)))
             }
             Element::LockLockbox(v) => visitor.visit_enum(ExtAccess::new(Element::LockLockbox(v))),
+            Element::BareIdKey(v) => visitor.visit_enum(ExtAccess::new(Element::BareIdKey(v))),
         }
     }
 
@@ -868,7 +869,7 @@ mod test {
         // Start of year 2020
         let mut expected = vec![0xc7, 0x05, 0x00, 0x00];
         expected.extend_from_slice(&1577854800u32.to_le_bytes());
-        test_cases.push((Timestamp::from_sec(1577854800), expected));
+        test_cases.push((Timestamp::from_tai_secs(1577854800), expected));
 
         for (time, enc) in test_cases {
             let mut de = FogDeserializer::new(&enc);

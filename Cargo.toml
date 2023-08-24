@@ -13,8 +13,14 @@ description = "Binary Data format supporting immutable references, schema, and c
 exclude = [ "media/*", "misc_docs/*" ]
 edition = "2021"
 
+[features]
+default = ["getrandom"]
+getrandom = ["fog-crypto/getrandom"]
+
 [dependencies]
-fog-crypto = "0.4.3"
+fog-crypto = { path = "../fog-crypto", default-features = false, features = ["with-serde"] }
+#fog-crypto = { version = "0.5.2", default-features = false, features = ["with-serde"] }
+base64 = { version = "0.21.0" }
 byteorder = "1"
 regex = "1"
 zstd-safe = "6"
@@ -26,7 +32,7 @@ futures-core = "0.3"
 pin-project-lite = "0.2"
 
 [dev-dependencies]
-rand = "0.7"
+rand = "0.8"
 criterion = "0.5"
 futures-executor = "0.3"
 futures-util = "0.3"

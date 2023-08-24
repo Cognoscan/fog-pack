@@ -210,48 +210,52 @@ pub mod validator;
 use utils::*;
 use types::*;
 pub use document::get_doc_schema;
-
-/// Various fog-pack content types.
-///
-/// The fog-pack serialization format has a number of special types, in addition to the usual
-/// primitive types:
-///
-/// - Null
-/// - Bool
-/// - [`Int`][crate::types::Integer] - any integer from -2^63 to 2^64-1
-/// - F32 - 32-bit floating point
-/// - F64 - 64-bit floating point
-/// - Bin - Binary byte sequences
-/// - Str - UTF-8 strings
-/// - Array - heterogeneous sequence of values
-/// - Map - Ordered key-value map, with strings for keys
-/// - [`Time`][crate::types::Timestamp] - a unix timestamp
-/// - [`Hash`][crate::types::Hash] - a cryptographic hash
-/// - [`Identity`][crate::types::Identity] - a public signing key
-/// - [`StreamId`][crate::types::StreamId] - an identifier for a symmetric encryption key
-/// - [`LockId`][crate::types::LockId] - a public key for encryption
-/// - [`DataLockbox`][crate::types::DataLockbox] - Encrypted general data
-/// - [`IdentityLockbox`][crate::types::IdentityLockbox] - An encrypted private signing key
-/// - [`StreamLockbox`][crate::types::StreamLockbox] - An encrypted key for symmetric encryption
-/// - [`LockLockbox`][crate::types::LockLockbox] - An encrypted private key
-///
-/// A general structure for holding fog-pack data is [`Value`][crate::types::Value]. The non-owning
-/// version of it is [`ValueRef`][crate::types::ValueRef].
-///
 pub mod types {
+    //! Various fog-pack content types.
+    //!
+    //! The fog-pack serialization format has a number of special types, in addition to the usual
+    //! primitive types:
+    //!
+    //! - Null
+    //! - Bool
+    //! - [`Int`][crate::types::Integer] - any integer from -2^63 to 2^64-1
+    //! - F32 - 32-bit floating point
+    //! - F64 - 64-bit floating point
+    //! - Bin - Binary byte sequences
+    //! - Str - UTF-8 strings
+    //! - Array - heterogeneous sequence of values
+    //! - Map - Ordered key-value map, with strings for keys
+    //! - [`Time`][Timestamp] - a unix timestamp
+    //! - [`struct@Hash`] - a cryptographic hash
+    //! - [`Identity`][crate::types::Identity] - a public signing key
+    //! - [`IdentityKey`][crate::types::IdentityKey] - a private signing key
+    //! - [`BareIdKey`][crate::types::BareIdKey] - a private signing key that can be serialized
+    //! - [`StreamId`][crate::types::StreamId] - an identifier for a symmetric encryption key
+    //! - [`StreamKey`][crate::types::StreamKey] - a symmetric encryption key, for
+    //!     encryption & decryption of lockboxes.
+    //! - [`LockId`][crate::types::LockId] - a public key for encryption of lockboxes.
+    //! - [`LockKey`][crate::types::LockKey] - a private key for decryption of lockboxes.
+    //! - [`DataLockbox`][crate::types::DataLockbox] - Encrypted general data
+    //! - [`IdentityLockbox`][crate::types::IdentityLockbox] - An encrypted private signing key
+    //! - [`StreamLockbox`][crate::types::StreamLockbox] - An encrypted key for symmetric encryption
+    //! - [`LockLockbox`][crate::types::LockLockbox] - An encrypted private key
+    //!
+    //! A general structure for holding fog-pack data is [`Value`][crate::types::Value]. The non-owning
+    //! version of it is [`ValueRef`][crate::types::ValueRef].
+    //!
     pub use crate::integer::*;
     pub use crate::timestamp::*;
     pub use crate::value::Value;
     pub use crate::value_ref::ValueRef;
     pub use fog_crypto::{
         hash::Hash,
-        identity::Identity,
-        lock::LockId,
+        identity::{Identity, BareIdKey, IdentityKey},
+        lock::{LockId, LockKey},
         lockbox::{
             DataLockbox, DataLockboxRef, IdentityLockbox, IdentityLockboxRef, LockLockbox,
             LockLockboxRef, StreamLockbox, StreamLockboxRef,
         },
-        stream::StreamId,
+        stream::{StreamId, StreamKey},
     };
 }
 

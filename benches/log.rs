@@ -100,7 +100,7 @@ impl<T: Generate> Generate for Option<T> {
 }
 
 pub fn generate_vec<R: Rng, T: Generate>(rng: &mut R, range: ops::Range<usize>) -> Vec<T> {
-    let len = rng.gen_range(range.start, range.end);
+    let len = rng.gen_range(range.start..range.end);
     let mut result = Vec::with_capacity(len);
     for _ in 0..len {
         result.push(T::generate(rng));
@@ -153,13 +153,13 @@ impl Generate for Log {
         ];
         let date = format!(
             "{}/{}/{}:{}:{}:{} {}",
-            rand.gen_range(1, 29),
-            MONTHS[rand.gen_range(0, 12)],
-            rand.gen_range(1970, 2022),
-            rand.gen_range(0, 24),
-            rand.gen_range(0, 60),
-            rand.gen_range(0, 60),
-            TIMEZONE[rand.gen_range(0, 25)],
+            rand.gen_range(1..29),
+            MONTHS[rand.gen_range(0..12)],
+            rand.gen_range(1970..2022),
+            rand.gen_range(0..24),
+            rand.gen_range(0..60),
+            rand.gen_range(0..60),
+            TIMEZONE[rand.gen_range(0..25)],
         );
         const CODES: [u16; 63] = [
             100, 101, 102, 103, 200, 201, 202, 203, 204, 205, 206, 207, 208, 226, 300, 301, 302,
@@ -180,18 +180,18 @@ impl Generate for Log {
         const PROTOCOLS: [&str; 4] = ["HTTP/1.0", "HTTP/1.1", "HTTP/2", "HTTP/3"];
         let request = format!(
             "{} {} {}",
-            METHODS[rand.gen_range(0, 5)],
-            ROUTES[rand.gen_range(0, 7)],
-            PROTOCOLS[rand.gen_range(0, 4)],
+            METHODS[rand.gen_range(0..5)],
+            ROUTES[rand.gen_range(0..7)],
+            PROTOCOLS[rand.gen_range(0..4)],
         );
         Self {
             address: Address::generate(rand),
-            code: CODES[rand.gen_range(0, CODES.len())],
+            code: CODES[rand.gen_range(0..CODES.len())],
             date,
             identity: "-".into(),
             request,
-            size: rand.gen_range(0, 100_000_000),
-            userid: USERID[rand.gen_range(0, USERID.len())].into(),
+            size: rand.gen_range(0..100_000_000),
+            userid: USERID[rand.gen_range(0..USERID.len())].into(),
         }
     }
 }

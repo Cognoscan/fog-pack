@@ -7,6 +7,37 @@
 //! Validators are not used directly; instead, they should be used to build a Schema or Query,
 //! which will run them against fog-pack data.
 //!
+//! There are validators for each fog-pack core type:
+//! - [`Validator::Null`][Validator::new_null] - for the null type.
+//! - [`BoolValidator`] - for booleans.
+//! - [`IntValidator`] - for [`Integer`][crate::integer::Integer] and other integer values.
+//! - [`F32Validator`] - for `f32` values.
+//! - [`F64Validator`] - for `f64` values.
+//! - [`BinValidator`] - for byte sequences.
+//! - [`StrValidator`] - for UTF-8 strings.
+//! - [`ArrayValidator`] - for sequences, like [`Vec`], arrays, or tuples.
+//! - [`MapValidator`] - for maps, like `struct`, [`BTreeMap`], and `HashMap`
+//! - [`TimeValidator`] - for [`Timestamp`][crate::timestamp::Timestamp]
+//! - [`HashValidator`] - for [`Hash`]
+//! - [`IdentityValidator`] - for [`Identity`][crate::types::Identity]
+//! - [`StreamIdValidator`] - for [`StreamId`][crate::types::StreamId]
+//! - [`LockIdValidator`] - for [`LockId`][crate::types::LockId]
+//! - [`BareIdKey`][Validator::new_bare_id_key] - for [`BareIdKey`][crate::types::BareIdKey]
+//! - [`DataLockboxValidator`] - for [`DataLockbox`][crate::types::DataLockbox]
+//! - [`IdentityLockboxValidator`] - for [`IdentityLockbox`][crate::types::IdentityLockbox]
+//! - [`StreamLockboxValidator`] - for [`StreamLockbox`][crate::types::StreamLockbox]
+//! - [`LockLockboxValidator`] - for [`LockLockbox`][crate::types::LockLockbox]
+//!
+//! In addition to the core types, there are 4 special validators:
+//! - [`Validator::Ref`][Validator::new_ref] - a reference to a validator stored in a
+//!     schema's map of types. Uses a name to look up the validator.
+//! - [`MultiValidator`] - Will attempt a sequence of validators, passing if any one of them pass.
+//! - [`EnumValidator`] - Acts as a validator for serialized Rust enums.
+//!     This can also be implemented through [`MapValidator`], but this
+//!     validator is generally easier to use correctly in such cases.
+//! - [`Validator::Any`][Validator::new_any] - accepts any fog-pack value without examining it.
+//!
+//!
 //! # Examples
 //!
 //! Say we want to build a Document that acts like a file directory. We want to store the creation
@@ -95,7 +126,9 @@ pub enum Normalize {
 /// Validators can be used to verify a fog-pack Document or Entry. Schemas use them for
 /// verification, and they are also used by Queries to find matching Entries.
 ///
-/// A Validator can range from the
+/// This enum contains all possible validators. See the
+/// [module-level documentation][crate::validator] for details.
+///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Validator {
     Null,
@@ -112,6 +145,7 @@ pub enum Validator {
     Identity(Box<IdentityValidator>),
     StreamId(Box<StreamIdValidator>),
     LockId(Box<LockIdValidator>),
+    BareIdKey,
     DataLockbox(Box<DataLockboxValidator>),
     IdentityLockbox(Box<IdentityLockboxValidator>),
     StreamLockbox(Box<StreamLockboxValidator>),
@@ -129,6 +163,10 @@ impl Validator {
 
     pub fn new_null() -> Self {
         Self::Null
+    }
+
+    pub fn new_bare_id_key() -> Self {
+        Self::BareIdKey
     }
 
     pub fn new_any() -> Self {
@@ -198,6 +236,16 @@ impl Validator {
                 validator.validate(&mut parser)?;
                 Ok((parser, checklist))
             }
+            Validator::BareIdKey => {
+                let elem = parser
+                    .next()
+                    .ok_or_else(|| Error::FailValidate("expected BareIdKey".to_string()))??;
+                if let Element::BareIdKey(_) = elem {
+                    Ok((parser, checklist))
+                } else {
+                    Err(Error::FailValidate("expected BareIdKey".to_string()))
+                }
+            }
             Validator::DataLockbox(validator) => {
                 validator.validate(&mut parser)?;
                 Ok((parser, checklist))
@@ -259,6 +307,7 @@ impl Validator {
             Validator::Identity(validator) => validator.query_check(other),
             Validator::StreamId(validator) => validator.query_check(other),
             Validator::LockId(validator) => validator.query_check(other),
+            Validator::BareIdKey => matches!(other, Validator::BareIdKey | Validator::Any),
             Validator::DataLockbox(validator) => validator.query_check(other),
             Validator::IdentityLockbox(validator) => validator.query_check(other),
             Validator::StreamLockbox(validator) => validator.query_check(other),

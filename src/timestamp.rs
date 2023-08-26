@@ -24,7 +24,7 @@ use serde_bytes::ByteBuf;
 
 const NTP_EPOCH_OFFSET: i64 = -86400 * (70*365 + 17);
 const MAX_NANOSEC: u32 = 999_999_999;
-const NANOS_PER_SEC: i64 = 1_000_000_000;
+const NANOS_PER_SEC: u32 = 1_000_000_000;
 const MICROS_PER_SEC: i64 = 1_000_000;
 const MILLIS_PER_SEC: i64 = 1_000;
 static UTC_LEAP: OnceLock<RwLock<LeapSeconds>> = OnceLock::new();
@@ -49,7 +49,7 @@ fn tai_to_utc(t: Timestamp) -> Timestamp {
     t + table.leap_seconds(t)
 }
 
-/// Set up the leap second table to go from TAI to UTC times.
+/// Set up the leap second table that converts from TAI to UTC and vice-versa.
 pub fn set_utc_leap_seconds(table: LeapSeconds) {
     let store = UTC_LEAP.get_or_init(|| RwLock::new(LeapSeconds::default()));
     let mut store = match store.write() {
@@ -100,8 +100,8 @@ impl TimeDelta {
     /// Construct a `TimeDelta` from the specified number of nanoseconds.
     pub fn from_nanos(nanos: i64) -> Self {
         Self {
-            secs: nanos.div_euclid(NANOS_PER_SEC),
-            nanos: nanos.rem_euclid(NANOS_PER_SEC) as u32,
+            secs: nanos.div_euclid(NANOS_PER_SEC as i64),
+            nanos: nanos.rem_euclid(NANOS_PER_SEC as i64) as u32,
         }
     }
 
@@ -122,8 +122,8 @@ impl ops::AddAssign<TimeDelta> for TimeDelta {
     fn add_assign(&mut self, rhs: TimeDelta) {
         self.nanos += rhs.nanos;
         self.secs += rhs.secs;
-        if self.nanos > MAX_NANOSEC {
-            self.nanos -= MAX_NANOSEC+1;
+        if self.nanos >= NANOS_PER_SEC {
+            self.nanos -= NANOS_PER_SEC;
             self.secs += 1;
         }
     }
@@ -140,7 +140,7 @@ impl ops::Add<TimeDelta> for TimeDelta {
 impl ops::SubAssign<TimeDelta> for TimeDelta {
     fn sub_assign(&mut self, rhs: TimeDelta) {
         if self.nanos < rhs.nanos {
-            self.nanos += MAX_NANOSEC+1;
+            self.nanos += NANOS_PER_SEC;
             self.secs -= 1;
         }
         self.nanos -= rhs.nanos;
@@ -161,7 +161,7 @@ impl ops::Neg for TimeDelta {
     fn neg(mut self) -> Self::Output {
         self.secs = -self.secs;
         if self.nanos != 0 {
-            self.nanos = MAX_NANOSEC+1 - self.nanos;
+            self.nanos = NANOS_PER_SEC - self.nanos;
             self.secs -= 1;
         }
         self
@@ -196,14 +196,16 @@ impl Default for LeapSeconds {
 impl LeapSeconds {
     /// Construct a new leap second table. Assumes the `Timestamp` values are
     /// strictly increasing, that the `TimeDelta` values don't change by
-    /// more than one second, and that the timestamps are spaced more than a
-    /// few seconds apart.
+    /// more than a few seconds, and that the timestamps are spaced more than
+    /// twice the `TimeDelta` values apart.
     pub fn new(table: Vec<(Timestamp, TimeDelta)>) -> Self {
         Self(table)
     }
 
     /// Look up the amount of time to subtract from a timestamp that has leap
-    /// seconds in it. Used for converting from UTC to TAI.
+    /// seconds in it. Used for converting from UTC to TAI. This function
+    /// assumes that the provided Timestamp is *incorrect*, in that it assumes
+    /// the Timestamp is in UTC Unix seconds.
     pub fn reverse_leap_seconds(&self, t: Timestamp) -> TimeDelta {
         for leap_second in self.0.iter().rev() {
             if (t - leap_second.1) >= leap_second.0 {
@@ -521,8 +523,8 @@ impl ops::Add<TimeDelta> for Timestamp {
 impl ops::AddAssign<TimeDelta> for Timestamp {
     fn add_assign(&mut self, rhs: TimeDelta) {
         self.nanos += rhs.nanos;
-        if self.nanos > MAX_NANOSEC {
-            self.nanos -= MAX_NANOSEC + 1;
+        if self.nanos >= NANOS_PER_SEC {
+            self.nanos -= NANOS_PER_SEC;
             self.secs += 1;
         }
         self.secs += rhs.secs;
@@ -540,7 +542,7 @@ impl ops::Sub<TimeDelta> for Timestamp {
 impl ops::SubAssign<TimeDelta> for Timestamp {
     fn sub_assign(&mut self, rhs: TimeDelta) {
         if self.nanos < rhs.nanos {
-            self.nanos += MAX_NANOSEC + 1;
+            self.nanos += NANOS_PER_SEC;
             self.secs -= 1;
         }
         self.nanos -= rhs.nanos;

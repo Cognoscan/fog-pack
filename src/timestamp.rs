@@ -2,6 +2,8 @@ use std::cmp;
 use std::convert::TryFrom;
 use std::fmt;
 use std::ops;
+use std::ops::AddAssign;
+use std::ops::SubAssign;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::time::SystemTime;
@@ -59,13 +61,13 @@ pub fn set_utc_leap_seconds(table: LeapSeconds) {
 
 /// A difference between [`Timestamp`] values. Can be used to adjust timestamps.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct TimeDifference {
+pub struct TimeDelta {
     secs: i64,
     nanos: u32,
 }
 
-impl TimeDifference {
-    /// Construct a new time difference. Fails if nanoseconds is one billion or
+impl TimeDelta {
+    /// Construct a new time delta. Fails if nanoseconds is one billion or
     /// more.
     pub fn new(secs: i64, nanos: u32) -> Option<Self> {
         if nanos > MAX_NANOSEC {
@@ -74,45 +76,95 @@ impl TimeDifference {
         Some(Self { secs, nanos })
     }
 
-    /// Construct a `TimeDifference` from the specified number of seconds.
+    /// Construct a `TimeDelta` from the specified number of seconds.
     pub fn from_secs(secs: i64) -> Self {
         Self { secs, nanos: 0 }
     }
 
-    /// Construct a `TimeDifference` from the specified number of milliseconds.
+    /// Construct a `TimeDelta` from the specified number of milliseconds.
     pub fn from_millis(millis: i64) -> Self {
         Self {
-            secs: millis / MILLIS_PER_SEC,
-            nanos: (millis % MILLIS_PER_SEC) as u32,
+            secs: millis.div_euclid(MILLIS_PER_SEC),
+            nanos: millis.rem_euclid(MILLIS_PER_SEC) as u32,
         }
     }
 
-    /// Construct a `TimeDifference` from the specified number of microseconds.
+    /// Construct a `TimeDelta` from the specified number of microseconds.
     pub fn from_micros(micros: i64) -> Self {
         Self {
-            secs: micros / MICROS_PER_SEC,
-            nanos: (micros % MICROS_PER_SEC) as u32,
+            secs: micros.div_euclid(MICROS_PER_SEC),
+            nanos: micros.rem_euclid(MICROS_PER_SEC) as u32,
         }
     }
 
-    /// Construct a `TimeDifference` from the specified number of nanoseconds.
+    /// Construct a `TimeDelta` from the specified number of nanoseconds.
     pub fn from_nanos(nanos: i64) -> Self {
         Self {
-            secs: nanos / NANOS_PER_SEC,
-            nanos: (nanos % NANOS_PER_SEC) as u32,
+            secs: nanos.div_euclid(NANOS_PER_SEC),
+            nanos: nanos.rem_euclid(NANOS_PER_SEC) as u32,
         }
     }
 
-    /// Returns the fractional part of this `TimeDifference`, in nanoseconds.
+    /// Returns the fractional part of this `TimeDelta`, in nanoseconds.
     pub fn subsec_nanos(&self) -> u32 {
         self.nanos
     }
 
-    /// Returns the total number of whole seconds contained by this `TimeDifference`.
+    /// Returns the total number of whole seconds contained by this `TimeDelta`.
     ///
-    /// The returned value doesn't contain the fractional part of the difference.
+    /// The returned value doesn't contain the fractional part of the delta.
     pub fn as_secs(&self) -> i64 {
         self.secs
+    }
+}
+
+impl ops::AddAssign<TimeDelta> for TimeDelta {
+    fn add_assign(&mut self, rhs: TimeDelta) {
+        self.nanos += rhs.nanos;
+        self.secs += rhs.secs;
+        if self.nanos > MAX_NANOSEC {
+            self.nanos -= MAX_NANOSEC+1;
+            self.secs += 1;
+        }
+    }
+}
+
+impl ops::Add<TimeDelta> for TimeDelta {
+    type Output = TimeDelta;
+    fn add(mut self, rhs: TimeDelta) -> Self::Output {
+        self.add_assign(rhs);
+        self
+    }
+}
+
+impl ops::SubAssign<TimeDelta> for TimeDelta {
+    fn sub_assign(&mut self, rhs: TimeDelta) {
+        if self.nanos < rhs.nanos {
+            self.nanos += MAX_NANOSEC+1;
+            self.secs -= 1;
+        }
+        self.nanos -= rhs.nanos;
+        self.secs -= rhs.secs;
+    }
+}
+
+impl ops::Sub<TimeDelta> for TimeDelta {
+    type Output = TimeDelta;
+    fn sub(mut self, rhs: TimeDelta) -> Self::Output {
+        self.sub_assign(rhs);
+        self
+    }
+}
+
+impl ops::Neg for TimeDelta {
+    type Output = TimeDelta;
+    fn neg(mut self) -> Self::Output {
+        self.secs = -self.secs;
+        if self.nanos != 0 {
+            self.nanos = MAX_NANOSEC+1 - self.nanos;
+            self.secs -= 1;
+        }
+        self
     }
 }
 
@@ -132,7 +184,7 @@ impl TimeDifference {
 /// delta-encodes timestamps and differences instead, which is more amenable to
 /// schema-based validation.
 #[derive(Clone, Debug)]
-pub struct LeapSeconds(pub Vec<(Timestamp, TimeDifference)>);
+pub struct LeapSeconds(pub Vec<(Timestamp, TimeDelta)>);
 
 impl Default for LeapSeconds {
     fn default() -> Self {
@@ -143,33 +195,33 @@ impl Default for LeapSeconds {
 
 impl LeapSeconds {
     /// Construct a new leap second table. Assumes the `Timestamp` values are
-    /// strictly increasing, that the `TimeDifference` values don't change by
+    /// strictly increasing, that the `TimeDelta` values don't change by
     /// more than one second, and that the timestamps are spaced more than a
     /// few seconds apart.
-    pub fn new(table: Vec<(Timestamp, TimeDifference)>) -> Self {
+    pub fn new(table: Vec<(Timestamp, TimeDelta)>) -> Self {
         Self(table)
     }
 
     /// Look up the amount of time to subtract from a timestamp that has leap
     /// seconds in it. Used for converting from UTC to TAI.
-    pub fn reverse_leap_seconds(&self, t: Timestamp) -> TimeDifference {
+    pub fn reverse_leap_seconds(&self, t: Timestamp) -> TimeDelta {
         for leap_second in self.0.iter().rev() {
             if (t - leap_second.1) >= leap_second.0 {
                 return leap_second.1
             }
         }
-        TimeDifference::default()
+        TimeDelta::default()
     }
 
     /// Look up the amount of time to add to a timestamp to compensate for leap
     /// seconds, according to this table. Used for converting from TAI to UTC.
-    pub fn leap_seconds(&self, t: Timestamp) -> TimeDifference {
+    pub fn leap_seconds(&self, t: Timestamp) -> TimeDelta {
         for leap_second in self.0.iter().rev() {
             if t >= leap_second.0 {
                 return leap_second.1;
             }
         }
-        TimeDifference::default()
+        TimeDelta::default()
     }
 
     /// Parse a NTP leap seconds file that has been read in as a string.
@@ -204,7 +256,7 @@ impl LeapSeconds {
 
                     // Create a proper TAI timestamp and put in the correct time delta to apply
                     let time = Timestamp::from_tai_secs(secs_utc + delta + NTP_EPOCH_OFFSET);
-                    let delta = TimeDifference::from_secs(-delta);
+                    let delta = TimeDelta::from_secs(-delta);
                     table.push((time, delta));
                 }
             }
@@ -362,13 +414,13 @@ impl Timestamp {
 
     /// Calculates the time that has elapsed between the other timestamp and
     /// this one. Effectively `self - other`.
-    pub fn time_since(&self, other: &Timestamp) -> TimeDifference {
-        let rhs = TimeDifference {
+    pub fn time_since(&self, other: &Timestamp) -> TimeDelta {
+        let rhs = TimeDelta {
             secs: other.secs,
             nanos: other.nanos,
         };
         let new = *self - rhs;
-        TimeDifference {
+        TimeDelta {
             secs: new.secs,
             nanos: new.nanos,
         }
@@ -389,6 +441,8 @@ impl Timestamp {
     ///    seconds as little-endian u32.
     /// 3. If nanoseconds is zero & seconds does not map to a u32, encode the
     ///    seconds as little-endian i64.
+    ///
+    /// The length can be used to determine the format in which it was written.
     pub fn encode_vec(&self, vec: &mut Vec<u8>) {
         if self.nanos != 0 {
             vec.reserve(8 + 4);
@@ -456,16 +510,16 @@ impl ops::SubAssign<i64> for Timestamp {
     }
 }
 
-impl ops::Add<TimeDifference> for Timestamp {
+impl ops::Add<TimeDelta> for Timestamp {
     type Output = Timestamp;
-    fn add(mut self, rhs: TimeDifference) -> Timestamp {
+    fn add(mut self, rhs: TimeDelta) -> Timestamp {
         self += rhs;
         self
     }
 }
 
-impl ops::AddAssign<TimeDifference> for Timestamp {
-    fn add_assign(&mut self, rhs: TimeDifference) {
+impl ops::AddAssign<TimeDelta> for Timestamp {
+    fn add_assign(&mut self, rhs: TimeDelta) {
         self.nanos += rhs.nanos;
         if self.nanos > MAX_NANOSEC {
             self.nanos -= MAX_NANOSEC + 1;
@@ -475,22 +529,29 @@ impl ops::AddAssign<TimeDifference> for Timestamp {
     }
 }
 
-impl ops::Sub<TimeDifference> for Timestamp {
+impl ops::Sub<TimeDelta> for Timestamp {
     type Output = Timestamp;
-    fn sub(mut self, rhs: TimeDifference) -> Timestamp {
+    fn sub(mut self, rhs: TimeDelta) -> Timestamp {
         self -= rhs;
         self
     }
 }
 
-impl ops::SubAssign<TimeDifference> for Timestamp {
-    fn sub_assign(&mut self, rhs: TimeDifference) {
+impl ops::SubAssign<TimeDelta> for Timestamp {
+    fn sub_assign(&mut self, rhs: TimeDelta) {
         if self.nanos < rhs.nanos {
             self.nanos += MAX_NANOSEC + 1;
             self.secs -= 1;
         }
         self.nanos -= rhs.nanos;
         self.secs -= rhs.secs;
+    }
+}
+
+impl ops::Sub<Timestamp> for Timestamp {
+    type Output = TimeDelta;
+    fn sub(self, rhs: Timestamp) -> TimeDelta {
+        self.time_since(&rhs)
     }
 }
 
@@ -515,6 +576,8 @@ impl fmt::Display for Timestamp {
     }
 }
 
+/// Parse an encoded timestamp. Must be 4, 8, or 12 bytes (matching what was
+/// written by [`Timestamp::encode_vec`])
 impl TryFrom<&[u8]> for Timestamp {
     type Error = String;
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
@@ -726,4 +789,47 @@ mod test {
             assert!(Timestamp::try_from(enc.as_ref()).is_err());
         }
     }
+
+    #[test]
+    fn leap_seconds() {
+        let table = LeapSeconds::default();
+        let (tai_time, diff) = table.0.last().unwrap();
+        assert_eq!(*diff, TimeDelta::from_secs(-37));
+        assert_eq!(tai_time.utc().0, 3692217600 + NTP_EPOCH_OFFSET);
+        assert_eq!(tai_time.utc().1, 0);
+        for i in -5..=5 {
+            // TAI should *almost* perfectly round-trip. UTC can't represent the
+            // leap second correctly, so that point will have a delta.
+            let time = *tai_time + i;
+            let utc = time.utc();
+            let time2 = Timestamp::from_utc(utc.0, utc.1).unwrap();
+            if i == -1 {
+                assert_eq!(time, time2-1, "Failed for offset of {}, expected a diff of 1", i);
+            }
+            else {
+                assert_eq!(time, time2, "Failed for offset of {}, expected no diff", i);
+            }
+
+            // UTC should always perfectly round-trip
+            let utc = tai_time.tai_secs() - diff.as_secs() + i;
+            let tai = Timestamp::from_utc_secs(utc);
+            let utc2 = tai.utc();
+            assert_eq!(utc2.0, utc, "Failed for offset of {}, expected no diff", i);
+            assert_eq!(utc2.1, 0, "Failed for offset of {}, expected 0 ns for UTC", i);
+        }
+    }
+
+    #[test]
+    fn check_diffs() {
+        let time = Timestamp::from_tai(5, 5).unwrap();
+        let time2 = Timestamp::from_tai(6, 1).unwrap();
+        let diff = time2.time_since(&time);
+        let diff2 = time.time_since(&time2);
+        let neg_diff2 = -diff2;
+        let neg_diff3 = -neg_diff2;
+        assert_eq!(diff, neg_diff2);
+        assert_eq!(diff2, neg_diff3);
+    }
+
 }
+

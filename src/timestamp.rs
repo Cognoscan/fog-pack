@@ -746,14 +746,14 @@ mod test {
 
     fn edge_cases() -> Vec<(usize, Timestamp)> {
         vec![
-            (5, Timestamp::from_tai(0, 0).unwrap()),
-            (5, Timestamp::from_tai(1, 0).unwrap()),
-            (13, Timestamp::from_tai(1, 1).unwrap()),
-            (5, Timestamp::from_tai(u32::MAX as i64 - 1, 0).unwrap()),
-            (5, Timestamp::from_tai(u32::MAX as i64, 0).unwrap()),
-            (9, Timestamp::from_tai(u32::MAX as i64 + 1, 0).unwrap()),
-            (9, Timestamp::from_tai(i64::MIN, 0).unwrap()),
-            (13, Timestamp::from_tai(i64::MIN, 1).unwrap()),
+            (4, Timestamp::from_tai(0, 0).unwrap()),
+            (4, Timestamp::from_tai(1, 0).unwrap()),
+            (12, Timestamp::from_tai(1, 1).unwrap()),
+            (4, Timestamp::from_tai(u32::MAX as i64 - 1, 0).unwrap()),
+            (4, Timestamp::from_tai(u32::MAX as i64, 0).unwrap()),
+            (8, Timestamp::from_tai(u32::MAX as i64 + 1, 0).unwrap()),
+            (8, Timestamp::from_tai(i64::MIN, 0).unwrap()),
+            (12, Timestamp::from_tai(i64::MIN, 1).unwrap()),
         ]
     }
 

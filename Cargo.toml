@@ -18,8 +18,7 @@ default = ["getrandom"]
 getrandom = ["fog-crypto/getrandom"]
 
 [dependencies]
-fog-crypto = { path = "../fog-crypto", default-features = false, features = ["with-serde"] }
-#fog-crypto = { version = "0.5.2", default-features = false, features = ["with-serde"] }
+fog-crypto = { version = "0.5.3", default-features = false, features = ["with-serde"] }
 base64 = { version = "0.21.0" }
 byteorder = "1"
 regex = "1"

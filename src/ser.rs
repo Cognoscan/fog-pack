@@ -1910,20 +1910,20 @@ mod test {
         use crate::Timestamp;
         let mut test_cases = Vec::new();
         // Zero
-        let mut expected = vec![0xc7, 0x05, 0x00, 0x00];
+        let mut expected = vec![0xc7, 0x04, 0x00];
         expected.extend_from_slice(&0u32.to_le_bytes());
         test_cases.push((Timestamp::zero(), expected));
         // Min
-        let mut expected = vec![0xc7, 0x09, 0x00, 0x00];
+        let mut expected = vec![0xc7, 0x08, 0x00];
         expected.extend_from_slice(&i64::MIN.to_le_bytes());
         test_cases.push((Timestamp::min_value(), expected));
         // Max
-        let mut expected = vec![0xc7, 0x0d, 0x00, 0x00];
+        let mut expected = vec![0xc7, 0x0c, 0x00];
         expected.extend_from_slice(&i64::MAX.to_le_bytes());
-        expected.extend_from_slice(&1_999_999_999u32.to_le_bytes());
+        expected.extend_from_slice(&999_999_999u32.to_le_bytes());
         test_cases.push((Timestamp::max_value(), expected));
         // Start of year 2020
-        let mut expected = vec![0xc7, 0x05, 0x00, 0x00];
+        let mut expected = vec![0xc7, 0x04, 0x00];
         expected.extend_from_slice(&1577854800u32.to_le_bytes());
         test_cases.push((Timestamp::from_tai_secs(1577854800), expected));
 

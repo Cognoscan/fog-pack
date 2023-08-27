@@ -6,6 +6,10 @@ use std::borrow::Cow;
 use std::ops::Index;
 use std::{collections::BTreeMap, fmt::Debug};
 
+/// A single, self-contained fog-pack value.
+///
+/// This enum covers all value types that fog-pack specifically encodes.
+#[allow(missing_docs)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum Value {
     #[default]
@@ -30,7 +34,9 @@ pub enum Value {
     BareIdKey(Box<BareIdKey>),
 }
 
+#[allow(missing_docs)]
 impl Value {
+    /// Transform the value into a [`ValueRef`].
     pub fn as_ref(&self) -> ValueRef {
         use std::ops::Deref;
         match *self {

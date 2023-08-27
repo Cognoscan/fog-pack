@@ -45,6 +45,8 @@ pub struct NewQuery {
 }
 
 impl NewQuery {
+    /// Create a new query given a validator to run against entries, and the key
+    /// for the entries on a document to check.
     pub fn new(key: &str, query: Validator) -> Self {
         Self {
             inner: InnerQuery {
@@ -54,10 +56,12 @@ impl NewQuery {
         }
     }
 
+    /// Get the validator of this query.
     pub fn validator(&self) -> &Validator {
         &self.inner.query
     }
 
+    /// Get the key of the entries this query will be made against.
     pub fn key(&self) -> &str {
         &self.inner.key
     }
@@ -160,14 +164,21 @@ impl Query {
         })
     }
 
+    /// Get the validator of this query.
     pub fn validator(&self) -> &Validator {
         &self.inner.query
     }
 
+    /// Get the key of the entries this query will be made against.
     pub fn key(&self) -> &str {
         &self.inner.key
     }
 
+    /// Execute the query against a given entry and see if it potentially matches.
+    ///
+    /// The [`DataChecklist`] must be completed in order to fully determine if
+    /// the entry matches. If the checklist completes successfully, the entry is
+    /// a match for the query.
     pub fn query(&self, entry: &Entry) -> Result<DataChecklist<()>> {
         let parser = Parser::new(entry.data());
         let checklist = Some(Checklist::new(&self.schema, &self.types));

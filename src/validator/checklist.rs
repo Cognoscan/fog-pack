@@ -19,6 +19,9 @@ pub struct ListItem<'a> {
 }
 
 impl<'a> ListItem<'a> {
+    /// Check an item in the checklist using the provided document. If the
+    /// document passes, it returns a `Ok(())`. On failure, future checks should
+    /// be halted and the checklist discarded.
     pub fn check(self, doc: &Document) -> Result<()> {
         // Check that the Document meets all the `schema` requirements from each Hash validator
         if !self.inner.schema.is_empty() {
@@ -78,6 +81,17 @@ impl<'a> InnerListItem<'a> {
     }
 }
 
+/// A Checklist of documents that must be verified before the contained data is
+/// yielded.
+///
+/// A checklist can be completed by performing the following steps:
+/// 1. Call [`iter`][DataChecklist::iter] to get an iterator over the list.
+/// 2. For each [item][ListItem], fetch the Document matching the hash that was
+///     provided alongside the item, then provide it to the item by calling
+///     [`check`][ListItem::check].
+/// 3. When all the items have been completed successfully, call
+///     [`complete`][DataChecklist::complete] to get the contained data.
+///
 #[derive(Clone, Debug)]
 pub struct DataChecklist<'a, T> {
     list: Checklist<'a>,
@@ -96,10 +110,8 @@ impl<'a, T> DataChecklist<'a, T> {
         self.list.iter()
     }
 
-    pub fn check(&mut self, doc: &Document) -> Result<()> {
-        self.list.check(doc)
-    }
-
+    /// Complete a checklist, yielding the inner data value if the checklist was
+    /// successfully iterated over.
     pub fn complete(self) -> Result<T> {
         self.list.complete()?;
         Ok(self.data)
@@ -154,20 +166,7 @@ impl<'a> Checklist<'a> {
         })
     }
 
-    fn check(&mut self, doc: &Document) -> Result<()> {
-        self.list
-            .remove(doc.hash())
-            .ok_or_else(|| Error::FailValidate("provided document wasn't in checklist".into()))
-            .and_then(|inner| {
-                let item = ListItem {
-                    inner,
-                    schema: self.schema,
-                    types: self.types,
-                };
-                item.check(doc)
-            })
-    }
-
+    /// Complete the checklsit
     fn complete(self) -> Result<()> {
         if self.list.is_empty() {
             Ok(())

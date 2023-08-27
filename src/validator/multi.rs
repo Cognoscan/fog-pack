@@ -8,9 +8,9 @@ use std::default::Default;
 /// This validator will accept any value that passes at least one of its contained validators. This
 /// can be used like an "any of" operator, or a logical OR of validators.
 ///
-/// When this validator is used, the contained validators are checked in order, passing when the 
-/// first contained validator passes. When performing [`Entry`][crate::entry::Entry] validation, this can mean that a 
-/// linked document may be added to the list of documents needed for final validation, even if 
+/// When this validator is used, the contained validators are checked in order, passing when the
+/// first contained validator passes. When performing [`Entry`][crate::entry::Entry] validation, this can mean that a
+/// linked document may be added to the list of documents needed for final validation, even if
 /// another contained validator (later in the list) would also pass without it.
 ///
 /// When going through the contained validators, some rules are followed to avoid possible cyclic
@@ -48,6 +48,7 @@ impl MultiValidator {
         Validator::Multi(self)
     }
 
+    /// Iterate over all the contained validators.
     pub fn iter(&self) -> std::slice::Iter<Validator> {
         self.0.iter()
     }

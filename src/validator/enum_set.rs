@@ -94,10 +94,12 @@ impl EnumValidator {
         Validator::Enum(self)
     }
 
+    /// Iterate over all the enum variants.
     pub fn iter(&self) -> std::collections::btree_map::Iter<String, Option<Validator>> {
         self.0.iter()
     }
 
+    /// Iterate over all the validators in this enum.
     pub fn values(&self) -> std::collections::btree_map::Values<String, Option<Validator>> {
         self.0.values()
     }

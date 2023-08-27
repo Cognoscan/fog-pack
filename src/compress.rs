@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{convert::TryFrom, fmt};
 
+/// The compression algorithm identifier for `zstandard`.
 pub const ALGORITHM_ZSTD: u8 = 0;
 
 /// Defines the compression types supported by documents & entries. Format when encoded is a single
@@ -58,7 +59,12 @@ pub enum Compress {
     /// Don't compress by default.
     None,
     /// Compress using the given algorithm identifier and compression level.
-    General { algorithm: u8, level: u8 },
+    General {
+        /// The algorithm's identifier
+        algorithm: u8,
+        /// The compression level
+        level: u8
+    },
     /// Compress using the provided dictionary object
     Dict(Dictionary),
 }

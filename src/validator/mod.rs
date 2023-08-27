@@ -131,44 +131,74 @@ pub enum Normalize {
 ///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Validator {
+    /// [`Validator::Null`][Validator::new_null] - for the null type.
     Null,
+    /// [`BoolValidator`] - for booleans.
     Bool(Box<BoolValidator>),
+    /// [`IntValidator`] - for [`Integer`][crate::integer::Integer] and other integer values.
     Int(Box<IntValidator>),
+    /// [`F32Validator`] - for `f32` values.
     F32(Box<F32Validator>),
+    /// [`F64Validator`] - for `f64` values.
     F64(Box<F64Validator>),
+    /// [`BinValidator`] - for byte sequences.
     Bin(Box<BinValidator>),
+    /// [`StrValidator`] - for UTF-8 strings.
     Str(Box<StrValidator>),
+    /// [`ArrayValidator`] - for sequences, like [`Vec`], arrays, or tuples.
     Array(Box<ArrayValidator>),
+    /// [`MapValidator`] - for maps, like `struct`, [`BTreeMap`], and `HashMap`
     Map(Box<MapValidator>),
+    /// [`TimeValidator`] - for [`Timestamp`][crate::timestamp::Timestamp]
     Time(Box<TimeValidator>),
+    /// [`HashValidator`] - for [`Hash`]
     Hash(Box<HashValidator>),
+    /// [`IdentityValidator`] - for [`Identity`][crate::types::Identity]
     Identity(Box<IdentityValidator>),
+    /// [`StreamIdValidator`] - for [`StreamId`][crate::types::StreamId]
     StreamId(Box<StreamIdValidator>),
+    /// [`LockIdValidator`] - for [`LockId`][crate::types::LockId]
     LockId(Box<LockIdValidator>),
+    /// [`BareIdKey`][Validator::new_bare_id_key] - for [`BareIdKey`][crate::types::BareIdKey]
     BareIdKey,
+    /// [`DataLockboxValidator`] - for [`DataLockbox`][crate::types::DataLockbox]
     DataLockbox(Box<DataLockboxValidator>),
+    /// [`IdentityLockboxValidator`] - for [`IdentityLockbox`][crate::types::IdentityLockbox]
     IdentityLockbox(Box<IdentityLockboxValidator>),
+    /// [`StreamLockboxValidator`] - for [`StreamLockbox`][crate::types::StreamLockbox]
     StreamLockbox(Box<StreamLockboxValidator>),
+    /// [`LockLockboxValidator`] - for [`LockLockbox`][crate::types::LockLockbox]
     LockLockbox(Box<LockLockboxValidator>),
+    /// [`Validator::Ref`][Validator::new_ref] - a reference to a validator stored in a
+    ///   schema's map of types. Uses a name to look up the validator.
     Ref(String),
+    /// [`MultiValidator`] - Will attempt a sequence of validators, passing if any one of them pass.
     Multi(MultiValidator),
+    /// [`EnumValidator`] - Acts as a validator for serialized Rust enums.
+    ///   This can also be implemented through [`MapValidator`], but this
+    ///   validator is generally easier to use correctly in such cases.
     Enum(EnumValidator),
+    /// [`Validator::Any`][Validator::new_any] - accepts any fog-pack value without examining it.
     Any,
 }
 
 impl Validator {
+    /// Create a new reference validator from the given string.
     pub fn new_ref(name: impl Into<String>) -> Self {
         Self::Ref(name.into())
     }
 
+    /// Create a new validator for the Null value.
     pub fn new_null() -> Self {
         Self::Null
     }
 
+    /// Create a new validator for a [`BareIdKey`][crate::types::BareIdKey].
     pub fn new_bare_id_key() -> Self {
         Self::BareIdKey
     }
 
+    /// Create a new validator that passes any value.
     pub fn new_any() -> Self {
         Self::Any
     }

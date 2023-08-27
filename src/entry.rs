@@ -63,14 +63,17 @@ impl<'a> SplitEntry<'a> {
     }
 }
 
-/// A reference triplet to an [`Entry`], containing the hash of the entry's parent document, the 
-/// key string for the entry, and the hash of the entry itself. Note that the entry hash is still 
-/// formed in a way the includes the parent & key, so changing either means the entry hash would 
+/// A reference triplet to an [`Entry`], containing the hash of the entry's parent document, the
+/// key string for the entry, and the hash of the entry itself. Note that the entry hash is still
+/// formed in a way the includes the parent & key, so changing either means the entry hash would
 /// also change.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct EntryRef {
+    /// Hash of the parent document
     pub parent: Hash,
+    /// Key for the entry
     pub key: String,
+    /// Hash of the entry itself
     pub hash: Hash,
 }
 
@@ -83,7 +86,7 @@ impl std::fmt::Display for EntryRef {
 #[derive(Clone, Debug)]
 struct EntryInner {
     buf: Vec<u8>,
-    /// Working memory for hash calculations. Should only be created by signing or new(), and only 
+    /// Working memory for hash calculations. Should only be created by signing or new(), and only
     /// modified & read within signing operations.
     hash_state: Option<HashState>,
     id: EntryRef,
@@ -103,7 +106,7 @@ impl EntryInner {
         &self.id.parent
     }
 
-    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent 
+    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent
     /// [`Document`][crate::document::Document].
     fn schema_hash(&self) -> &Hash {
         &self.schema_hash
@@ -178,7 +181,7 @@ impl EntryInner {
         }
         let hash_state = self.hash_state.as_mut().unwrap();
 
-        // Hash state does not yet contain the signature - thus, it holds the hash we're going to 
+        // Hash state does not yet contain the signature - thus, it holds the hash we're going to
         // sign
         let entry_hash = hash_state.hash();
 
@@ -308,7 +311,7 @@ impl NewEntry {
         self.0.parent()
     }
 
-    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent 
+    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent
     /// [`Document`][crate::document::Document].
     pub fn schema_hash(&self) -> &Hash {
         self.0.schema_hash()
@@ -436,7 +439,7 @@ impl Entry {
         self.0.parent()
     }
 
-    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent 
+    /// Get the hash of the [`Schema`][crate::schema::Schema] of the Entry's parent
     /// [`Document`][crate::document::Document].
     pub fn schema_hash(&self) -> &Hash {
         self.0.schema_hash()

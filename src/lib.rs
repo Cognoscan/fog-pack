@@ -9,19 +9,21 @@
 //! - It builds on [`serde`](https://serde.rs/) for serialization of Rust structs
 //! - It has a canonical form for all data. The same data will only ever have one valid serialized
 //!     version of itself.
-//! - It supports schema for verifying serialized data
+//! - It supports [Schema][schema::Schema] for verifying serialized data
 //! - Schema may be serialized
-//! - Data can be encapsulated into Documents, which can be tagged with a schema the data conforms
-//!     to. Documents always have a cryptographic hash that uniquely identifies the data.
-//! - Data can also be encapsulated into Entries, which are always associated with a parent
-//!     document, and have a string for grouping them with other similar Entries.
+//! - Data can be encapsulated into [Documents][document::Document], which can
+//!     be tagged with a schema the data conforms to. Documents always have a
+//!     cryptographic hash that uniquely identifies the data.
+//! - Data can also be encapsulated into [Entries][entry::Entry], which are
+//!     always associated with a parent document, and have a string for grouping
+//!     them with other similar Entries.
 //! - Documents and Entries may be **cryptographically signed**, which changes their identifying
 //!     hashes.
 //! - Documents and Entries may be **compressed with zstandard**, which does not change their
 //!     identifying hashes. Zstandard dictionaries are supported when a schema is used.
 //! - Documents and Entries are size-limited and have a limited nesting depth by design.
 //! - Encrypted objects are available, using the
-//!     [`fog-crypto`](https://crates.io/crates/fog-crypto) library.
+//!     [`fog-crypto`](https://crates.io/crates/fog-crypto) crate.
 //!
 //! # Key Concepts
 //!
@@ -97,8 +99,12 @@
 //! # }
 //! ```
 //!
-//! Now that we have our schema and structs, we can make a new blog and make posts to it. We'll
-//! sign everything with a cryptographic key, so people can know we're the ones making these posts.
+//! Now that we have our schema and structs, we can make a new blog and make
+//! posts to it. We'll sign everything with a cryptographic key, so people can
+//! know we're the ones making these posts. This is also what will make the Blog
+//! document completely unique to us, as a signed document will have a hash that
+//! includes the signature.
+//!
 //! We can even make a query that can be used to search for specific posts!
 //!
 //! ```
@@ -188,6 +194,8 @@
 //! ```
 //!
 
+#![warn(missing_docs)]
+
 mod compress;
 mod de;
 mod depth_tracking;
@@ -209,7 +217,6 @@ pub mod validator;
 
 use utils::*;
 use types::*;
-pub use document::get_doc_schema;
 pub mod types {
     //! Various fog-pack content types.
     //!
@@ -259,15 +266,17 @@ pub mod types {
     };
 }
 
-/// The maximum nesting depth allowed for any fog-pack value. No encoded document will ever nest
-/// Map/Array markers deeper than this.
+/// The maximum nesting depth allowed for any fog-pack value is 200. No encoded
+/// document will ever nest Map/Array markers deeper than this.
 pub const MAX_DEPTH: usize = 200;
-/// The maximum allowed size of a raw document, including signatures, is 1 MiB. No encoded document
-/// will ever be equal to or larger than this size.
+/// The maximum allowed size of a raw document, including signatures, is 1 MiB
+/// (2^20-1 = 1048575).  No encoded document will ever be equal to or larger
+/// than this size.
 pub const MAX_DOC_SIZE: usize = (1usize << 20) - 1; // 1 MiB
-/// The maximum allowed size of a raw entry, including signatures, is 64 kiB. No encoded entry will
-/// ever be equal to or larger than this size.
+/// The maximum allowed size of a raw entry, including signatures, is 64 kiB
+/// (65535 bytes). No encoded entry will ever be equal to or larger than this
+/// size.
 pub const MAX_ENTRY_SIZE: usize = (1usize << 16) - 1; // 64 kiB
-/// The maximum allowed size of a raw query, is 64 kiB. No encoded query will ever be equal to or
-/// larger than this size.
+/// The maximum allowed size of a raw query, is 64 kiB (65535 bytes). No encoded
+/// query will ever be equal to or larger than this size.
 pub const MAX_QUERY_SIZE: usize = (1usize << 16) - 1; // 64 kiB

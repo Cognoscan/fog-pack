@@ -5,6 +5,7 @@ use std::fmt;
 
 use serde::{de, ser};
 
+/// A fog-pack Result, normally returning a fog-pack [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[allow(unused)]
@@ -48,6 +49,8 @@ enum ValidateError {
     SubError(Box<Error>),
 }
 
+/// A fog-pack error. Encompasses any issues that can happen during validation,
+/// encoding, or decoding.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Error {
     /// Occurs when a subtype is using a version format that is no longer accepted. This is mainly
@@ -57,7 +60,9 @@ pub enum Error {
     /// Occurs when a schema doesn't match the document's schema, a Schema was used when one isn't
     /// specified by the document, or a NoSchema was used when a document specified a schema.
     SchemaMismatch {
+        /// The actual schema of the document
         actual: Option<Hash>,
+        /// The expected schema of the document
         expected: Option<Hash>,
     },
     /// Occurs when serde serialization or deserialization fails
@@ -68,11 +73,19 @@ pub enum Error {
     /// schema, a checksum failing, or any of the other zstd failure modes.
     FailDecompress(String),
     /// Document/Entry/Query was greater than maximum allowed size on decode
-    LengthTooLong { max: usize, actual: usize },
+    LengthTooLong {
+        /// The maximum allowed size
+        max: usize,
+        /// The object's actual size
+        actual: usize
+    },
     /// Document/Entry/Query ended too early.
     LengthTooShort {
+        /// What step of the decoding we were on when it failed.
         step: &'static str,
+        /// The actual length of the object
         actual: usize,
+        /// The remaining length of the object that we were expecting
         expected: usize,
     },
     /// Signature attached to end of Document/Entry/Query didn't validate

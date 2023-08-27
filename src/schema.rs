@@ -79,8 +79,8 @@ struct EntrySchema {
 pub struct NoSchema;
 
 impl NoSchema {
-    /// Validate a [`NewDocument`], turning it into a [`Document`]. Fails if the internal data 
-    /// isn't actually valid fog-pack, which can sometimes happen with a bad Serialize 
+    /// Validate a [`NewDocument`], turning it into a [`Document`]. Fails if the internal data
+    /// isn't actually valid fog-pack, which can sometimes happen with a bad Serialize
     /// implementation for the data.
     pub fn validate_new_doc(doc: NewDocument) -> Result<Document> {
         // Check that this document doesn't have a schema
@@ -396,8 +396,8 @@ impl Schema {
     /// Warnings
     /// --------
     ///
-    /// If working with external, untrusted schemas, it's advisable to use 
-    /// [`Schema::from_doc_max_regex`] instead, as regular expressions are hands-down the easiest 
+    /// If working with external, untrusted schemas, it's advisable to use
+    /// [`Schema::from_doc_max_regex`] instead, as regular expressions are hands-down the easiest
     /// way to exhaust memory in a system.
     pub fn from_doc(doc: &Document) -> Result<Self> {
         let inner = doc.deserialize()?;
@@ -405,11 +405,11 @@ impl Schema {
         Ok(Self { hash, inner })
     }
 
-    /// Attempt to create a schema from a given document, first checking how many regular 
-    /// expressions would be present in the schema and failing out if it's above the provided 
+    /// Attempt to create a schema from a given document, first checking how many regular
+    /// expressions would be present in the schema and failing out if it's above the provided
     /// limit.
     ///
-    /// For a rough guide of what to set `max_regex` to, know that every regex has an 
+    /// For a rough guide of what to set `max_regex` to, know that every regex has an
     /// approximate max memory size of 12 MiB, so a malicious schema can use up at least
     /// `max_regex * 12 MiB` bytes off the heap.
     pub fn from_doc_max_regex(doc: &Document, max_regex: u8) -> Result<Self> {
@@ -422,7 +422,7 @@ impl Schema {
         if let Some(map) = regex_check["entries"].as_map() {
             regexes += map.values().fold(0, |acc, val| acc + crate::count_regexes(&val["entry"]));
         }
-        
+
         if regexes > (max_regex as usize) {
             return Err(Error::FailValidate(format!(
                 "Found {} regexes in Schema, only {} allowed",
@@ -540,9 +540,9 @@ impl Schema {
         Ok(doc)
     }
 
-    /// Validate a [`NewEntry`], turning it into a [`Entry`]. Fails if provided the wrong parent 
-    /// document, the parent document doesn't use this schema, or the entry doesn't meet the schema 
-    /// requirements. The resulting Entry is stored in a [`DataChecklist`] that must be iterated 
+    /// Validate a [`NewEntry`], turning it into a [`Entry`]. Fails if provided the wrong parent
+    /// document, the parent document doesn't use this schema, or the entry doesn't meet the schema
+    /// requirements. The resulting Entry is stored in a [`DataChecklist`] that must be iterated
     /// over in order to finish validation.
     pub fn validate_new_entry(&self, entry: NewEntry) -> Result<DataChecklist<Entry>> {
         // Check that the entry's parent document uses this schema
@@ -571,7 +571,7 @@ impl Schema {
         ))
     }
 
-    /// Encode an [`Entry`], returning the resulting Entry's reference, its fully encoded format, 
+    /// Encode an [`Entry`], returning the resulting Entry's reference, its fully encoded format,
     /// and a list of Hashes of the Documents it needs for validation.
     /// Fails if provided the wrong parent document or the parent document doesn't use this schema.
     pub fn encode_entry(&self, entry: Entry) -> Result<(EntryRef, Vec<u8>, Vec<Hash>)> {
@@ -583,12 +583,12 @@ impl Schema {
             });
         }
 
-        // We re-run validation here just to collect the hashes of documents needed for validation 
-        // (i.e. the documents that would need to be provided with this entry if it were 
+        // We re-run validation here just to collect the hashes of documents needed for validation
+        // (i.e. the documents that would need to be provided with this entry if it were
         // transferred or stored)
         //
-        // At some point, it's plausible this could be performed with a more minimal validation 
-        // check. 
+        // At some point, it's plausible this could be performed with a more minimal validation
+        // check.
         let entry_schema = self.inner.entries.get(entry.key()).ok_or_else(|| {
             Error::FailValidate(format!("entry key \"{:?}\" is not in schema", entry.key()))
         })?;
@@ -696,6 +696,12 @@ impl Schema {
         Ok(entry)
     }
 
+    /// Encode a query into a byte sequence. Fails if the query is against an
+    /// entry key that isn't in the schema, or if the query isn't a valid one
+    /// according to the various query permissions in the schema's validators.
+    ///
+    /// Queries are encoded like fog-pack documents, but without the header
+    /// containing compression and schema info.
     pub fn encode_query(&self, query: NewQuery) -> Result<Vec<u8>> {
         let key = query.key();
         let entry_schema = self.inner.entries.get(key).ok_or_else(|| {
@@ -711,6 +717,13 @@ impl Schema {
         }
     }
 
+    /// Attempt to decode a query from a byte sequence. Fails if the byte
+    /// sequence isn't a valid encoding, if the query is against an entry key
+    /// that isn't in the schema, or if the query isn't a valid one according to
+    /// the various query permissions in the schema's validators.
+    ///
+    /// Queries are encoded like fog-pack documents, but without the header
+    /// containing compression and schema info.
     pub fn decode_query(&self, query: Vec<u8>) -> Result<Query> {
         let query = Query::new(query, self.inner.max_regex)?;
         let key = query.key();

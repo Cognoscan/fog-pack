@@ -50,6 +50,8 @@ fn tai_to_utc(t: Timestamp) -> Timestamp {
 }
 
 /// Set up the leap second table that converts from TAI to UTC and vice-versa.
+///
+/// See [`LeapSeconds`] for how to create a table for this function.
 pub fn set_utc_leap_seconds(table: LeapSeconds) {
     let store = UTC_LEAP.get_or_init(|| RwLock::new(LeapSeconds::default()));
     let mut store = match store.write() {

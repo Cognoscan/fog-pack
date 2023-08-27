@@ -5,6 +5,11 @@ use crate::*;
 use std::ops::Index;
 use std::{collections::BTreeMap, fmt::Debug};
 
+/// A single fog-pack value, built using references to underlying data as much
+/// as possible.
+///
+/// This enum covers all value types that fog-pack specifically encodes.
+#[allow(missing_docs)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum ValueRef<'a> {
     #[default]
@@ -29,6 +34,7 @@ pub enum ValueRef<'a> {
     BareIdKey(Box<BareIdKey>),
 }
 
+#[allow(missing_docs)]
 impl<'a> ValueRef<'a> {
     pub fn to_owned(&self) -> Value {
         match *self {

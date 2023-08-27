@@ -317,6 +317,9 @@ where
     I: Iterator,
     <I as Iterator>::Item: Serialize,
 {
+    /// Initialize a new builder, optionally having each document adhering to a
+    /// schema. When the provided iterator returns None, this builder will
+    /// complete the last document and cease using the iterator.
     pub fn new(iter: I, schema: Option<&Hash>) -> Self {
         Self {
             iter: iter.fuse(),
@@ -324,6 +327,13 @@ where
         }
     }
 
+    /// Initialize a new builder, optionally having each document adhering to a
+    /// schema. When the provided iterator returns None, this builder will
+    /// complete the last document and cease using the iterator.
+    ///
+    /// Unlike [`new`][Self::new], this requires that the provided serializable
+    /// items have all of their fields and subfields lexicographically ordered,
+    /// and will fail if that isn't upheld.
     pub fn new_ordered(iter: I, schema: Option<&Hash>) -> Self {
         Self {
             iter: iter.fuse(),
@@ -426,6 +436,10 @@ where
     St: Stream,
     St::Item: Serialize,
 {
+
+    /// Initialize a new builder, optionally having each document adhering to a
+    /// schema. When the provided stream returns None, this builder will
+    /// complete the last document and cease using the iterator.
     pub fn new(stream: St, schema: Option<&Hash>) -> Self {
         Self {
             stream,
@@ -434,6 +448,13 @@ where
         }
     }
 
+    /// Initialize a new builder, optionally having each document adhering to a
+    /// schema. When the provided stream returns None, this builder will
+    /// complete the last document and cease using the iterator.
+    ///
+    /// Unlike [`new`][Self::new], this requires that the provided serializable
+    /// items have all of their fields and subfields lexicographically ordered,
+    /// and will fail if that isn't upheld.
     pub fn new_ordered(stream: St, schema: Option<&Hash>) -> Self {
         Self {
             stream,

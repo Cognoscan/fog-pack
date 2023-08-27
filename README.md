@@ -98,7 +98,7 @@ We can even make a query that can be used to search for specific posts!
 
 ```rust
 // Brand new blog time!
-let my_key = fog_crypto::identity::IdentityKey::new_temp(&mut rand::rngs::OsRng);
+let my_key = fog_crypto::identity::IdentityKey::new();
 let my_blog = Blog {
     title: "Rusted Gears: A programming blog".into(),
     author: "ElectricCogs".into(),
@@ -110,7 +110,7 @@ let blog_hash = my_blog.hash();
 
 // First post!
 let new_post = Post {
-    created: Timestamp::now().unwrap(),
+    created: Timestamp::now();
     title: Some("My first post".into()),
     content: "I'm making my first post using fog-pack!".into(),
 };

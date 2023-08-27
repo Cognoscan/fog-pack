@@ -500,8 +500,7 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
             ValueRef::BareIdKey(s) => {
                 if let Value::BareIdKey(o) = other {
                     s == o
-                }
-                else {
+                } else {
                     false
                 }
             }
@@ -764,7 +763,7 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
             fn visit_enum<A: EnumAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
                 let (variant, access) = access.variant()?;
                 use fog_crypto::serde::*;
-                use serde_bytes::{Bytes, ByteBuf};
+                use serde_bytes::{ByteBuf, Bytes};
                 match variant {
                     FOG_TYPE_ENUM_TIME_INDEX => {
                         let bytes: ByteBuf = access.newtype_variant()?;
@@ -835,7 +834,7 @@ impl<'de> serde::Deserialize<'de> for ValueRef<'de> {
 }
 #[cfg(test)]
 mod test {
-    use fog_crypto::{identity::IdentityKey, stream::StreamKey, lock::LockKey};
+    use fog_crypto::{identity::IdentityKey, lock::LockKey, stream::StreamKey};
 
     use crate::{document::NewDocument, schema::NoSchema};
 
@@ -854,8 +853,18 @@ mod test {
     #[test]
     fn int() {
         let list: Vec<Integer> = vec![
-            i64::MIN.into(), i32::MIN.into(), i16::MIN.into(), i8::MIN.into(), (-1i8).into(),
-            0u8.into(), 1u8.into(), u8::MAX.into(), u16::MAX.into(), u32::MAX.into(), u64::MAX.into()];
+            i64::MIN.into(),
+            i32::MIN.into(),
+            i16::MIN.into(),
+            i8::MIN.into(),
+            (-1i8).into(),
+            0u8.into(),
+            1u8.into(),
+            u8::MAX.into(),
+            u16::MAX.into(),
+            u32::MAX.into(),
+            u64::MAX.into(),
+        ];
         for obj in list {
             let obj = ValueRef::from(obj);
             let doc = NewDocument::new(None, &obj).unwrap();
@@ -919,7 +928,7 @@ mod test {
 
     #[test]
     fn bin() {
-        let list = vec![vec![], vec![0u8], vec![0u8,1u8,2u8]];
+        let list = vec![vec![], vec![0u8], vec![0u8, 1u8, 2u8]];
         for obj in list {
             let obj = ValueRef::from(obj.as_slice());
             assert!(obj.is_bin());
@@ -936,7 +945,7 @@ mod test {
             Value::from(true),
             Value::from(1u64),
             Value::from("hi"),
-            Value::from(vec![0u8,1u8,2u8])
+            Value::from(vec![0u8, 1u8, 2u8]),
         ]);
         let obj: ValueRef = obj.as_ref();
         assert!(obj.is_array());
@@ -944,7 +953,7 @@ mod test {
         let doc = NoSchema::validate_new_doc(doc).unwrap();
         let decode: ValueRef = doc.deserialize().unwrap();
         match (decode.as_array(), obj.as_array()) {
-            (Some(x), Some(y)) => assert!(x==y),
+            (Some(x), Some(y)) => assert!(x == y),
             _ => panic!("Expected both to be arrays"),
         }
     }
@@ -961,7 +970,7 @@ mod test {
         let doc = NoSchema::validate_new_doc(doc).unwrap();
         let decode: ValueRef = doc.deserialize().unwrap();
         match (decode.as_map(), obj.as_map()) {
-            (Some(x), Some(y)) => assert!(x==y),
+            (Some(x), Some(y)) => assert!(x == y),
             _ => panic!("Expected both to be map"),
         }
     }
@@ -1085,6 +1094,4 @@ mod test {
         let decode: ValueRef = doc.deserialize().unwrap();
         assert_eq!(decode.as_bare_id_key(), obj.as_bare_id_key());
     }
-
 }
-

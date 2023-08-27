@@ -7,9 +7,9 @@
 
 use crate::error::{Error, Result};
 use crate::{
-    document::Document,
     compress::CompressType,
     de::FogDeserializer,
+    document::Document,
     element::{serialize_elem, Element},
     ser::FogSerializer,
     MAX_ENTRY_SIZE,
@@ -96,7 +96,6 @@ struct EntryInner {
 }
 
 impl EntryInner {
-
     fn data(&self) -> &[u8] {
         SplitEntry::split(&self.buf).unwrap().data
     }
@@ -161,15 +160,17 @@ impl EntryInner {
     /// signature would grow the entry size beyond the maximum allowed. In the event of a failure.
     /// the entry is dropped.
     fn sign(mut self, key: &IdentityKey) -> Result<Self> {
-
         // If a signature already exists, reload the hash state
         let pre_sign_len = if self.signer.is_some() {
             let split = SplitEntry::split(&self.buf).unwrap();
             let new_len = split.data.len() + ENTRY_PREFIX_LEN;
-            self.hash_state = Some(Self::setup_hash_state(self.id.parent.clone(), &self.id.key, split.data));
+            self.hash_state = Some(Self::setup_hash_state(
+                self.id.parent.clone(),
+                &self.id.key,
+                split.data,
+            ));
             new_len
-        }
-        else {
+        } else {
             self.buf.len()
         };
 
@@ -237,13 +238,17 @@ impl NewEntry {
         buf[2] = data_len[1];
 
         // Create and update the Hash state
-        let hash_state = EntryInner::setup_hash_state(parent.hash().clone(), key, &buf[ENTRY_PREFIX_LEN..]);
+        let hash_state =
+            EntryInner::setup_hash_state(parent.hash().clone(), key, &buf[ENTRY_PREFIX_LEN..]);
         let this_hash = hash_state.hash();
 
         let schema_hash = match parent.schema_hash() {
             Some(h) => h.clone(),
-            None => return Err(Error::FailValidate(
-                    "Entries can only be created for documents that use a schema.".into())),
+            None => {
+                return Err(Error::FailValidate(
+                    "Entries can only be created for documents that use a schema.".into(),
+                ))
+            }
         };
 
         Ok(Self(EntryInner {
@@ -326,7 +331,6 @@ impl NewEntry {
     pub fn reference(&self) -> &EntryRef {
         self.0.reference()
     }
-
 }
 
 /// Holds serialized data associated with a parent document and a key string.
@@ -337,12 +341,16 @@ impl NewEntry {
 pub struct Entry(EntryInner);
 
 impl Entry {
-
     pub(crate) fn from_new(entry: NewEntry) -> Entry {
         Self(entry.0)
     }
 
-    pub(crate) fn trusted_new(buf: Vec<u8>, key: &str, parent: &Document, entry: &Hash) -> Result<Self> {
+    pub(crate) fn trusted_new(
+        buf: Vec<u8>,
+        key: &str,
+        parent: &Document,
+        entry: &Hash,
+    ) -> Result<Self> {
         if buf.len() > MAX_ENTRY_SIZE {
             return Err(Error::LengthTooLong {
                 max: MAX_ENTRY_SIZE,
@@ -356,15 +364,17 @@ impl Entry {
             let unverified =
                 fog_crypto::identity::UnverifiedSignature::try_from(split.signature_raw)?;
             Some(unverified.signer().clone())
-        }
-        else {
+        } else {
             None
         };
 
         let schema_hash = match parent.schema_hash() {
             Some(h) => h.clone(),
-            None => return Err(Error::FailValidate(
-                    "Entries can only be created for documents that use a schema.".into())),
+            None => {
+                return Err(Error::FailValidate(
+                    "Entries can only be created for documents that use a schema.".into(),
+                ))
+            }
         };
 
         Ok(Self(EntryInner {
@@ -393,7 +403,9 @@ impl Entry {
 
         let mut hash_state = EntryInner::setup_hash_state(parent.hash().clone(), key, split.data);
         let entry_hash = hash_state.hash();
-        if !split.signature_raw.is_empty() { hash_state.update(split.signature_raw); }
+        if !split.signature_raw.is_empty() {
+            hash_state.update(split.signature_raw);
+        }
         let this_hash = hash_state.hash();
 
         let signer = if !split.signature_raw.is_empty() {
@@ -407,8 +419,11 @@ impl Entry {
 
         let schema_hash = match parent.schema_hash() {
             Some(h) => h.clone(),
-            None => return Err(Error::FailValidate(
-                    "Entries can only be created for documents that use a schema.".into())),
+            None => {
+                return Err(Error::FailValidate(
+                    "Entries can only be created for documents that use a schema.".into(),
+                ))
+            }
         };
 
         Ok(Self(EntryInner {

@@ -22,7 +22,7 @@ use serde::{
 };
 use serde_bytes::ByteBuf;
 
-const NTP_EPOCH_OFFSET: i64 = -86400 * (70*365 + 17);
+const NTP_EPOCH_OFFSET: i64 = -86400 * (70 * 365 + 17);
 const MAX_NANOSEC: u32 = 999_999_999;
 const NANOS_PER_SEC: u32 = 1_000_000_000;
 const MICROS_PER_SEC: i64 = 1_000_000;
@@ -211,7 +211,7 @@ impl LeapSeconds {
     pub fn reverse_leap_seconds(&self, t: Timestamp) -> TimeDelta {
         for leap_second in self.0.iter().rev() {
             if (t - leap_second.1) >= leap_second.0 {
-                return leap_second.1
+                return leap_second.1;
             }
         }
         TimeDelta::default()
@@ -808,9 +808,13 @@ mod test {
             let utc = time.utc();
             let time2 = Timestamp::from_utc(utc.0, utc.1).unwrap();
             if i == -1 {
-                assert_eq!(time, time2-1, "Failed for offset of {}, expected a diff of 1", i);
-            }
-            else {
+                assert_eq!(
+                    time,
+                    time2 - 1,
+                    "Failed for offset of {}, expected a diff of 1",
+                    i
+                );
+            } else {
                 assert_eq!(time, time2, "Failed for offset of {}, expected no diff", i);
             }
 
@@ -819,7 +823,11 @@ mod test {
             let tai = Timestamp::from_utc_secs(utc);
             let utc2 = tai.utc();
             assert_eq!(utc2.0, utc, "Failed for offset of {}, expected no diff", i);
-            assert_eq!(utc2.1, 0, "Failed for offset of {}, expected 0 ns for UTC", i);
+            assert_eq!(
+                utc2.1, 0,
+                "Failed for offset of {}, expected 0 ns for UTC",
+                i
+            );
         }
     }
 
@@ -834,6 +842,4 @@ mod test {
         assert_eq!(diff, neg_diff2);
         assert_eq!(diff2, neg_diff3);
     }
-
 }
-

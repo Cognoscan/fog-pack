@@ -417,10 +417,14 @@ impl Schema {
         let regex_check: ValueRef = doc.deserialize()?;
         let mut regexes = crate::count_regexes(&regex_check["doc"]);
         if let Some(map) = regex_check["types"].as_map() {
-            regexes += map.values().fold(0, |acc, val| acc + crate::count_regexes(val));
+            regexes += map
+                .values()
+                .fold(0, |acc, val| acc + crate::count_regexes(val));
         }
         if let Some(map) = regex_check["entries"].as_map() {
-            regexes += map.values().fold(0, |acc, val| acc + crate::count_regexes(&val["entry"]));
+            regexes += map
+                .values()
+                .fold(0, |acc, val| acc + crate::count_regexes(&val["entry"]));
         }
 
         if regexes > (max_regex as usize) {
@@ -566,8 +570,8 @@ impl Schema {
         parser.finish()?;
 
         Ok(DataChecklist::from_checklist(
-                checklist.unwrap(),
-                Entry::from_new(entry)
+            checklist.unwrap(),
+            Entry::from_new(entry),
         ))
     }
 

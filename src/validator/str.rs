@@ -41,8 +41,8 @@ fn normalize_is_none(v: &Normalize) -> bool {
 /// - The possibly-normalized value must not be among the values in the `nin` list.
 ///
 /// The `normalize` field may be set to `None`, `NFC`, or `NFKC`, corresponding to Unicode
-/// normalization forms. When checked for `in`, `nin`, `ban_prefix`, `ban_suffix`, `ban_char`, and 
-/// `matches`, the value is first put into the selected normalization form, and any `in`, `nin`, 
+/// normalization forms. When checked for `in`, `nin`, `ban_prefix`, `ban_suffix`, `ban_char`, and
+/// `matches`, the value is first put into the selected normalization form, and any `in`, `nin`,
 /// `ban_prefix`, and `ban_suffix` list strings are normalized as well.
 ///
 /// # Defaults
@@ -72,13 +72,13 @@ fn normalize_is_none(v: &Normalize) -> bool {
 /// sparingly, and should generally be avoided if possible. If they must be used, be aware of their
 /// limitations due to their memory, computation, and general consistency issues.
 ///
-/// Before you use regular expressions or try to work around the look-around limitations, consider 
-/// whether or not your validation requirement can be fulfilled by using some combination of the 
+/// Before you use regular expressions or try to work around the look-around limitations, consider
+/// whether or not your validation requirement can be fulfilled by using some combination of the
 /// `ban_prefix`, `ban_suffix`, `ban_char`, `in`, and `nin` fields.
 ///
 /// Regular expression can rapidly use up a lot of memory when compiled. This is one of the reasons
-/// why it is inadvisable to accept and use unknown schemas without first checking for regexes. For 
-/// queries, a schema will have some upper limit on the number of allowed regular expressions, in 
+/// why it is inadvisable to accept and use unknown schemas without first checking for regexes. For
+/// queries, a schema will have some upper limit on the number of allowed regular expressions, in
 /// order to mitigate possible memory exhaustion.
 ///
 /// Beyond their memory cost, regular expressions have a second problem: there's not really a
@@ -148,7 +148,7 @@ pub struct StrValidator {
     /// If true, queries against matching spots may use the `matches` value.
     #[serde(skip_serializing_if = "is_false")]
     pub regex: bool,
-    /// If true, queries against matching spots may set the `ban_prefix`, `ban_suffix`, and 
+    /// If true, queries against matching spots may set the `ban_prefix`, `ban_suffix`, and
     /// `ban_char` values to non-defaults.
     #[serde(skip_serializing_if = "is_false")]
     pub ban: bool,
@@ -332,7 +332,6 @@ impl StrValidator {
     }
 
     pub(crate) fn validate_str(&self, val: &str) -> Result<()> {
-
         // Length Checks
         if (val.len() as u32) > self.max_len {
             return Err(Error::FailValidate(
@@ -373,14 +372,23 @@ impl StrValidator {
                     return Err(Error::FailValidate("String is on `nin` list".to_string()));
                 }
                 if let Some(pre) = self.ban_prefix.iter().find(|v| val.starts_with(*v)) {
-                    return Err(Error::FailValidate(format!("String begins with banned prefix {:?}", pre)));
+                    return Err(Error::FailValidate(format!(
+                        "String begins with banned prefix {:?}",
+                        pre
+                    )));
                 }
                 if let Some(suf) = self.ban_suffix.iter().find(|v| val.ends_with(*v)) {
-                    return Err(Error::FailValidate(format!("String ends with banned suffix {:?}", suf)));
+                    return Err(Error::FailValidate(format!(
+                        "String ends with banned suffix {:?}",
+                        suf
+                    )));
                 }
                 if !self.ban_char.is_empty() {
                     if let Some(c) = val.chars().find(|c| self.ban_char.contains(*c)) {
-                        return Err(Error::FailValidate(format!("String contains banned character {:?}", c)));
+                        return Err(Error::FailValidate(format!(
+                            "String contains banned character {:?}",
+                            c
+                        )));
                     }
                 }
                 if let Some(ref regex) = self.matches {
@@ -408,28 +416,39 @@ impl StrValidator {
                     ));
                 }
                 if self.nin_list.iter().any(|v| v.nfc().eq(val.chars())) {
-                    return Err(Error::FailValidate("NFC String is on `nin` list".to_string()));
+                    return Err(Error::FailValidate(
+                        "NFC String is on `nin` list".to_string(),
+                    ));
                 }
-                if let Some(pre) = self.ban_prefix.iter()
+                if let Some(pre) = self
+                    .ban_prefix
+                    .iter()
                     .find(|v| v.nfc().zip(val.chars()).all(|(vc, valc)| vc == valc))
                 {
-                    return Err(Error::FailValidate(format!("NFC String begins with banned prefix {:?}", pre)));
+                    return Err(Error::FailValidate(format!(
+                        "NFC String begins with banned prefix {:?}",
+                        pre
+                    )));
                 }
                 if !self.ban_suffix.is_empty() {
                     let mut temp = String::new();
-                    if self.ban_suffix.iter()
-                        .any(|v| {
-                            temp.clear();
-                            temp.extend(v.nfc());
-                            val.ends_with(&temp)
-                        })
-                    {
-                        return Err(Error::FailValidate(format!("NFC String ends with banned suffix {:?}", temp)));
+                    if self.ban_suffix.iter().any(|v| {
+                        temp.clear();
+                        temp.extend(v.nfc());
+                        val.ends_with(&temp)
+                    }) {
+                        return Err(Error::FailValidate(format!(
+                            "NFC String ends with banned suffix {:?}",
+                            temp
+                        )));
                     }
                 }
                 if !self.ban_char.is_empty() {
                     if let Some(c) = val.chars().find(|c| self.ban_char.contains(*c)) {
-                        return Err(Error::FailValidate(format!("NFC String contains banned character {:?}", c)));
+                        return Err(Error::FailValidate(format!(
+                            "NFC String contains banned character {:?}",
+                            c
+                        )));
                     }
                 }
                 if let Some(ref regex) = self.matches {
@@ -458,28 +477,39 @@ impl StrValidator {
                     ));
                 }
                 if self.nin_list.iter().any(|v| v.nfkc().eq(val.chars())) {
-                    return Err(Error::FailValidate("NFKC String is on `nin` list".to_string()));
+                    return Err(Error::FailValidate(
+                        "NFKC String is on `nin` list".to_string(),
+                    ));
                 }
-                if let Some(pre) = self.ban_prefix.iter()
+                if let Some(pre) = self
+                    .ban_prefix
+                    .iter()
                     .find(|v| v.nfkc().zip(val.chars()).all(|(vc, valc)| vc == valc))
                 {
-                    return Err(Error::FailValidate(format!("NFKC String begins with banned prefix {:?}", pre)));
+                    return Err(Error::FailValidate(format!(
+                        "NFKC String begins with banned prefix {:?}",
+                        pre
+                    )));
                 }
                 if !self.ban_suffix.is_empty() {
                     let mut temp = String::new();
-                    if self.ban_suffix.iter()
-                        .any(|v| {
-                            temp.clear();
-                            temp.extend(v.nfkc());
-                            val.ends_with(&temp)
-                        })
-                    {
-                        return Err(Error::FailValidate(format!("NFKC String ends with banned suffix {:?}", temp)));
+                    if self.ban_suffix.iter().any(|v| {
+                        temp.clear();
+                        temp.extend(v.nfkc());
+                        val.ends_with(&temp)
+                    }) {
+                        return Err(Error::FailValidate(format!(
+                            "NFKC String ends with banned suffix {:?}",
+                            temp
+                        )));
                     }
                 }
                 if !self.ban_char.is_empty() {
                     if let Some(c) = val.chars().find(|c| self.ban_char.contains(*c)) {
-                        return Err(Error::FailValidate(format!("NFKC String contains banned character {:?}", c)));
+                        return Err(Error::FailValidate(format!(
+                            "NFKC String contains banned character {:?}",
+                            c
+                        )));
                     }
                 }
                 if let Some(ref regex) = self.matches {

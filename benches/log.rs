@@ -1,8 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use fog_pack::{
-    schema::NoSchema,
-    document::*,
-};
+use fog_pack::{document::*, schema::NoSchema};
 use rand::Rng;
 use std::mem;
 use std::ops;

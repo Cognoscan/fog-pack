@@ -204,9 +204,9 @@ mod integer;
 mod marker;
 mod ser;
 mod timestamp;
+mod utils;
 mod value;
 mod value_ref;
-mod utils;
 
 pub mod document;
 pub mod entry;
@@ -215,8 +215,8 @@ pub mod query;
 pub mod schema;
 pub mod validator;
 
-use utils::*;
 use types::*;
+use utils::*;
 pub mod types {
     //! Various fog-pack content types.
     //!
@@ -256,7 +256,7 @@ pub mod types {
     pub use crate::value_ref::ValueRef;
     pub use fog_crypto::{
         hash::Hash,
-        identity::{Identity, BareIdKey, IdentityKey},
+        identity::{BareIdKey, Identity, IdentityKey},
         lock::{LockId, LockKey},
         lockbox::{
             DataLockbox, DataLockboxRef, IdentityLockbox, IdentityLockboxRef, LockLockbox,

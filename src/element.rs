@@ -42,7 +42,7 @@ pub enum Element<'a> {
     IdentityLockbox(&'a IdentityLockboxRef),
     StreamLockbox(&'a StreamLockboxRef),
     LockLockbox(&'a LockLockboxRef),
-    BareIdKey(Box<BareIdKey>)
+    BareIdKey(Box<BareIdKey>),
 }
 
 impl<'a> Element<'a> {
@@ -342,9 +342,12 @@ impl DebugFormatter {
             Element::Identity(v) => write!(self.debug, "\"$fog-Identity:{}\"", v).unwrap(),
             Element::LockId(v) => write!(self.debug, "\"$fog-LockId:{}\"", v).unwrap(),
             Element::StreamId(v) => write!(self.debug, "\"$fog-StreamId:{}\"", v).unwrap(),
-            Element::DataLockbox(v) => {
-                write!(self.debug, "\"$fog-DataLockbox(len={})\"", v.as_bytes().len()).unwrap()
-            }
+            Element::DataLockbox(v) => write!(
+                self.debug,
+                "\"$fog-DataLockbox(len={})\"",
+                v.as_bytes().len()
+            )
+            .unwrap(),
             Element::IdentityLockbox(v) => write!(
                 self.debug,
                 "\"$fog-IdentityLockbox(len={})\"",
@@ -357,10 +360,15 @@ impl DebugFormatter {
                 v.as_bytes().len()
             )
             .unwrap(),
-            Element::LockLockbox(v) => {
-                write!(self.debug, "\"$fog-LockLockbox(len={})\"", v.as_bytes().len()).unwrap()
+            Element::LockLockbox(v) => write!(
+                self.debug,
+                "\"$fog-LockLockbox(len={})\"",
+                v.as_bytes().len()
+            )
+            .unwrap(),
+            Element::BareIdKey(v) => {
+                write!(self.debug, "\"$fog-BareIdKey:{}\"", v.to_base58()).unwrap()
             }
-            Element::BareIdKey(v) => write!(self.debug, "\"$fog-BareIdKey:{}\"", v.to_base58()).unwrap(),
         }
 
         while let Some(track) = self.tracker.pop() {
@@ -535,14 +543,13 @@ impl<'a> Parser<'a> {
                 Element::Int(v.into())
             }
             UInt16 => {
-                let v =
-                    data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode UInt16",
-                            actual: data.len(),
-                            expected: 2,
-                        })?;
+                let v = data
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode UInt16",
+                        actual: data.len(),
+                        expected: 2,
+                    })?;
                 if v <= u8::MAX as u16 {
                     return Err(Error::BadEncode(format!(
                         "Got UInt16 with value = {}. This is not the shortest encoding.",
@@ -552,14 +559,13 @@ impl<'a> Parser<'a> {
                 Element::Int(v.into())
             }
             UInt32 => {
-                let v =
-                    data
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode UInt32",
-                            actual: data.len(),
-                            expected: 4,
-                        })?;
+                let v = data
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode UInt32",
+                        actual: data.len(),
+                        expected: 4,
+                    })?;
                 if v <= u16::MAX as u32 {
                     return Err(Error::BadEncode(format!(
                         "Got UInt32 with value = {}. This is not the shortest encoding.",
@@ -569,14 +575,13 @@ impl<'a> Parser<'a> {
                 Element::Int(v.into())
             }
             UInt64 => {
-                let v =
-                    data
-                        .read_u64::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode UInt64",
-                            actual: data.len(),
-                            expected: 8,
-                        })?;
+                let v = data
+                    .read_u64::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode UInt64",
+                        actual: data.len(),
+                        expected: 8,
+                    })?;
                 if v <= u32::MAX as u64 {
                     return Err(Error::BadEncode(format!(
                         "Got UInt64 with value = {}. This is not the shortest encoding.",
@@ -601,14 +606,13 @@ impl<'a> Parser<'a> {
                 Element::Int(v.into())
             }
             Int16 => {
-                let v =
-                    data
-                        .read_i16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Int16",
-                            actual: data.len(),
-                            expected: 2,
-                        })?;
+                let v = data
+                    .read_i16::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Int16",
+                        actual: data.len(),
+                        expected: 2,
+                    })?;
                 if v >= i8::MIN as i16 {
                     return Err(Error::BadEncode(format!(
                         "Got Int16 with value = {}. This is not the shortest encoding.",
@@ -618,14 +622,13 @@ impl<'a> Parser<'a> {
                 Element::Int(v.into())
             }
             Int32 => {
-                let v =
-                    data
-                        .read_i32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Int32",
-                            actual: data.len(),
-                            expected: 4,
-                        })?;
+                let v = data
+                    .read_i32::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Int32",
+                        actual: data.len(),
+                        expected: 4,
+                    })?;
                 if v >= i16::MIN as i32 {
                     return Err(Error::BadEncode(format!(
                         "Got Int32 with value = {}. This is not the shortest encoding.",
@@ -635,14 +638,13 @@ impl<'a> Parser<'a> {
                 Element::Int(v.into())
             }
             Int64 => {
-                let v =
-                    data
-                        .read_i64::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Int64",
-                            actual: data.len(),
-                            expected: 8,
-                        })?;
+                let v = data
+                    .read_i64::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Int64",
+                        actual: data.len(),
+                        expected: 8,
+                    })?;
                 if v >= i32::MIN as i64 {
                     return Err(Error::BadEncode(format!(
                         "Got Int64 with value = {}. This is not the shortest encoding.",
@@ -669,14 +671,13 @@ impl<'a> Parser<'a> {
                 Element::Bin(bytes)
             }
             Bin16 => {
-                let len =
-                    data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Bin16 length",
-                            actual: data.len(),
-                            expected: 2,
-                        })? as usize;
+                let len = data
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Bin16 length",
+                        actual: data.len(),
+                        expected: 2,
+                    })? as usize;
                 if len <= (u8::MAX as usize) {
                     return Err(Error::BadEncode(format!(
                         "Got Bin16 with length = {}. This is not the shortest encoding.",
@@ -695,14 +696,13 @@ impl<'a> Parser<'a> {
                 Element::Bin(bytes)
             }
             Bin24 => {
-                let len =
-                    data
-                        .read_u24::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Bin24 length",
-                            actual: data.len(),
-                            expected: 3,
-                        })? as usize;
+                let len = data
+                    .read_u24::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Bin24 length",
+                        actual: data.len(),
+                        expected: 3,
+                    })? as usize;
                 if len <= (u16::MAX as usize) {
                     return Err(Error::BadEncode(format!(
                         "Got Bin24 with length = {}. This is not the shortest encoding.",
@@ -721,25 +721,23 @@ impl<'a> Parser<'a> {
                 Element::Bin(bytes)
             }
             F32 => {
-                let v =
-                    data
-                        .read_f32::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode F32",
-                            actual: data.len(),
-                            expected: 4,
-                        })?;
+                let v = data
+                    .read_f32::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode F32",
+                        actual: data.len(),
+                        expected: 4,
+                    })?;
                 Element::F32(v)
             }
             F64 => {
-                let v =
-                    data
-                        .read_f64::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode F64",
-                            actual: data.len(),
-                            expected: 8,
-                        })?;
+                let v = data
+                    .read_f64::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode F64",
+                        actual: data.len(),
+                        expected: 8,
+                    })?;
                 Element::F64(v)
             }
             FixStr(len) => {
@@ -783,14 +781,13 @@ impl<'a> Parser<'a> {
                 Element::Str(string)
             }
             Str16 => {
-                let len =
-                    data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Str16 length",
-                            actual: data.len(),
-                            expected: 2,
-                        })? as usize;
+                let len = data
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Str16 length",
+                        actual: data.len(),
+                        expected: 2,
+                    })? as usize;
                 if len <= (u8::MAX as usize) {
                     return Err(Error::BadEncode(format!(
                         "Got Str16 with length = {}. This is not the shortest encoding.",
@@ -811,14 +808,13 @@ impl<'a> Parser<'a> {
                 Element::Str(string)
             }
             Str24 => {
-                let len =
-                    data
-                        .read_u24::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Str24 length",
-                            actual: data.len(),
-                            expected: 3,
-                        })? as usize;
+                let len = data
+                    .read_u24::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Str24 length",
+                        actual: data.len(),
+                        expected: 3,
+                    })? as usize;
                 if len <= (u16::MAX as usize) {
                     return Err(Error::BadEncode(format!(
                         "Got Str24 with length = {}. This is not the shortest encoding.",
@@ -854,14 +850,13 @@ impl<'a> Parser<'a> {
                 Element::Array(len)
             }
             Array16 => {
-                let len =
-                    data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Array16 length",
-                            actual: data.len(),
-                            expected: 2,
-                        })? as usize;
+                let len = data
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Array16 length",
+                        actual: data.len(),
+                        expected: 2,
+                    })? as usize;
                 if len <= u8::MAX as usize {
                     return Err(Error::BadEncode(format!(
                         "Got Array16 marker with length = {}. This is not the shortest encoding.",
@@ -878,14 +873,13 @@ impl<'a> Parser<'a> {
                 Element::Array(len)
             }
             Array24 => {
-                let len =
-                    data
-                        .read_u24::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Array24 length",
-                            actual: data.len(),
-                            expected: 3,
-                        })? as usize;
+                let len = data
+                    .read_u24::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Array24 length",
+                        actual: data.len(),
+                        expected: 3,
+                    })? as usize;
                 if len <= u16::MAX as usize {
                     return Err(Error::BadEncode(format!(
                         "Got Array24 marker with length = {}. This is not the shortest encoding.",
@@ -917,14 +911,13 @@ impl<'a> Parser<'a> {
                 Element::Map(len)
             }
             Map16 => {
-                let len =
-                    data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Map16 length",
-                            actual: data.len(),
-                            expected: 2,
-                        })? as usize;
+                let len = data
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Map16 length",
+                        actual: data.len(),
+                        expected: 2,
+                    })? as usize;
                 if len <= u8::MAX as usize {
                     return Err(Error::BadEncode(format!(
                         "Got Map16 marker with length = {}. This is not the shortest encoding.",
@@ -941,14 +934,13 @@ impl<'a> Parser<'a> {
                 Element::Map(len)
             }
             Map24 => {
-                let len =
-                    data
-                        .read_u24::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Map24 length",
-                            actual: data.len(),
-                            expected: 3,
-                        })? as usize;
+                let len = data
+                    .read_u24::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Map24 length",
+                        actual: data.len(),
+                        expected: 3,
+                    })? as usize;
                 if len <= u16::MAX as usize {
                     return Err(Error::BadEncode(format!(
                         "Got Map24 marker with length = {}. This is not the shortest encoding.",
@@ -973,14 +965,13 @@ impl<'a> Parser<'a> {
                 Self::parse_ext(data, len)?
             }
             Ext16 => {
-                let len =
-                    data
-                        .read_u16::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Ext16 length",
-                            actual: data.len(),
-                            expected: 2,
-                        })? as usize;
+                let len = data
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Ext16 length",
+                        actual: data.len(),
+                        expected: 2,
+                    })? as usize;
                 if len <= u8::MAX as usize {
                     return Err(Error::BadEncode(format!(
                         "Got Ext16 marker with length = {}. This is not the shortest encoding.",
@@ -990,14 +981,13 @@ impl<'a> Parser<'a> {
                 Self::parse_ext(data, len)?
             }
             Ext24 => {
-                let len =
-                    data
-                        .read_u24::<LittleEndian>()
-                        .map_err(|_| Error::LengthTooShort {
-                            step: "decode Ext24 length",
-                            actual: data.len(),
-                            expected: 3,
-                        })? as usize;
+                let len = data
+                    .read_u24::<LittleEndian>()
+                    .map_err(|_| Error::LengthTooShort {
+                        step: "decode Ext24 length",
+                        actual: data.len(),
+                        expected: 3,
+                    })? as usize;
                 if len <= u16::MAX as usize {
                     return Err(Error::BadEncode(format!(
                         "Got Ext24 marker with length = {}. This is not the shortest encoding.",
@@ -2216,9 +2206,7 @@ mod test {
 
         #[test]
         fn roundtrip() {
-            let identity = fog_crypto::identity::IdentityKey::new()
-                .id()
-                .to_owned();
+            let identity = fog_crypto::identity::IdentityKey::new().id().to_owned();
             let elem = Element::Identity(Box::new(identity.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2237,9 +2225,7 @@ mod test {
 
         #[test]
         fn too_long() {
-            let identity = fog_crypto::identity::IdentityKey::new()
-                .id()
-                .to_owned();
+            let identity = fog_crypto::identity::IdentityKey::new().id().to_owned();
             let elem = Element::Identity(Box::new(identity.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2254,9 +2240,7 @@ mod test {
 
         #[test]
         fn too_short() {
-            let identity = fog_crypto::identity::IdentityKey::new()
-                .id()
-                .to_owned();
+            let identity = fog_crypto::identity::IdentityKey::new().id().to_owned();
             let elem = Element::Identity(Box::new(identity.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2275,9 +2259,7 @@ mod test {
 
         #[test]
         fn roundtrip() {
-            let id = fog_crypto::lock::LockKey::new()
-                .id()
-                .to_owned();
+            let id = fog_crypto::lock::LockKey::new().id().to_owned();
             let elem = Element::LockId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2296,9 +2278,7 @@ mod test {
 
         #[test]
         fn too_long() {
-            let id = fog_crypto::lock::LockKey::new()
-                .id()
-                .to_owned();
+            let id = fog_crypto::lock::LockKey::new().id().to_owned();
             let elem = Element::LockId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2313,9 +2293,7 @@ mod test {
 
         #[test]
         fn too_short() {
-            let id = fog_crypto::lock::LockKey::new()
-                .id()
-                .to_owned();
+            let id = fog_crypto::lock::LockKey::new().id().to_owned();
             let elem = Element::LockId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2334,9 +2312,7 @@ mod test {
 
         #[test]
         fn roundtrip() {
-            let id = fog_crypto::stream::StreamKey::new()
-                .id()
-                .to_owned();
+            let id = fog_crypto::stream::StreamKey::new().id().to_owned();
             let elem = Element::StreamId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2355,9 +2331,7 @@ mod test {
 
         #[test]
         fn too_long() {
-            let id = fog_crypto::stream::StreamKey::new()
-                .id()
-                .to_owned();
+            let id = fog_crypto::stream::StreamKey::new().id().to_owned();
             let elem = Element::StreamId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);
@@ -2372,9 +2346,7 @@ mod test {
 
         #[test]
         fn too_short() {
-            let id = fog_crypto::stream::StreamKey::new()
-                .id()
-                .to_owned();
+            let id = fog_crypto::stream::StreamKey::new().id().to_owned();
             let elem = Element::StreamId(Box::new(id.clone()));
             let mut enc = Vec::new();
             serialize_elem(&mut enc, elem);

@@ -48,11 +48,9 @@ impl Value {
             Value::F64(v) => ValueRef::F64(v),
             Value::Bin(ref v) => ValueRef::Bin(v.as_slice()),
             Value::Array(ref v) => ValueRef::Array(v.iter().map(|i| i.as_ref()).collect()),
-            Value::Map(ref v) => ValueRef::Map(
-                v.iter()
-                    .map(|(f, i)| (f.as_ref(), i.as_ref()))
-                    .collect(),
-            ),
+            Value::Map(ref v) => {
+                ValueRef::Map(v.iter().map(|(f, i)| (f.as_ref(), i.as_ref())).collect())
+            }
             Value::Timestamp(v) => ValueRef::Timestamp(v),
             Value::Hash(ref v) => ValueRef::Hash(v.clone()),
             Value::Identity(ref v) => ValueRef::Identity(v.clone()),
@@ -802,7 +800,7 @@ impl<'de> serde::Deserialize<'de> for Value {
             fn visit_enum<A: EnumAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
                 let (variant, access) = access.variant()?;
                 use fog_crypto::serde::*;
-                use serde_bytes::{Bytes, ByteBuf};
+                use serde_bytes::{ByteBuf, Bytes};
                 match variant {
                     FOG_TYPE_ENUM_TIME_INDEX => {
                         let bytes: ByteBuf = access.newtype_variant()?;

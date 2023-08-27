@@ -14,12 +14,12 @@ enum ValidateError {
     /// Validation failed inside an array
     InArray {
         index: usize,
-        err: Box<ValidateError>
+        err: Box<ValidateError>,
     },
     /// Validation failed inside a map
     InMap {
         key: String,
-        err: Box<ValidateError>
+        err: Box<ValidateError>,
     },
     /// Validation failed inside an enum
     InEnum {
@@ -27,19 +27,11 @@ enum ValidateError {
         err: Box<ValidateError>,
     },
     /// Validation of an array failed at a specific index
-    FailArray {
-        index: usize,
-        err: String,
-    },
+    FailArray { index: usize, err: String },
     /// Validation of a map failed at a specific key
-    FailMap {
-        key: String,
-        err: String,
-    },
+    FailMap { key: String, err: String },
     /// All of the available "multi" validators failed
-    FailMulti {
-        errs: Vec<ValidateError>,
-    },
+    FailMulti { errs: Vec<ValidateError> },
     /// The core validation error
     FailValue {
         failure: String,
@@ -77,7 +69,7 @@ pub enum Error {
         /// The maximum allowed size
         max: usize,
         /// The object's actual size
-        actual: usize
+        actual: usize,
     },
     /// Document/Entry/Query ended too early.
     LengthTooShort {

@@ -63,7 +63,7 @@ pub enum Compress {
         /// The algorithm's identifier
         algorithm: u8,
         /// The compression level
-        level: u8
+        level: u8,
     },
     /// Compress using the provided dictionary object
     Dict(Dictionary),
@@ -219,10 +219,7 @@ impl Compress {
                 let len = dctx
                     .decompress_using_ddict(&mut dest[header_len..], src, ddict)
                     .map_err(|e| {
-                        Error::FailDecompress(format!(
-                                "Failed Decompression, zstd error = {}",
-                                e
-                        ))
+                        Error::FailDecompress(format!("Failed Decompression, zstd error = {}", e))
                     })?;
                 dest.truncate(header_len + len);
                 Ok(dest)

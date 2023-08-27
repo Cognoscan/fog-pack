@@ -676,9 +676,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
             MapSerializer::SizedOrdered { .. } => (),
             MapSerializer::SizedUnordered { se, mut map, .. } => {
                 // Flush all buffers, in order, out to the main one
-                map.sort_unstable_by(|a,b| a.0.cmp(&b.0));
+                map.sort_unstable_by(|a, b| a.0.cmp(&b.0));
                 let len = map.len();
-                map.dedup_by(|a,b| a.0 == b.0);
+                map.dedup_by(|a, b| a.0 == b.0);
                 if len != map.len() {
                     return Err(Error::SerdeFail("map has repeated keys".into()));
                 }
@@ -698,9 +698,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
                 // Fill in the real map marker, update depth tracking, and
                 // flush all buffers, in order, out to the main one
                 serialize_elem(&mut se.buf, Element::Map(map.len()));
-                map.sort_unstable_by(|a,b| a.0.cmp(&b.0));
+                map.sort_unstable_by(|a, b| a.0.cmp(&b.0));
                 let len = map.len();
-                map.dedup_by(|a,b| a.0 == b.0);
+                map.dedup_by(|a, b| a.0 == b.0);
                 if len != map.len() {
                     return Err(Error::SerdeFail("map has repeated keys".into()));
                 }
@@ -911,7 +911,7 @@ impl<'a> Serializer for &mut ExtSerializer<'a> {
                         Error::SerdeFail("LockLockbox bytes weren't valid on encode".to_string())
                     })?;
                     Element::LockLockbox(v)
-                },
+                }
                 ExtType::BareIdKey => {
                     let v = fog_crypto::identity::BareIdKey::try_from(v).map_err(|_| {
                         Error::SerdeFail("BareIdKey bytes weren't valid on encode".to_string())
@@ -1540,10 +1540,8 @@ mod test {
 
     #[test]
     fn ser_bin() {
-        let mut test_cases: Vec<(usize, Vec<u8>)> = vec![
-            (0, vec![0xc4, 0x00]),
-            (1, vec![0xc4, 0x01, 0x00]),
-        ];
+        let mut test_cases: Vec<(usize, Vec<u8>)> =
+            vec![(0, vec![0xc4, 0x00]), (1, vec![0xc4, 0x01, 0x00])];
         let mut case = vec![0xc4, 0xff];
         case.resize(255 + 2, 0u8);
         test_cases.push((255, case));
@@ -1575,10 +1573,7 @@ mod test {
 
     #[test]
     fn ser_str() {
-        let mut test_cases: Vec<(usize, Vec<u8>)> = vec![
-            (0, vec![0xa0]),
-            (1, vec![0xa1, 0x00]),
-        ];
+        let mut test_cases: Vec<(usize, Vec<u8>)> = vec![(0, vec![0xa0]), (1, vec![0xa1, 0x00])];
         let mut case = vec![0xbf];
         case.resize(32, 0u8);
         test_cases.push((31, case));

@@ -40,8 +40,7 @@ pub fn get_doc_schema(doc: &[u8]) -> Result<Option<Hash>> {
     let hash_raw = SplitDoc::split(doc)?.hash_raw;
     if hash_raw.is_empty() {
         Ok(None)
-    }
-    else {
+    } else {
         Ok(Some(hash_raw.try_into()?))
     }
 }
@@ -436,7 +435,6 @@ where
     St: Stream,
     St::Item: Serialize,
 {
-
     /// Initialize a new builder, optionally having each document adhering to a
     /// schema. When the provided stream returns None, this builder will
     /// complete the last document and cease using the iterator.

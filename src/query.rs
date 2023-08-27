@@ -73,8 +73,7 @@ impl NewQuery {
                 Validator::Map(val) => {
                     let key_matches = if let Some(s) = val.keys.as_ref() {
                         s.matches.is_some() as usize
-                    }
-                    else {
+                    } else {
                         0
                     };
                     key_matches
@@ -203,7 +202,8 @@ mod test {
                 ..Default::default()
             })),
             ..Default::default()
-        }.build();
+        }
+        .build();
 
         NewQuery::new("test", validator.clone())
             .complete(0)
@@ -220,7 +220,8 @@ mod test {
         let validator = StrValidator {
             matches,
             ..Default::default()
-        }.build();
+        }
+        .build();
         NewQuery::new("test", validator.clone())
             .complete(0)
             .unwrap_err();

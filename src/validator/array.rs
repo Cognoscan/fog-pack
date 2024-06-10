@@ -2,6 +2,7 @@ use super::*;
 use crate::error::{Error, Result};
 use crate::{de::FogDeserializer, element::*, value::Value, value_ref::ValueRef};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::{default::Default, iter::repeat};
 
 #[inline]
@@ -35,7 +36,9 @@ fn u32_is_max(v: &u32) -> bool {
 /// - For each validator in the `contains` list, at least one item in the array passes.
 /// - Each item in the array is checked with a validator at the same index in the `prefix` array.
 ///     All validators must pass. If there is no validator at the same index, the validator in
-///     `items` must pass. If a validator is not used, it passes automatially.
+///     `items` must pass. If a validator is not used, it passes automatically.
+/// - If `same_len` is not empty, the array indices it lists must all be null or
+///   not present, or they must all be arrays that have the same lengths.
 ///
 /// # Defaults
 ///
@@ -50,12 +53,14 @@ fn u32_is_max(v: &u32) -> bool {
 /// - min_len: u32::MIN
 /// - in_list: empty
 /// - nin_list: empty
+/// - same_len: empty
 /// - unique: false
 /// - query: false
 /// - array: false
 /// - contains_ok: false
 /// - unique_ok: false
 /// - size: false
+/// - same_len_ok: false
 ///
 /// # Query Checking
 ///
@@ -67,6 +72,7 @@ fn u32_is_max(v: &u32) -> bool {
 /// - contains_ok: `contains`
 /// - unique_ok: `unique`
 /// - size: `max_len` and `min_len`
+/// - same_len_ok: `same_len`
 ///
 /// In addition, sub-validators in the query are matched against the schema's sub-validators:
 ///
@@ -106,6 +112,10 @@ pub struct ArrayValidator {
     /// A vector of specific unallowed values, stored under the `nin` field.
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<Vec<Value>>,
+    /// A list of which indices must either not be present or be null, or must
+    /// all exist and have the same lengths.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub same_len: BTreeSet<usize>,
     /// If set, all items in the array must be unique.
     #[serde(skip_serializing_if = "is_false")]
     pub unique: bool,
@@ -124,6 +134,9 @@ pub struct ArrayValidator {
     /// If true, queries against matching spots may use `max_len` and `min_len`.
     #[serde(skip_serializing_if = "is_false")]
     pub size: bool,
+    /// If true, queries against matching spots may use `same_len`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub same_len_ok: bool,
 }
 
 impl Default for ArrayValidator {
@@ -137,12 +150,14 @@ impl Default for ArrayValidator {
             min_len: u32::MIN,
             in_list: Vec::new(),
             nin_list: Vec::new(),
+            same_len: BTreeSet::new(),
             unique: false,
             query: false,
             array: false,
             contains_ok: false,
             unique_ok: false,
             size: false,
+            same_len_ok: false,
         }
     }
 }
@@ -201,6 +216,12 @@ impl ArrayValidator {
         self
     }
 
+    /// Add a key to the `same_len` list.
+    pub fn same_len_add(mut self, add: usize) -> Self {
+        self.same_len.insert(add);
+        self
+    }
+
     /// Set whether the items in the array must be unique.
     pub fn unique(mut self, unique: bool) -> Self {
         self.unique = unique;
@@ -234,6 +255,12 @@ impl ArrayValidator {
     /// Set whether or not queries can use the `max_len` and `min_len` values.
     pub fn size(mut self, size: bool) -> Self {
         self.size = size;
+        self
+    }
+
+    /// Set whether or not queries can use the `same_len` value.
+    pub fn same_len_ok(mut self, same_len_ok: bool) -> Self {
+        self.same_len_ok = same_len_ok;
         self
     }
 
@@ -301,9 +328,12 @@ impl ArrayValidator {
 
         // Loop through each item, verifying it with the appropriate validator
         let mut contains_result = vec![false; self.contains.len()];
+        let mut array_len: Option<usize> = None;
+        let mut array_len_cnt = 0;
         let mut validators = self.prefix.iter().chain(repeat(self.items.as_ref()));
-        for _ in 0..len {
-            // If we have a "contains", check
+        for i in 0..len {
+            // If we have a "contains", check and see if this item in the array
+            // gets any of the "contains" validators to pass.
             if !self.contains.is_empty() {
                 self.contains
                     .iter()
@@ -319,12 +349,57 @@ impl ArrayValidator {
                         }
                     });
             }
+
+            // Check for same-length sub-arrays
+            if self.same_len.contains(&i) {
+                // Peek the array and its length
+                let elem = parser.peek().ok_or_else(|| {
+                    Error::FailValidate(format!("expected an array element at index {}", i))
+                })??;
+                match elem {
+                    Element::Null => {
+                        if array_len.is_some() {
+                            return Err(Error::FailValidate(format!(
+                                "some sub-arrays for `same_len` are present, but the one at {} is not",
+                                i
+                            )));
+                        }
+                    }
+                    Element::Array(len) => {
+                        if let Some(array_len) = array_len {
+                            if array_len != len {
+                                return Err(Error::FailValidate(format!(
+                                    "expected array of length {} for index {}, but length was {}",
+                                    array_len, i, len
+                                )));
+                            }
+                        } else {
+                            array_len = Some(len);
+                        }
+                        array_len_cnt += 1;
+                    }
+                    _ => {
+                        return Err(Error::FailValidate(format!(
+                            "`same_len` expected an array or null at index {}",
+                            i
+                        )))
+                    }
+                }
+            }
+
+            // Validate this item in the array against the next validator
             let (p, c) = validators
                 .next()
                 .unwrap()
                 .validate(types, parser, checklist)?;
             parser = p;
             checklist = c;
+        }
+
+        if array_len.is_some() && array_len_cnt != self.same_len.len() {
+            return Err(Error::FailValidate(
+                "Array had some, but not all, of the indices listed in `same_len`".into(),
+            ));
         }
 
         if !contains_result.iter().all(|x| *x) {
@@ -350,6 +425,7 @@ impl ArrayValidator {
             && (self.array || (other.prefix.is_empty() && validator_is_any(&other.items)))
             && (self.contains_ok || other.contains.is_empty())
             && (self.unique_ok || !other.unique)
+            && (self.same_len_ok || other.same_len.is_empty())
             && (self.size || (u32_is_max(&other.max_len) && u32_is_zero(&other.min_len)));
         if !initial_check {
             return false;

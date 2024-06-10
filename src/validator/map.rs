@@ -2,6 +2,7 @@ use super::*;
 use crate::error::{Error, Result};
 use crate::{de::FogDeserializer, element::*, value::Value, value_ref::ValueRef};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::BTreeSet;
 use std::default::Default;
 
 #[inline]
@@ -140,10 +141,10 @@ pub struct MapValidator {
     /// A vector of specific unallowed values, stored under the `nin` field.
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<BTreeMap<String, Value>>,
-    /// A vector of which keys must either not exist, or must all exist and contain arrays of the
+    /// A set of which keys must either not exist, or must all exist and contain arrays of the
     /// same lengths.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub same_len: Vec<String>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub same_len: BTreeSet<String>,
     /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
@@ -170,7 +171,7 @@ impl Default for MapValidator {
             opt: BTreeMap::new(),
             in_list: Vec::new(),
             nin_list: Vec::new(),
-            same_len: Vec::new(),
+            same_len: BTreeSet::new(),
             query: false,
             size: false,
             map_ok: false,
@@ -241,7 +242,7 @@ impl MapValidator {
 
     /// Add a key to the `same_len` list.
     pub fn same_len_add(mut self, add: impl Into<String>) -> Self {
-        self.same_len.push(add.into());
+        self.same_len.insert(add.into());
         self
     }
 
@@ -306,7 +307,7 @@ impl MapValidator {
             )));
         }
 
-        // Check the requirements that require parsing the entire array
+        // Check the requirements that require parsing the entire map
         if !self.in_list.is_empty() || !self.nin_list.is_empty() {
             let mut de = FogDeserializer::from_parser(val_parser);
             let map = BTreeMap::<&str, ValueRef>::deserialize(&mut de)?;
@@ -352,7 +353,7 @@ impl MapValidator {
                 )));
             };
 
-            if self.same_len.iter().any(|s| s == key) {
+            if self.same_len.contains(key) {
                 // Peek the array and its length
                 let elem = parser.peek().ok_or_else(|| {
                     Error::FailValidate("expected an array element".to_string())
@@ -360,7 +361,8 @@ impl MapValidator {
                 let Element::Array(len) = elem else {
                     return Err(Error::FailValidate(format!(
                         "expected array for key {:?}, got {}",
-                        key, elem.name()
+                        key,
+                        elem.name()
                     )));
                 };
                 if let Some(array_len) = array_len {

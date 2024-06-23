@@ -11,7 +11,7 @@ fn is_false(v: &bool) -> bool {
 /// Validator for boolean values.
 ///
 /// This validator type will only pass booleans. Validation only passes if the value also
-/// meets the `in`/`nin` requirements.
+/// matches the value in `val`, if one is present.
 ///
 /// # Defaults
 ///
@@ -28,13 +28,10 @@ pub struct BoolValidator {
     /// An optional comment explaining the validator.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
-    /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
-    #[serde(rename = "in", skip_serializing_if = "Vec::is_empty")]
-    pub in_list: Vec<bool>,
-    /// A vector of specific unallowed values, stored under the `nin` field.
-    #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
-    pub nin_list: Vec<bool>,
-    /// If true, queries against matching spots may have values in the `in` or `nin` lists.
+    /// An optional boolean this must match.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub val: Option<bool>,
+    /// If true, queries against matching spots may have the `val` field set.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
 }
@@ -51,15 +48,9 @@ impl BoolValidator {
         self
     }
 
-    /// Add a value to the `in` list.
-    pub fn in_add(mut self, add: bool) -> Self {
-        self.in_list.push(add);
-        self
-    }
-
-    /// Add a value to the `nin` list.
-    pub fn nin_add(mut self, add: bool) -> Self {
-        self.nin_list.push(add);
+    /// Set a required value
+    pub fn set_val(mut self, val: bool) -> Self {
+        self.val = Some(val);
         self
     }
 
@@ -86,19 +77,18 @@ impl BoolValidator {
                 elem.name()
             )));
         };
-        if !self.in_list.is_empty() && !self.in_list.iter().any(|v| *v == elem) {
-            return Err(Error::FailValidate(
-                "Boolean is not on `in` list".to_string(),
-            ));
-        }
-        if self.nin_list.iter().any(|v| *v == elem) {
-            return Err(Error::FailValidate("Boolean is on `nin` list".to_string()));
+        if let Some(val) = self.val {
+            if val != elem {
+                return Err(Error::FailValidate(
+                    "Boolean does not match the required value".to_string(),
+                ));
+            }
         }
         Ok(())
     }
 
     fn query_check_bool(&self, other: &Self) -> bool {
-        self.query || (other.in_list.is_empty() && other.nin_list.is_empty())
+        self.query || other.val.is_none()
     }
 
     pub(crate) fn query_check(&self, other: &Validator) -> bool {

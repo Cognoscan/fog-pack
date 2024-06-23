@@ -3,22 +3,51 @@ use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 
+#[inline]
+fn is_false(v: &bool) -> bool {
+    !v
+}
+
 /// "Enum" validator that selects a validator based on the value's enum variant.
 ///
-/// This validator expects a serialized Rust enum. A serialized enum consists of either a single
-/// string (a unit variant) or a map with a single key-value pair, where the key is the name of the
-/// enum variant and the value is the associated data. The associated data is validated against the
-/// matching validator in the contained `BTreeMap`. If there is no match, validation fails.
+/// This validator expects a serialized Rust enum. A serialized enum consists of
+/// either a single string (a unit variant) or a map with a single key-value
+/// pair, where the key is the name of the enum variant and the value is the
+/// associated data. The associated data is validated against the matching
+/// validator in the contained `var` map. If there is no match, validation
+/// fails.
 ///
-/// For unit variants, there is no validator, and they pass as long as their name is a key in the
-/// `BTreeMap`.
+/// For unit variants, there is no validator, and they pass as long as their
+/// name is a key in the `var` map.
+///
+/// # Defaults
+///
+/// Fields that aren't specified for the validator use their defaults instead.
+/// The defaults for each field are:
+///
+/// - comment: ""
+/// - extend: false
+/// - var: empty
+///
+/// # Extensibility
+///
+/// Schemas can change over time. Even though a new schema may have a different
+/// hash, it might be compatible with the old schema. For enums, this means that
+/// any program's internal data structures can accommodate adding new variants
+/// to the enum without issue. This is done in Rust by tagging the enum as
+/// `non-exhaustive` and in `serde` by adding a `serde(other)` tag to a
+/// catch-all variant.
+///
+/// If an enum is intended to be extensible, it should have the `extend` flag
+/// set to true.
 ///
 /// # Query Checking
 ///
-/// The query validator must be an Any or an Enum validator, and the maps are directly checked against
-/// each other. The query validator may use a subset of the enum list. For unit variants, both the
-/// query validator and schema validator must have `None` instead of a validator. As an example,
-/// see the following:
+/// The query validator must be an Any or an Enum validator, and the maps are
+/// directly checked against each other. The query validator may use a subset of
+/// the enum list. For unit variants, both the query validator and schema
+/// validator must have `None` instead of a validator. As an example, see the
+/// following:
 ///
 /// ```
 /// # use fog_pack::{
@@ -75,7 +104,18 @@ use std::default::Default;
 /// ```
 ///
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
-pub struct EnumValidator(pub BTreeMap<String, Option<Validator>>);
+#[serde(deny_unknown_fields, default)]
+pub struct EnumValidator {
+    /// An optional comment explaining the validator.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub comment: String,
+    /// Indicates if the enum is meant to be extensible.
+    #[serde(skip_serializing_if = "is_false")]
+    pub extend: bool,
+    /// The list of enum variants
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub var: BTreeMap<String, Option<Validator>>,
+}
 
 impl EnumValidator {
     /// Make a new validator with the default configuration.
@@ -83,9 +123,21 @@ impl EnumValidator {
         Self::default()
     }
 
+    /// Set a comment for the validator.
+    pub fn comment(mut self, comment: impl Into<String>) -> Self {
+        self.comment = comment.into();
+        self
+    }
+
+    /// Mark whether or not the enum can be extended.
+    pub fn extensible(mut self, extend: bool) -> Self {
+        self.extend = extend;
+        self
+    }
+
     /// Add a new enum to the set.
     pub fn insert(mut self, variant: impl Into<String>, validator: Option<Validator>) -> Self {
-        self.0.insert(variant.into(), validator);
+        self.var.insert(variant.into(), validator);
         self
     }
 
@@ -96,12 +148,12 @@ impl EnumValidator {
 
     /// Iterate over all the enum variants.
     pub fn iter(&self) -> std::collections::btree_map::Iter<String, Option<Validator>> {
-        self.0.iter()
+        self.var.iter()
     }
 
     /// Iterate over all the validators in this enum.
     pub fn values(&self) -> std::collections::btree_map::Values<String, Option<Validator>> {
-        self.0.values()
+        self.var.values()
     }
 
     pub(crate) fn validate<'de, 'c>(
@@ -131,7 +183,7 @@ impl EnumValidator {
 
         // Find the matching validator and verify the (possible) content against it
         let validator = self
-            .0
+            .var
             .get(key)
             .ok_or_else(|| Error::FailValidate(format!("{} is not in enum list", key)))?;
         match (validator, has_value) {
@@ -160,16 +212,15 @@ impl EnumValidator {
                 // 2. That our enum's matching validator would allow the query's validator
                 //    for that enum.
                 // 3. If both have a "None" instead of a validator, that's also OK
-                other
-                    .0
-                    .iter()
-                    .all(|(other_k, other_v)| match (self.0.get(other_k), other_v) {
+                other.var.iter().all(
+                    |(other_k, other_v)| match (self.var.get(other_k), other_v) {
                         (Some(Some(validator)), Some(other_v)) => {
                             validator.query_check(types, other_v)
                         }
                         (Some(None), None) => true,
                         _ => false,
-                    })
+                    },
+                )
             }
             Validator::Any => true,
             _ => false,

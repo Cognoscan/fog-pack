@@ -80,6 +80,31 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// - map_ok: false
 /// - same_len_ok: false
 ///
+/// # Extensibility
+///
+/// Schemas can change over time. Even though a new schema may have a different
+/// hash, it might be compatible with the old schema. For maps, this means that
+/// any programs's internal data structures can accommodate adding new optional
+/// key-value pairs to the map without issue. For a map validator, this means
+/// allowing:
+///
+/// - `opt` can add new key-value pairs, provided that:
+///     - If `keys` has a validator, the new keys all pass the validator
+///     - `values` has a validator, and the new field's validator either matches
+///       it, is itself an extension of it, or the `values` validator is set to
+///       `Any`.
+/// - `same_len` can include the new keys
+/// - `max_len` can be incremented
+/// - `comment` can be modified
+///
+/// On the Rust side, this is meant for `struct` types that are *not* tagged
+/// with `serde(deny_unknown_fields)`. Additionally, if `serde(flatten)` is used
+/// to capture additional fields, the capturing map must also be marked as
+/// `serde(skip_serializing)`, so that any existing extra fields never overlap
+/// with newly defined optional fields. Finally, the `struct` must also not have
+/// any other fields that aren't considered part of the `struct`'s schema
+/// validator.
+///
 /// # Query Checking
 ///
 /// Queries for maps are only allowed to use non-default values for each field if the
@@ -145,6 +170,9 @@ pub struct MapValidator {
     /// same lengths.
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     pub same_len: BTreeSet<String>,
+    /// Indicates if the map is meant to be extensible.
+    #[serde(skip_serializing_if = "is_false")]
+    pub extend: bool,
     /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
@@ -172,6 +200,7 @@ impl Default for MapValidator {
             in_list: Vec::new(),
             nin_list: Vec::new(),
             same_len: BTreeSet::new(),
+            extend: false,
             query: false,
             size: false,
             map_ok: false,
@@ -243,6 +272,12 @@ impl MapValidator {
     /// Add a key to the `same_len` list.
     pub fn same_len_add(mut self, add: impl Into<String>) -> Self {
         self.same_len.insert(add.into());
+        self
+    }
+
+    /// Mark whether or not the map can be extended.
+    pub fn extensible(mut self, extend: bool) -> Self {
+        self.extend = extend;
         self
     }
 

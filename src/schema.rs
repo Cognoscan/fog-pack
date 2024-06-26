@@ -30,13 +30,36 @@ fn compress_is_default(val: &Compress) -> bool {
 }
 
 #[inline]
-fn int_is_zero(v: &Integer) -> bool {
-    v.as_u64().map(|v| v == 0).unwrap_or(false)
-}
-
-#[inline]
 fn u8_is_zero(v: &u8) -> bool {
     *v == 0
+}
+
+/// Version numbers for a Schema, for documentation purposes and as a guideline
+/// for determining when to check for compatibility.
+///
+/// `major` should be incremented whenever a breaking change is made to the
+/// protocol. This includes:
+///
+/// - Changing any known validator besides certain map, array, and enum
+///   validators that are specifically marked as extensible.
+/// - Changing any of the compression tables, either for documents or entries.
+/// - Changing the number of allowed regular expressions.
+///
+/// `minor` should be incremented on *any* change.
+#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Version {
+    #[allow(missing_docs)]
+    pub major: u64,
+    #[allow(missing_docs)]
+    pub minor: u64,
+}
+
+impl Version {
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.major == 0 && self.minor == 0
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,8 +76,8 @@ struct InnerSchema {
     name: String,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     types: BTreeMap<String, Validator>,
-    #[serde(skip_serializing_if = "int_is_zero", default)]
-    version: Integer,
+    #[serde(skip_serializing_if = "Version::is_zero", default)]
+    version: Version,
     #[serde(skip_serializing_if = "u8_is_zero", default)]
     max_regex: u8,
 }
@@ -301,7 +324,7 @@ impl SchemaBuilder {
                 entries: BTreeMap::new(),
                 name: String::default(),
                 types: BTreeMap::new(),
-                version: Integer::default(),
+                version: Version::default(),
                 max_regex: 0,
             },
         }
@@ -309,7 +332,7 @@ impl SchemaBuilder {
 
     /// Set the schema description. This is only used for documentation purposes.
     pub fn description(mut self, description: &str) -> Self {
-        self.inner.description = description.to_owned();
+        description.clone_into(&mut self.inner.description);
         self
     }
 
@@ -341,7 +364,7 @@ impl SchemaBuilder {
 
     /// Set the schema name. This is only used for documentation purposes.
     pub fn name(mut self, name: &str) -> Self {
-        self.inner.name = name.to_owned();
+        name.clone_into(&mut self.inner.name);
         self
     }
 
@@ -356,9 +379,10 @@ impl SchemaBuilder {
         self.inner.types.get(type_ref)
     }
 
-    /// Set the schema version. This is only used for documentation purposes.
-    pub fn version<T: Into<Integer>>(mut self, version: T) -> Self {
-        self.inner.version = version.into();
+    /// Set the schema's major & minor version. This is only used for
+    /// documentation purposes.
+    pub fn version(mut self, version: Version) -> Self {
+        self.inner.version = version;
         self
     }
 
@@ -437,6 +461,30 @@ impl Schema {
         let inner = doc.deserialize()?;
         let hash = doc.hash().clone();
         Ok(Self { hash, inner })
+    }
+
+    /// Get the schema's major & minor versions
+    pub fn version(&self) -> Version {
+        self.inner.version
+    }
+
+    /// Determine if another schema is an extension of this one, checking only
+    /// the validators and nothing else.
+    ///
+    /// The name, version numbers, and document signature of a schema can act as
+    /// a guideline to telling if two schemas are intended to be related, but
+    /// this is the actual indicator of if they are minor-version-compatible. To
+    /// fulfill this, both schemas must be identical with the exception of
+    /// certain enumeration, map, and array types, which both schemas have
+    /// indicated are extensible and only are updated in specific ways. For
+    /// details, see the documentation on [Enum Validators], [Map Validators],
+    /// and [Array Validators].
+    ///
+    /// [Enum Validators]: crate::validator::EnumValidator#extensibility
+    /// [Map Validators]: crate::validator::MapValidator#extensibility
+    /// [Array Validators]: crate::validator::ArrayValidator#extensibility
+    pub fn extended_by(&self, other: &Schema) -> bool {
+        false
     }
 
     /// Get the hash of this schema.

@@ -9,8 +9,11 @@
 //! - It builds on [`serde`](https://serde.rs/) for serialization of Rust structs
 //! - It has a canonical form for all data. The same data will only ever have one valid serialized
 //!     version of itself.
-//! - It supports [Schema][schema::Schema] for verifying serialized data
-//! - Schema may be serialized
+//! - It supports [Schema][schema::Schema] for verifying serialized data, which
+//!     may be [built][schema::SchemaBuilder] up from individual data
+//!     [validators][validator].
+//! - Schema may be serialized and deserialized as fog-pack
+//!     [Documents][document::Document].
 //! - Data can be encapsulated into [Documents][document::Document], which can
 //!     be tagged with a schema the data conforms to. Documents always have a
 //!     cryptographic hash that uniquely identifies the data.
@@ -24,6 +27,10 @@
 //! - Documents and Entries are size-limited and have a limited nesting depth by design.
 //! - Encrypted objects are available, using the
 //!     [`fog-crypto`](https://crates.io/crates/fog-crypto) crate.
+//! - A basic [query][query::Query] system is available, which uses the same
+//!     [validators][validator] that schemas are made of. Queries can be run
+//!     against collections of entries. A schema can limit what queries are
+//!     permitted, checking them when [decoding a query][schema::Schema::decode_query].
 //!
 //! # Key Concepts
 //!

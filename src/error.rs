@@ -1,5 +1,6 @@
 //! Library error types.
 //!
+use crate::compress::CompressionError;
 use fog_crypto::{hash::Hash, CryptoError};
 use std::fmt;
 
@@ -43,7 +44,7 @@ enum ValidateError {
 
 /// A fog-pack error. Encompasses any issues that can happen during validation,
 /// encoding, or decoding.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Debug)]
 pub enum Error {
     /// Occurs when a subtype is using a version format that is no longer accepted. This is mainly
     /// for recognizing when the Cryptographic types and signatures use old, no longer accepted
@@ -63,7 +64,7 @@ pub enum Error {
     BadHeader(String),
     /// Occurs when zstd compression fails, possibly due to a dictionary not being present in a
     /// schema, a checksum failing, or any of the other zstd failure modes.
-    FailDecompress(String),
+    Compression(CompressionError),
     /// Document/Entry/Query was greater than maximum allowed size on decode
     LengthTooLong {
         /// The maximum allowed size
@@ -120,7 +121,7 @@ impl fmt::Display for Error {
             },
             Error::SerdeFail(ref msg) => f.write_str(msg),
             Error::BadHeader(ref err) => write!(f, "Data has bad header format: {}", err),
-            Error::FailDecompress(ref err) => write!(f, "Failed decompression step: {}", err),
+            Error::Compression(_) => write!(f, "Compression codec error"),
             Error::LengthTooLong { max, actual } => write!(
                 f,
                 "Data too long: was {} bytes, maximum allowed is {}",
@@ -148,6 +149,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             Error::CryptoError(ref err) => Some(err),
+            Error::Compression(ref err) => Some(err),
             _ => None,
         }
     }
@@ -156,6 +158,12 @@ impl std::error::Error for Error {
 impl std::convert::From<CryptoError> for Error {
     fn from(e: CryptoError) -> Self {
         Self::CryptoError(e)
+    }
+}
+
+impl std::convert::From<CompressionError> for Error {
+    fn from(e: CompressionError) -> Self {
+        Self::Compression(e)
     }
 }
 

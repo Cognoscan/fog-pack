@@ -22,7 +22,7 @@ macro_rules! impl_generate {
     ($ty:ty) => {
         impl Generate for $ty {
             fn generate<R: Rng>(rng: &mut R) -> Self {
-                rng.gen()
+                rng.r#gen()
             }
         }
     };
@@ -116,10 +116,10 @@ pub struct Address {
 impl Generate for Address {
     fn generate<R: Rng>(rand: &mut R) -> Self {
         Self {
-            x0: rand.gen(),
-            x1: rand.gen(),
-            x2: rand.gen(),
-            x3: rand.gen(),
+            x0: rand.r#gen(),
+            x1: rand.r#gen(),
+            x2: rand.r#gen(),
+            x3: rand.r#gen(),
         }
     }
 }

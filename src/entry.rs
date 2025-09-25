@@ -7,12 +7,12 @@
 
 use crate::error::{Error, Result};
 use crate::{
+    MAX_ENTRY_SIZE,
     compress::CompressType,
     de::FogDeserializer,
     document::Document,
-    element::{serialize_elem, Element},
+    element::{Element, serialize_elem},
     ser::FogSerializer,
-    MAX_ENTRY_SIZE,
 };
 use byteorder::{LittleEndian, ReadBytesExt};
 use fog_crypto::{
@@ -247,7 +247,7 @@ impl NewEntry {
             None => {
                 return Err(Error::FailValidate(
                     "Entries can only be created for documents that use a schema.".into(),
-                ))
+                ));
             }
         };
 
@@ -373,7 +373,7 @@ impl Entry {
             None => {
                 return Err(Error::FailValidate(
                     "Entries can only be created for documents that use a schema.".into(),
-                ))
+                ));
             }
         };
 
@@ -422,7 +422,7 @@ impl Entry {
             None => {
                 return Err(Error::FailValidate(
                     "Entries can only be created for documents that use a schema.".into(),
-                ))
+                ));
             }
         };
 

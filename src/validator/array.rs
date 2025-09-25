@@ -351,12 +351,7 @@ impl ArrayValidator {
                         if let Some(array_len) = array_len {
                             if array_len != len {
                                 return Err(Error::FailValidate(format!(
-    "expected array of length {array_len} for index {i}, but length was {len}",
-
-
-
-
-
+                                    "expected array of length {array_len} for index {i}, but length was {len}",
                                 )));
                             }
                         } else {
@@ -367,7 +362,7 @@ impl ArrayValidator {
                     _ => {
                         return Err(Error::FailValidate(format!(
                             "`same_len` expected an array or null at index {i}"
-                        )))
+                        )));
                     }
                 }
             }

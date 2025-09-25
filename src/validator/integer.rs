@@ -221,12 +221,12 @@ impl IntValidator {
             std::cmp::Ordering::Equal if self.ex_max => {
                 return Err(Error::FailValidate(
                     "Integer greater than maximum allowed".to_string(),
-                ))
+                ));
             }
             std::cmp::Ordering::Greater => {
                 return Err(Error::FailValidate(
                     "Integer greater than maximum allowed".to_string(),
-                ))
+                ));
             }
             _ => (),
         }
@@ -234,12 +234,12 @@ impl IntValidator {
             std::cmp::Ordering::Equal if self.ex_min => {
                 return Err(Error::FailValidate(
                     "Integer less than minimum allowed".to_string(),
-                ))
+                ));
             }
             std::cmp::Ordering::Less => {
                 return Err(Error::FailValidate(
                     "Integer less than minimum allowed".to_string(),
-                ))
+                ));
             }
             _ => (),
         }

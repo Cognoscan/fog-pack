@@ -30,7 +30,7 @@ impl<'a> ListItem<'a> {
                 None => {
                     return Err(Error::FailValidate(
                         "Document has no schema, but must pass `schema` validation".into(),
-                    ))
+                    ));
                 }
             };
             let all_schema_pass = self.inner.schema.iter().all(|list| {

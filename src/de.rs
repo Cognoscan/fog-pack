@@ -319,7 +319,7 @@ impl<'a, 'de> serde::de::EnumAccess<'de> for EnumAccess<'a, 'de> {
             _ => {
                 return Err(Error::SerdeFail(
                     "expected a size-1 map or a string".to_string(),
-                ))
+                ));
             }
         };
         Ok((val, self))

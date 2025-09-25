@@ -473,7 +473,7 @@ impl Schema {
                 return Err(Error::SchemaMismatch {
                     actual: actual.cloned(),
                     expected: Some(self.hash.clone()),
-                })
+                });
             }
         }
 
@@ -495,7 +495,7 @@ impl Schema {
                 return Err(Error::SchemaMismatch {
                     actual: actual.cloned(),
                     expected: Some(self.hash.clone()),
-                })
+                });
             }
         }
 
@@ -656,7 +656,7 @@ impl Schema {
                 return Err(Error::SchemaMismatch {
                     actual: actual.cloned(),
                     expected: Some(self.hash.clone()),
-                })
+                });
             }
         }
 
@@ -701,7 +701,7 @@ impl Schema {
                 return Err(Error::SchemaMismatch {
                     actual: actual.cloned(),
                     expected: Some(self.hash.clone()),
-                })
+                });
             }
         }
         // Find the entry

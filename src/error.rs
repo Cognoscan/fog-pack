@@ -1,7 +1,7 @@
 //! Library error types.
 //!
 use crate::compress::CompressionError;
-use fog_crypto::{hash::Hash, CryptoError};
+use fog_crypto::{CryptoError, hash::Hash};
 use std::fmt;
 
 use serde::{de, ser};

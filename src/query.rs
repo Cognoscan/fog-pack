@@ -11,13 +11,13 @@ use std::collections::BTreeMap;
 use crate::entry::Entry;
 use crate::validator::Validator;
 use crate::{
+    MAX_QUERY_SIZE,
     de::FogDeserializer,
     element::Parser,
     error::{Error, Result},
     ser::FogSerializer,
     validator::{Checklist, DataChecklist},
     value_ref::ValueRef,
-    MAX_QUERY_SIZE,
 };
 use fog_crypto::hash::Hash;
 use serde::{Deserialize, Serialize};

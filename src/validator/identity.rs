@@ -1,7 +1,7 @@
 use super::*;
+use crate::Identity;
 use crate::element::*;
 use crate::error::{Error, Result};
-use crate::Identity;
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 

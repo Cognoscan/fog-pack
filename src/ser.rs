@@ -12,7 +12,7 @@ use serde::ser::*;
 use std::{collections::BTreeMap, convert::TryFrom, mem};
 
 use crate::marker::ExtType;
-use crate::{element::*, MAX_DOC_SIZE};
+use crate::{MAX_DOC_SIZE, element::*};
 
 use crate::error::{Error, Result};
 

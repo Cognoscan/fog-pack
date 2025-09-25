@@ -1,7 +1,7 @@
 use super::*;
+use crate::StreamId;
 use crate::element::*;
 use crate::error::{Error, Result};
-use crate::StreamId;
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 

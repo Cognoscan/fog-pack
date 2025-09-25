@@ -1,7 +1,7 @@
 use crate::{
+    MAX_DEPTH,
     element::Element,
     error::{Error, Result},
-    MAX_DEPTH,
 };
 
 #[derive(Clone, Debug)]

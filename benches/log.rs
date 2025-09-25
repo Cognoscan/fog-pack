@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use fog_pack::{document::*, schema::NoSchema};
 use rand::Rng;
 use std::mem;

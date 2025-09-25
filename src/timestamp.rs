@@ -251,12 +251,20 @@ impl LeapSeconds {
                     let mut data = line.split_whitespace();
 
                     // Get the UTC time since 1900-01-01 00:00:00
-                    let Some(secs_utc) = data.next() else { return None };
-                    let Ok(secs_utc) = str::parse::<i64>(secs_utc) else { return None };
+                    let Some(secs_utc) = data.next() else {
+                        return None;
+                    };
+                    let Ok(secs_utc) = str::parse::<i64>(secs_utc) else {
+                        return None;
+                    };
 
                     // Get the delta to apply to the timestamp from this point onward
-                    let Some(delta) = data.next() else { return None };
-                    let Ok(delta) = str::parse::<i64>(delta) else { return None };
+                    let Some(delta) = data.next() else {
+                        return None;
+                    };
+                    let Ok(delta) = str::parse::<i64>(delta) else {
+                        return None;
+                    };
 
                     // Create a proper TAI timestamp and put in the correct time delta to apply
                     let time = Timestamp::from_tai_secs(secs_utc + delta + NTP_EPOCH_OFFSET);
@@ -356,20 +364,12 @@ impl Timestamp {
 
     /// Find the earlier of two timestamps and return it.
     pub fn min(self, other: Timestamp) -> Timestamp {
-        if self < other {
-            self
-        } else {
-            other
-        }
+        if self < other { self } else { other }
     }
 
     /// Find the later of two timestamps and return it.
     pub fn max(self, other: Timestamp) -> Timestamp {
-        if self > other {
-            self
-        } else {
-            other
-        }
+        if self > other { self } else { other }
     }
 
     /// Add 1 nanosecond to timestamp.
@@ -604,7 +604,7 @@ impl TryFrom<&[u8]> for Timestamp {
                 return Err(format!(
                     "not a recognized Timestamp length ({} bytes)",
                     value.len()
-                ))
+                ));
             }
         };
         Ok(Timestamp { secs, nanos })
@@ -672,7 +672,7 @@ impl<'de> serde::de::Deserialize<'de> for Timestamp {
                         return Err(A::Error::invalid_type(
                             Unexpected::Other(e.as_str()),
                             &"Time",
-                        ))
+                        ));
                     }
                 };
                 if self.is_human_readable {
@@ -714,7 +714,7 @@ impl<'de> serde::de::Deserialize<'de> for Timestamp {
                                         return Err(A::Error::unknown_field(
                                             key.as_ref(),
                                             &["std", "secs", "nanos"],
-                                        ))
+                                        ));
                                     }
                                 }
                             }

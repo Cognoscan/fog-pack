@@ -1,10 +1,11 @@
 use std::{convert::TryFrom, fmt::Debug};
 
-use crate::{depth_tracking::DepthTracker, marker::*, MAX_DOC_SIZE};
 use crate::{
+    Integer, Timestamp,
     error::{Error, Result},
-    get_int_internal, integer, Integer, Timestamp,
+    get_int_internal, integer,
 };
+use crate::{MAX_DOC_SIZE, depth_tracking::DepthTracker, marker::*};
 use fog_crypto::identity::BareIdKey;
 use fog_crypto::{
     hash::Hash,
@@ -1668,8 +1669,12 @@ mod test {
                 let mut enc = Vec::new();
                 serialize_elem(&mut enc, elem);
 
-                println!("Encoded starts with {:x?}, is size {}. Test String starts with {:x?}, is size {}",
-                    &enc[0..enc.len().min(6)], enc.len(), &test[0..test.len().min(6)], test.len()
+                println!(
+                    "Encoded starts with {:x?}, is size {}. Test String starts with {:x?}, is size {}",
+                    &enc[0..enc.len().min(6)],
+                    enc.len(),
+                    &test[0..test.len().min(6)],
+                    test.len()
                 );
 
                 // Parse element

@@ -1,7 +1,7 @@
 use super::*;
+use crate::Timestamp;
 use crate::element::*;
 use crate::error::{Error, Result};
-use crate::Timestamp;
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 use std::default::Default;

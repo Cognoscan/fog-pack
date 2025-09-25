@@ -1,7 +1,7 @@
 use super::*;
+use crate::Hash;
 use crate::element::*;
 use crate::error::{Error, Result};
-use crate::Hash;
 use educe::Educe;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::default::Default;

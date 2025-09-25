@@ -327,7 +327,7 @@ impl StrValidator {
 
         // Content checks
         use unicode_normalization::{
-            is_nfc_quick, is_nfkc_quick, IsNormalized, UnicodeNormalization,
+            IsNormalized, UnicodeNormalization, is_nfc_quick, is_nfkc_quick,
         };
         match self.normalize {
             Normalize::None => {

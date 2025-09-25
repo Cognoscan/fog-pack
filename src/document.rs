@@ -13,7 +13,7 @@
 //! size limit of 1 MiB. [`AsyncVecDocumentBuilder`] does the same, but for asynchronous Streams.
 //!
 
-use crate::{compress::CompressType, de::FogDeserializer, ser::FogSerializer, MAX_DOC_SIZE};
+use crate::{MAX_DOC_SIZE, compress::CompressType, de::FogDeserializer, ser::FogSerializer};
 use crate::{
     element::serialize_elem,
     error::{Error, Result},
@@ -23,7 +23,7 @@ use fog_crypto::{
     hash::{Hash, HashState},
     identity::{Identity, IdentityKey},
 };
-use futures_core::{ready, FusedStream, Stream};
+use futures_core::{FusedStream, Stream, ready};
 use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -982,7 +982,7 @@ mod test {
         ($ty:ty) => {
             impl Generate for $ty {
                 fn generate<R: Rng>(rng: &mut R) -> Self {
-                    rng.gen()
+                    rng.r#gen()
                 }
             }
         };
@@ -1076,10 +1076,10 @@ mod test {
     impl Generate for Address {
         fn generate<R: Rng>(rand: &mut R) -> Self {
             Self {
-                x0: rand.gen(),
-                x1: rand.gen(),
-                x2: rand.gen(),
-                x3: rand.gen(),
+                x0: rand.r#gen(),
+                x1: rand.r#gen(),
+                x2: rand.r#gen(),
+                x3: rand.r#gen(),
             }
         }
     }

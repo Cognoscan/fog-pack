@@ -36,8 +36,8 @@ fn u32_is_max(v: &u32) -> bool {
 /// - If `unique` is true, the array items are all unique.
 /// - For each validator in the `contains` list, at least one item in the array passes.
 /// - Each item in the array is checked with a validator at the same index in the `prefix` array.
-///     All validators must pass. If there is no validator at the same index, the validator in
-///     `items` must pass. If a validator is not used, it passes automatically.
+///   All validators must pass. If there is no validator at the same index, the validator in
+///   `items` must pass. If a validator is not used, it passes automatically.
 /// - If `same_len` is not empty, the array indices it lists must all be null or
 ///   not present, or they must all be arrays that have the same lengths.
 ///
@@ -78,10 +78,10 @@ fn u32_is_max(v: &u32) -> bool {
 /// In addition, sub-validators in the query are matched against the schema's sub-validators:
 ///
 /// - Each validator in `contains` is checked against all of the schema's `prefix` validators, as
-///     well as its `items` validator.
+///   well as its `items` validator.
 /// - The `items` validator is checked against the schema's `items' validator
 /// - The `prefix` validators are checked against the schema's `prefix` validators. Unmatched
-///     query validators are checked against the schema's `items` validator.
+///   query validators are checked against the schema's `items` validator.
 ///
 #[derive(Educe, Clone, Debug, Serialize, Deserialize)]
 #[educe(PartialEq, Default)]
@@ -337,14 +337,13 @@ impl ArrayValidator {
             if self.same_len.contains(&i) {
                 // Peek the array and its length
                 let elem = parser.peek().ok_or_else(|| {
-                    Error::FailValidate(format!("expected an array element at index {}", i))
+                    Error::FailValidate(format!("expected an array element at index {i}"))
                 })??;
                 match elem {
                     Element::Null => {
                         if array_len.is_some() {
                             return Err(Error::FailValidate(format!(
-                                "some sub-arrays for `same_len` are present, but the one at {} is not",
-                                i
+                                "some sub-arrays for `same_len` are present, but the one at {i} is not"
                             )));
                         }
                     }
@@ -352,8 +351,12 @@ impl ArrayValidator {
                         if let Some(array_len) = array_len {
                             if array_len != len {
                                 return Err(Error::FailValidate(format!(
-                                    "expected array of length {} for index {}, but length was {}",
-                                    array_len, i, len
+    "expected array of length {array_len} for index {i}, but length was {len}",
+
+
+
+
+
                                 )));
                             }
                         } else {
@@ -363,8 +366,7 @@ impl ArrayValidator {
                     }
                     _ => {
                         return Err(Error::FailValidate(format!(
-                            "`same_len` expected an array or null at index {}",
-                            i
+                            "`same_len` expected an array or null at index {i}"
                         )))
                     }
                 }

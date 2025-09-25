@@ -11,7 +11,7 @@ documentation = "https://docs.rs/fog-pack"
 license = "MIT OR Apache-2.0"
 description = "Binary Data format supporting immutable references, schema, and compression"
 exclude = [ "media/*", "misc_docs/*" ]
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["getrandom"]

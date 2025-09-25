@@ -2,9 +2,9 @@
 //!
 use crate::compress::CompressionError;
 use fog_crypto::{hash::Hash, CryptoError};
-use std::fmt;
+use std::{borrow::Cow, collections::BTreeMap, fmt};
 
-use serde::{de, ser};
+use serde::{de, ser, Serializer};
 
 /// A fog-pack Result, normally returning a fog-pack [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;

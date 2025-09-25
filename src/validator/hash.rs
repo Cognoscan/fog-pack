@@ -2,6 +2,7 @@ use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
 use crate::Hash;
+use educe::Educe;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::default::Default;
 
@@ -64,10 +65,12 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// In addition, if there is a validator for `link`, it is validated against the schema validator's
 /// `link` validator.
 ///
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Default, Debug, Serialize, Deserialize)]
+#[educe(PartialEq)]
 #[serde(deny_unknown_fields, default)]
 pub struct HashValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// An optional validator used to validate the data in a Document linked to by the hash. If

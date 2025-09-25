@@ -1,6 +1,7 @@
 use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 
 #[inline]
@@ -45,33 +46,26 @@ macro_rules! lockbox_validator {
         /// Queries for lockboxes are only allowed to use non default values for `max_len` and
         /// `min_len` if `size` is set in the schema's validator.
         ///
-        #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+        #[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+        #[educe(PartialEq, Default)]
         #[serde(deny_unknown_fields, default)]
         pub struct $v {
             /// An optional comment explaining the validator.
+            #[educe(PartialEq(ignore))]
             #[serde(skip_serializing_if = "String::is_empty")]
             pub comment: String,
             /// Set the maximum allowed number of bytes.
+            #[educe(Default = u32::MAX)]
             #[serde(skip_serializing_if = "u32_is_max")]
             pub max_len: u32,
             /// Set the minimum allowed number of bytes.
+            #[educe(Default = u32::MIN)]
             #[serde(skip_serializing_if = "u32_is_zero")]
             pub min_len: u32,
             /// If true, queries against matching spots may set the `min_len` and `max_len` values
             /// to non-defaults.
             #[serde(skip_serializing_if = "is_false")]
             pub size: bool,
-        }
-
-        impl std::default::Default for $v {
-            fn default() -> Self {
-                Self {
-                    comment: String::new(),
-                    max_len: u32::MAX,
-                    min_len: u32::MIN,
-                    size: false,
-                }
-            }
         }
 
         impl $v {

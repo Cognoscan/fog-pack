@@ -2,6 +2,7 @@ use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
 use crate::Timestamp;
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 
@@ -47,16 +48,20 @@ fn time_is_max(v: &Timestamp) -> bool {
 /// - query: false
 /// - ord: false
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+#[educe(Default, PartialEq)]
 #[serde(deny_unknown_fields, default)]
 pub struct TimeValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// The maximum allowed timestamp.
+    #[educe(Default = MAX_TIME)]
     #[serde(skip_serializing_if = "time_is_max")]
     pub max: Timestamp,
     /// The minimum allowed timestamp.
+    #[educe(Default = MIN_TIME)]
     #[serde(skip_serializing_if = "time_is_min")]
     pub min: Timestamp,
     /// Changes `max` into an exclusive maximum.
@@ -78,22 +83,6 @@ pub struct TimeValidator {
     /// values to non-defaults.
     #[serde(skip_serializing_if = "is_false")]
     pub ord: bool,
-}
-
-impl Default for TimeValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            max: MAX_TIME,
-            min: MIN_TIME,
-            ex_max: false,
-            ex_min: false,
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            query: false,
-            ord: false,
-        }
-    }
 }
 
 impl TimeValidator {

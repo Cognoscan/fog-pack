@@ -4,7 +4,8 @@
 //! enum type for use in a Schema or a Query. Each struct acts as a constructor that can be
 //! built into a `Validator`.
 //!
-//! Validators are not used directly; instead, they should be used to build a Schema or Query,
+//! Validators are not used directly; instead, they should be used to build a
+//! [Schema][crate::schema::SchemaBuilder] or [Query][crate::query::NewQuery],
 //! which will run them against fog-pack data.
 //!
 //! There are validators for each fog-pack core type:

@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::{Error, Result};
 use crate::{de::FogDeserializer, element::*, value::Value, value_ref::ValueRef};
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::{default::Default, iter::repeat};
@@ -62,33 +63,6 @@ fn u32_is_max(v: &u32) -> bool {
 /// - size: false
 /// - same_len_ok: false
 ///
-/// # Extensibility
-///
-/// Schemas can change over time. Even though a new scheme may have a different
-/// hash, it might be compatible with the old schema. For arrays, this means
-/// that any program's internal data structures can accommodate adding new
-/// optional elements to the end of the array without issue. For an array
-/// validator, this means allowing:
-///
-/// - `prefix` can append new new validators, provided that:
-///     - `prefix` is not empty - this array validator must already be in use as
-///       a list of specific items.
-///     - If `items` has a validator, the new validators either match it, or are
-///       themselves extensions of it (eg. extended map/array/enum validators).
-///       If items does not have a validator, then this requirement is automatically met.
-/// - `max_len` can be incremented
-/// - `same_len` can include the indices of the new prefix validators.
-/// - `comment` can be modified
-///
-/// There's not an obvious mapping for this on the Rust side.
-/// [`serde_tuple`](https://crates.io/crates/serde_tuple) gets close, but
-/// doesn't allow for unknown fields at the end, which is required for
-/// extensibility. A future crate that does, or custom `Serialize` /
-/// `Deserialize` implementations, would be able to. If said implementation is
-/// able to capture additional unknown fields at the end, it must also not
-/// serialize those, so that there isn't potential overlap with future extended
-/// items.
-///
 /// # Query Checking
 ///
 /// Queries for arrays are only allowed to use non-default values for each field if the
@@ -109,17 +83,20 @@ fn u32_is_max(v: &u32) -> bool {
 /// - The `prefix` validators are checked against the schema's `prefix` validators. Unmatched
 ///     query validators are checked against the schema's `items` validator.
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+#[educe(PartialEq, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct ArrayValidator {
     /// An optional comment explaining the validator.
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[educe(PartialEq(ignore))]
     pub comment: String,
     /// For each validator in this array, at least one item in the array must pass the validator.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub contains: Vec<Validator>,
     /// A validator that each item in the array must pass, unless it is instead checked by
     /// `prefix`.
+    #[educe(Default(expression = Box::new(Validator::Any)))]
     #[serde(skip_serializing_if = "validator_is_any")]
     pub items: Box<Validator>,
     /// An array of validators, which are matched up against the items in the array. Unmatched
@@ -128,9 +105,11 @@ pub struct ArrayValidator {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub prefix: Vec<Validator>,
     /// The maximum allowed number of items in the array.
+    #[educe(Default = u32::MAX)]
     #[serde(skip_serializing_if = "u32_is_max")]
     pub max_len: u32,
     /// The minimum allowed number of items in the array.
+    #[educe(Default = u32::MIN)]
     #[serde(skip_serializing_if = "u32_is_zero")]
     pub min_len: u32,
     /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
@@ -146,9 +125,6 @@ pub struct ArrayValidator {
     /// If set, all items in the array must be unique.
     #[serde(skip_serializing_if = "is_false")]
     pub unique: bool,
-    /// Indicates if the array is meant to be extensible.
-    #[serde(skip_serializing_if = "is_false")]
-    pub extend: bool,
     /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
@@ -167,30 +143,6 @@ pub struct ArrayValidator {
     /// If true, queries against matching spots may use `same_len`.
     #[serde(skip_serializing_if = "is_false")]
     pub same_len_ok: bool,
-}
-
-impl Default for ArrayValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            contains: Vec::new(),
-            items: Box::new(Validator::Any),
-            prefix: Vec::new(),
-            max_len: u32::MAX,
-            min_len: u32::MIN,
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            same_len: BTreeSet::new(),
-            extend: false,
-            unique: false,
-            query: false,
-            array: false,
-            contains_ok: false,
-            unique_ok: false,
-            size: false,
-            same_len_ok: false,
-        }
-    }
 }
 
 impl ArrayValidator {
@@ -250,12 +202,6 @@ impl ArrayValidator {
     /// Add a key to the `same_len` list.
     pub fn same_len_add(mut self, add: usize) -> Self {
         self.same_len.insert(add);
-        self
-    }
-
-    /// Mark whether or not the array can be extended.
-    pub fn extensible(mut self, extend: bool) -> Self {
-        self.extend = extend;
         self
     }
 

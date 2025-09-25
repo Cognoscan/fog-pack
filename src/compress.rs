@@ -10,6 +10,7 @@ thread_local! {
 
 #[derive(Debug, Clone)]
 pub enum CompressionError {
+    Incompressible,
     ExceededSize { max: usize, actual: usize },
     ZstdInner(usize),
     Parsing(&'static str),
@@ -18,6 +19,9 @@ pub enum CompressionError {
 impl fmt::Display for CompressionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            CompressionError::Incompressible => {
+                f.write_str("Compression algorithm didn't reduce data size")
+            }
             CompressionError::ExceededSize { max, actual } => write!(
                 f,
                 "Decompressed size is {} bytes, larger than max of {} kiB",
@@ -215,6 +219,68 @@ impl Dictionary {
             ddict,
         }))
     }
+
+    /// Train a ZStandard dictionary on a series of concatenated sample data
+    /// sequences.
+    ///
+    /// The sample data should all be concatenated into `samples`, with the sample
+    /// lengths in a separate slice. Sample lengths should sum to the size of the
+    /// sample slice.
+    pub fn train_dictionary_zstd(
+        target_level: u8,
+        target_len: usize,
+        samples: &[u8],
+        sample_lens: &[usize],
+    ) -> Result<Self, CompressionError> {
+        let mut dict: Vec<u8> = Vec::with_capacity(target_len);
+
+        unsafe {
+            let target = core::slice::from_raw_parts_mut(
+                dict.spare_capacity_mut().as_mut_ptr() as *mut u8,
+                target_len,
+            );
+            let dict_len = zstd_safe::train_from_buffer(target, samples, sample_lens)?;
+            dict.set_len(dict_len);
+            dict[4..8].fill(0);
+        }
+        let err = "Couldn't parse completed dictionary";
+        let cdict = zstd_safe::CDict::try_create(&dict, target_level as i32)
+            .ok_or(CompressionError::Parsing(err))?;
+        let ddict = zstd_safe::DDict::try_create(&dict).ok_or(CompressionError::Parsing(err))?;
+
+        Ok(Dictionary(DictionaryPrivate::Zstd {
+            level: target_level,
+            dict,
+            cdict,
+            ddict,
+        }))
+    }
+
+    /// Construct a ZStandard dictionary using a provided raw content byte sequence.
+    ///
+    /// ZStandard compression will reference this content during compression,
+    /// generally resulting in higher compression ratios if handling small data and
+    /// if the dictionary content is well-represented in the data being compressed.
+    pub fn dictionary_from_content_zstd(
+        target_level: u8,
+        content: &[u8],
+    ) -> Result<Self, CompressionError> {
+        let mut dict: Vec<u8> = Vec::with_capacity(4 + content.len());
+        dict.extend_from_slice(b"CTNT");
+        dict.extend_from_slice(content);
+
+        let err = "Couldn't parse completed dictionary";
+        let cdict = zstd_safe::CDict::try_create(&dict, target_level as i32)
+            .ok_or(CompressionError::Parsing(err))?;
+        let ddict = zstd_safe::DDict::try_create(&dict).ok_or(CompressionError::Parsing(err))?;
+
+        Ok(Dictionary(DictionaryPrivate::Zstd {
+            level: target_level,
+            dict,
+            cdict,
+            ddict,
+        }))
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -328,37 +394,6 @@ impl From<DictionaryPrivate> for DictionarySerde {
     }
 }
 
-/// Attempt to train a zstd dictionary
-pub fn train_dictionary(
-    target_level: u8,
-    target_len: usize,
-    samples: &[u8],
-    sample_lens: &[usize],
-) -> Result<Dictionary, CompressionError> {
-    let mut dict: Vec<u8> = Vec::with_capacity(target_len);
-
-    unsafe {
-        let target = core::slice::from_raw_parts_mut(
-            dict.spare_capacity_mut().as_mut_ptr() as *mut u8,
-            target_len,
-        );
-        let dict_len = zstd_safe::train_from_buffer(target, samples, sample_lens)?;
-        dict.set_len(dict_len);
-        dict[4..8].fill(0);
-    }
-    let err = "Couldn't parse completed dictionary";
-    let cdict = zstd_safe::CDict::try_create(&dict, target_level as i32)
-        .ok_or(CompressionError::Parsing(err))?;
-    let ddict = zstd_safe::DDict::try_create(&dict).ok_or(CompressionError::Parsing(err))?;
-
-    Ok(Dictionary(DictionaryPrivate::Zstd {
-        level: target_level,
-        dict,
-        cdict,
-        ddict,
-    }))
-}
-
 fn decompressed_size(header: &[u8]) -> Result<usize, CompressionError> {
     let Some(descriptor) = header.first() else {
         return Err(CompressionError::Parsing("not enough bytes in header"));
@@ -407,6 +442,10 @@ impl From<zstd_safe::ErrorCode> for CompressionError {
     }
 }
 
+/// Compress input data with ZStandard and append it to the output vector.
+///
+/// Fails if the compressed data isn't smaller than the uncompressed data, or if
+/// ZStandard has some internal error, which is unlikely.
 fn zstd_compress(
     input: &[u8],
     output: &mut Vec<u8>,
@@ -444,10 +483,18 @@ fn zstd_compress(
             used_len
         };
 
+        if used_len >= input.len() {
+            return Err(CompressionError::Incompressible);
+        }
+
         Ok(used_len)
     })
 }
 
+/// Decompress input data with ZStandard and append it to the output vector.
+///
+/// Decompression can fail if the compressed data is corrupted, or if the
+/// provided dictionary doesn't match the one used during compression.
 fn zstd_decompress(
     input: &[u8],
     output: &mut Vec<u8>,

@@ -36,16 +36,6 @@ fn u8_is_zero(v: &u8) -> bool {
 
 /// Version numbers for a Schema, for documentation purposes and as a guideline
 /// for determining when to check for compatibility.
-///
-/// `major` should be incremented whenever a breaking change is made to the
-/// protocol. This includes:
-///
-/// - Changing any known validator besides certain map, array, and enum
-///   validators that are specifically marked as extensible.
-/// - Changing any of the compression tables, either for documents or entries.
-/// - Changing the number of allowed regular expressions.
-///
-/// `minor` should be incremented on *any* change.
 #[derive(Clone, Copy, Default, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Version {
@@ -207,7 +197,7 @@ fn compress_doc(doc: Vec<u8>, compression: &Compress) -> Vec<u8> {
 
     // Compress, update the header, append the signature
     match compression.compress(compress, split.data) {
-        Ok(mut compress) => {
+        Ok(Some(mut compress)) => {
             let data_len = (compress.len() - header_len).to_le_bytes();
             compress[0] = CompressType::type_of(compression).into();
             compress[header_len - 3] = data_len[0];
@@ -216,7 +206,7 @@ fn compress_doc(doc: Vec<u8>, compression: &Compress) -> Vec<u8> {
             compress.extend_from_slice(split.signature_raw);
             compress
         }
-        Err(()) => doc,
+        _ => doc,
     }
 }
 
@@ -263,7 +253,7 @@ fn compress_entry(entry: Vec<u8>, compression: &Compress) -> Vec<u8> {
 
     // Compress, update the header, append the signature
     match compression.compress(compress, split.data) {
-        Ok(mut compress) => {
+        Ok(Some(mut compress)) => {
             let data_len = (compress.len() - ENTRY_PREFIX_LEN).to_le_bytes();
             compress[0] = CompressType::type_of(compression).into();
             compress[1] = data_len[0];
@@ -271,7 +261,7 @@ fn compress_entry(entry: Vec<u8>, compression: &Compress) -> Vec<u8> {
             compress.extend_from_slice(split.signature_raw);
             compress
         }
-        Err(()) => entry,
+        _ => entry,
     }
 }
 
@@ -466,25 +456,6 @@ impl Schema {
     /// Get the schema's major & minor versions
     pub fn version(&self) -> Version {
         self.inner.version
-    }
-
-    /// Determine if another schema is an extension of this one, checking only
-    /// the validators and nothing else.
-    ///
-    /// The name, version numbers, and document signature of a schema can act as
-    /// a guideline to telling if two schemas are intended to be related, but
-    /// this is the actual indicator of if they are minor-version-compatible. To
-    /// fulfill this, both schemas must be identical with the exception of
-    /// certain enumeration, map, and array types, which both schemas have
-    /// indicated are extensible and only are updated in specific ways. For
-    /// details, see the documentation on [Enum Validators], [Map Validators],
-    /// and [Array Validators].
-    ///
-    /// [Enum Validators]: crate::validator::EnumValidator#extensibility
-    /// [Map Validators]: crate::validator::MapValidator#extensibility
-    /// [Array Validators]: crate::validator::ArrayValidator#extensibility
-    pub fn extended_by(&self, other: &Schema) -> bool {
-        false
     }
 
     /// Get the hash of this schema.

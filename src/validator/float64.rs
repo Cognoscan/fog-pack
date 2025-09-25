@@ -1,6 +1,7 @@
 use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 
 #[inline]
@@ -40,16 +41,20 @@ fn is_nan(v: &f64) -> bool {
 /// - query: false
 /// - ord: false
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+#[educe(Default, PartialEq)]
 #[serde(deny_unknown_fields, default)]
 pub struct F64Validator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// The maximum allowed f64 value. If NaN, it is ignored.
+    #[educe(Default = f64::NAN)]
     #[serde(skip_serializing_if = "is_nan")]
     pub max: f64,
     /// The minimum allowed f64 value. If NaN, it is ignored.
+    #[educe(Default = f64::NAN)]
     #[serde(skip_serializing_if = "is_nan")]
     pub min: f64,
     /// Changes `max` into an exclusive maximum.
@@ -71,22 +76,6 @@ pub struct F64Validator {
     /// values to non-defaults.
     #[serde(skip_serializing_if = "is_false")]
     pub ord: bool,
-}
-
-impl std::default::Default for F64Validator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            max: f64::NAN,
-            min: f64::NAN,
-            ex_max: false,
-            ex_min: false,
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            query: false,
-            ord: false,
-        }
-    }
 }
 
 impl F64Validator {

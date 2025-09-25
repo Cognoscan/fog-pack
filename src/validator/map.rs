@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::{Error, Result};
 use crate::{de::FogDeserializer, element::*, value::Value, value_ref::ValueRef};
+use educe::Educe;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use std::default::Default;
@@ -55,7 +56,7 @@ fn get_validator<'de, D: Deserializer<'de>>(
 ///         1. If no validator is present for `keys`, the key passes.
 ///         2. If there is no validator for `values`, validation does not pass.
 /// - If `same_len` is not empty, the keys it lists must either all not exist, or if any of them
-///     exist, they must all exist and their values must all be arrays with the same lengths.
+///     exist, their values must all be arrays with the same lengths.
 ///
 /// Note how each key-value pair must be validated, so an unlimited collection of key-value pairs
 /// isn't allowed unless there is a validator present in `values`.
@@ -80,31 +81,6 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// - map_ok: false
 /// - same_len_ok: false
 ///
-/// # Extensibility
-///
-/// Schemas can change over time. Even though a new schema may have a different
-/// hash, it might be compatible with the old schema. For maps, this means that
-/// any programs's internal data structures can accommodate adding new optional
-/// key-value pairs to the map without issue. For a map validator, this means
-/// allowing:
-///
-/// - `opt` can add new key-value pairs, provided that:
-///     - If `keys` has a validator, the new keys all pass the validator
-///     - `values` has a validator, and the new field's validator either matches
-///       it, is itself an extension of it, or the `values` validator is set to
-///       `Any`.
-/// - `same_len` can include the new keys
-/// - `max_len` can be incremented
-/// - `comment` can be modified
-///
-/// On the Rust side, this is meant for `struct` types that are *not* tagged
-/// with `serde(deny_unknown_fields)`. Additionally, if `serde(flatten)` is used
-/// to capture additional fields, the capturing map must also be marked as
-/// `serde(skip_serializing)`, so that any existing extra fields never overlap
-/// with newly defined optional fields. Finally, the `struct` must also not have
-/// any other fields that aren't considered part of the `struct`'s schema
-/// validator.
-///
 /// # Query Checking
 ///
 /// Queries for maps are only allowed to use non-default values for each field if the
@@ -118,24 +94,28 @@ fn get_validator<'de, D: Deserializer<'de>>(
 /// In addition, sub-validators in the query are matched against the schema's sub-validators:
 ///
 /// - The `values` validator is checked against the schema's `values` validator. If no schema
-///     validator is present, the query is invalid.
+///   validator is present, the query is invalid.
 /// - The `keys` string validator is checked against the schema's `keys` string validator. If no
-///     schema validator is present, the query is invalid.
+///   schema validator is present, the query is invalid.
 /// - The `req` validators are checked against the schema's `req`/`opt`/`values` validators,
-///     choosing whichever validator is found first. If no validator is found, the check fails.
+///   choosing whichever validator is found first. If no validator is found, the check fails.
 /// - The `opt` validators are checked against the schema's `req`/`opt`/`values` validators,
-///     choosing whichever validator is found first. If no validator is found, the check fails.
+///   choosing whichever validator is found first. If no validator is found, the check fails.
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+#[educe(PartialEq, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct MapValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// The maximum allowed number of key-value pairs in the map.
+    #[educe(Default = u32::MAX)]
     #[serde(skip_serializing_if = "u32_is_max")]
     pub max_len: u32,
     /// The minimum allowed number of key-value pairs in the map.
+    #[educe(Default = u32::MIN)]
     #[serde(skip_serializing_if = "u32_is_zero")]
     pub min_len: u32,
     /// The optional sub-validator for unknown keys in the map.
@@ -170,9 +150,6 @@ pub struct MapValidator {
     /// same lengths.
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     pub same_len: BTreeSet<String>,
-    /// Indicates if the map is meant to be extensible.
-    #[serde(skip_serializing_if = "is_false")]
-    pub extend: bool,
     /// If true, queries against matching spots may have values in the `in` or `nin` lists.
     #[serde(skip_serializing_if = "is_false")]
     pub query: bool,
@@ -185,28 +162,6 @@ pub struct MapValidator {
     /// If true, queries against matching spots may use `same_len`.
     #[serde(skip_serializing_if = "is_false")]
     pub same_len_ok: bool,
-}
-
-impl Default for MapValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            max_len: u32::MAX,
-            min_len: u32::MIN,
-            keys: None,
-            values: None,
-            req: BTreeMap::new(),
-            opt: BTreeMap::new(),
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            same_len: BTreeSet::new(),
-            extend: false,
-            query: false,
-            size: false,
-            map_ok: false,
-            same_len_ok: false,
-        }
-    }
 }
 
 impl MapValidator {
@@ -272,12 +227,6 @@ impl MapValidator {
     /// Add a key to the `same_len` list.
     pub fn same_len_add(mut self, add: impl Into<String>) -> Self {
         self.same_len.insert(add.into());
-        self
-    }
-
-    /// Mark whether or not the map can be extended.
-    pub fn extensible(mut self, extend: bool) -> Self {
-        self.extend = extend;
         self
     }
 
@@ -373,7 +322,6 @@ impl MapValidator {
         // Loop through each item, verifying it with the appropriate validator
         let mut reqs_found = 0;
         let mut array_len: Option<usize> = None;
-        let mut array_len_cnt = 0;
         for _ in 0..len {
             // Extract the key
             let elem = parser
@@ -410,7 +358,6 @@ impl MapValidator {
                 } else {
                     array_len = Some(len);
                 }
-                array_len_cnt += 1;
             }
 
             // Look up the appropriate validator and use it
@@ -434,12 +381,6 @@ impl MapValidator {
 
             parser = p;
             checklist = c;
-        }
-
-        if array_len.is_some() && array_len_cnt != self.same_len.len() {
-            return Err(Error::FailValidate(
-                "Map had some, but not all, of the keys listed in `same_len`".into(),
-            ));
         }
 
         if reqs_found != self.req.len() {
@@ -590,17 +531,6 @@ mod test {
         let serialized = ser.finish();
         let parser = Parser::new(&serialized);
         assert!(schema.validate(&BTreeMap::new(), parser, None).is_ok());
-
-        // Failing with only one present
-        let test = Test {
-            a: vec![2, 3],
-            b: vec![],
-        };
-        let mut ser = FogSerializer::default();
-        test.serialize(&mut ser).unwrap();
-        let serialized = ser.finish();
-        let parser = Parser::new(&serialized);
-        assert!(schema.validate(&BTreeMap::new(), parser, None).is_err());
 
         // Failing with only both present but incorrect lengths
         let test = Test {

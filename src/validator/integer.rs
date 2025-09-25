@@ -2,6 +2,7 @@ use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
 use crate::*;
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 
 #[inline]
@@ -53,10 +54,12 @@ fn int_is_min(v: &Integer) -> bool {
 /// - bit: false
 /// - ord: false
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+#[educe(PartialEq, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct IntValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// An unsigned 64-bit integers used as a bit field. Any bits set in it must be cleared in an
@@ -68,9 +71,11 @@ pub struct IntValidator {
     #[serde(skip_serializing_if = "u64_is_zero")]
     pub bits_set: u64,
     /// The maximum allowed integer value.
+    #[educe(Default(expression = Integer::max_value()))]
     #[serde(skip_serializing_if = "int_is_max")]
     pub max: Integer,
     /// The minimum allowed integer value.
+    #[educe(Default(expression = Integer::min_value()))]
     #[serde(skip_serializing_if = "int_is_min")]
     pub min: Integer,
     /// Changes `max` into an exclusive maximum.
@@ -96,25 +101,6 @@ pub struct IntValidator {
     /// values to non-defaults.
     #[serde(skip_serializing_if = "is_false")]
     pub ord: bool,
-}
-
-impl std::default::Default for IntValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            bits_clr: 0,
-            bits_set: 0,
-            max: Integer::max_value(),
-            min: Integer::min_value(),
-            ex_max: false,
-            ex_min: false,
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            query: false,
-            bit: false,
-            ord: false,
-        }
-    }
 }
 
 impl IntValidator {

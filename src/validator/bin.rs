@@ -1,6 +1,7 @@
 use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::default::Default;
@@ -61,10 +62,12 @@ fn u32_is_max(v: &u32) -> bool {
 /// - ord: false
 /// - size: false
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+#[educe(PartialEq, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct BinValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// A byte sequence used as a bit field. Any bits set in it must be cleared in an allowed
@@ -89,9 +92,11 @@ pub struct BinValidator {
     #[serde(skip_serializing_if = "is_false")]
     pub ex_min: bool,
     /// Set the maximum allowed number of bytes.
+    #[educe(Default = u32::MAX)]
     #[serde(skip_serializing_if = "u32_is_max")]
     pub max_len: u32,
     /// Set the minimum allowed number of bytes.
+    #[educe(Default = u32::MIN)]
     #[serde(skip_serializing_if = "u32_is_zero")]
     pub min_len: u32,
     /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
@@ -115,28 +120,6 @@ pub struct BinValidator {
     /// non-defaults.
     #[serde(skip_serializing_if = "is_false")]
     pub size: bool,
-}
-
-impl Default for BinValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            bits_clr: ByteBuf::new(),
-            bits_set: ByteBuf::new(),
-            ex_max: false,
-            ex_min: false,
-            max: ByteBuf::new(),
-            min: ByteBuf::new(),
-            max_len: u32::MAX,
-            min_len: u32::MIN,
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            query: false,
-            bit: false,
-            ord: false,
-            size: false,
-        }
-    }
 }
 
 impl BinValidator {

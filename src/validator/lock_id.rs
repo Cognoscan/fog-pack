@@ -2,6 +2,7 @@ use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
 use crate::LockId;
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 
 #[inline]
@@ -26,10 +27,12 @@ fn is_false(v: &bool) -> bool {
 /// - nin_list: empty
 /// - query: false
 ///
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Default, Serialize, Deserialize)]
+#[educe(PartialEq)]
 #[serde(deny_unknown_fields, default)]
 pub struct LockIdValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.

@@ -1,6 +1,7 @@
 use super::*;
 use crate::element::*;
 use crate::error::{Error, Result};
+use educe::Educe;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,16 @@ fn u32_is_max(v: &u32) -> bool {
 #[inline]
 fn normalize_is_none(v: &Normalize) -> bool {
     matches!(v, Normalize::None)
+}
+
+#[inline]
+fn compare_regexes(a: &Option<Box<Regex>>, b: &Option<Box<Regex>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(_), None) => false,
+        (None, Some(_)) => false,
+        (Some(lhs), Some(rhs)) => lhs.as_str() == rhs.as_str(),
+    }
 }
 
 /// Validator for UTF-8 strings.
@@ -103,10 +114,12 @@ fn normalize_is_none(v: &Normalize) -> bool {
 /// before running validation. This is settable through the `normalization` field, which can be
 /// `None`, `NFC`, or `NFKC`.
 ///
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Educe, Clone, Debug, Serialize, Deserialize)]
+#[educe(Default, PartialEq)]
 #[serde(deny_unknown_fields, default)]
 pub struct StrValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
     /// A vector of specific allowed values, stored under the `in` field. If empty, this vector is not checked against.
@@ -116,21 +129,25 @@ pub struct StrValidator {
     #[serde(rename = "nin", skip_serializing_if = "Vec::is_empty")]
     pub nin_list: Vec<String>,
     /// A regular expression that the value must match against.
+    #[educe(PartialEq(method(compare_regexes)))]
     #[serde(skip_serializing_if = "Option::is_none", with = "serde_regex")]
     pub matches: Option<Box<Regex>>,
     /// The maximum allowed number of bytes in the string value.
+    #[educe(Default = u32::MAX)]
     #[serde(skip_serializing_if = "u32_is_max")]
     pub max_len: u32,
     /// The minimum allowed number of bytes in the string value.
     #[serde(skip_serializing_if = "u32_is_zero")]
     pub min_len: u32,
     /// The maximum allowed number of unicode characters in the string value.
+    #[educe(Default = u32::MAX)]
     #[serde(skip_serializing_if = "u32_is_max")]
     pub max_char: u32,
     /// The minimum allowed number of unicode characters in the string value.
     #[serde(skip_serializing_if = "u32_is_zero")]
     pub min_char: u32,
     /// The Unicode normalization setting.
+    #[educe(Default = Normalize::None)]
     #[serde(skip_serializing_if = "normalize_is_none")]
     pub normalize: Normalize,
     /// Banned string prefixes.
@@ -156,55 +173,6 @@ pub struct StrValidator {
     /// `min_char` values to non-defaults.
     #[serde(skip_serializing_if = "is_false")]
     pub size: bool,
-}
-
-impl PartialEq for StrValidator {
-    fn eq(&self, rhs: &Self) -> bool {
-        (self.comment == rhs.comment)
-            && (self.in_list == rhs.in_list)
-            && (self.nin_list == rhs.nin_list)
-            && (self.max_len == rhs.max_len)
-            && (self.min_len == rhs.min_len)
-            && (self.max_char == rhs.max_char)
-            && (self.min_char == rhs.min_char)
-            && (self.normalize == rhs.normalize)
-            && (self.ban_prefix == rhs.ban_prefix)
-            && (self.ban_suffix == rhs.ban_suffix)
-            && (self.ban_char == rhs.ban_char)
-            && (self.query == rhs.query)
-            && (self.regex == rhs.regex)
-            && (self.size == rhs.size)
-            && (self.ban == rhs.ban)
-            && match (&self.matches, &rhs.matches) {
-                (None, None) => true,
-                (Some(_), None) => false,
-                (None, Some(_)) => false,
-                (Some(lhs), Some(rhs)) => lhs.as_str() == rhs.as_str(),
-            }
-    }
-}
-
-impl std::default::Default for StrValidator {
-    fn default() -> Self {
-        Self {
-            comment: String::new(),
-            in_list: Vec::new(),
-            nin_list: Vec::new(),
-            matches: None,
-            max_len: u32::MAX,
-            min_len: u32::MIN,
-            max_char: u32::MAX,
-            min_char: u32::MIN,
-            normalize: Normalize::None,
-            ban_prefix: Vec::new(),
-            ban_suffix: Vec::new(),
-            ban_char: String::new(),
-            query: false,
-            regex: false,
-            ban: false,
-            size: false,
-        }
-    }
 }
 
 impl StrValidator {

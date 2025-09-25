@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::{Error, Result};
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 
@@ -26,20 +27,7 @@ fn is_false(v: &bool) -> bool {
 /// The defaults for each field are:
 ///
 /// - comment: ""
-/// - extend: false
 /// - var: empty
-///
-/// # Extensibility
-///
-/// Schemas can change over time. Even though a new schema may have a different
-/// hash, it might be compatible with the old schema. For enums, this means that
-/// any program's internal data structures can accommodate adding new variants
-/// to the enum without issue. This is done in Rust by tagging the enum as
-/// `non-exhaustive` and in `serde` by adding a `serde(other)` tag to a
-/// catch-all variant.
-///
-/// If an enum is intended to be extensible, it should have the `extend` flag
-/// set to true.
 ///
 /// # Query Checking
 ///
@@ -103,15 +91,14 @@ fn is_false(v: &bool) -> bool {
 /// # }
 /// ```
 ///
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Educe, Clone, Default, Debug, Serialize, Deserialize)]
+#[educe(PartialEq)]
 #[serde(deny_unknown_fields, default)]
 pub struct EnumValidator {
     /// An optional comment explaining the validator.
+    #[educe(PartialEq(ignore))]
     #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
-    /// Indicates if the enum is meant to be extensible.
-    #[serde(skip_serializing_if = "is_false")]
-    pub extend: bool,
     /// The list of enum variants
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub var: BTreeMap<String, Option<Validator>>,
@@ -126,12 +113,6 @@ impl EnumValidator {
     /// Set a comment for the validator.
     pub fn comment(mut self, comment: impl Into<String>) -> Self {
         self.comment = comment.into();
-        self
-    }
-
-    /// Mark whether or not the enum can be extended.
-    pub fn extensible(mut self, extend: bool) -> Self {
-        self.extend = extend;
         self
     }
 
